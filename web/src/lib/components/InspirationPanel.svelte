@@ -9,6 +9,8 @@
 	import RegionEditor from '#lib/components/RegionEditor.svelte';
 	import RegionList from '#lib/components/RegionList.svelte';
 	import { tick, untrack } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { Autosaver, type SaveState } from '#lib/autosave.js';
 	interface Props {
 		supabase: SupabaseClient;
 		userId: string;
@@ -46,10 +48,9 @@
 		onnext
 	}: Props = $props();
 
-	const DELAY = 700;
-
-	// Local editable copies. They follow `item` only when its id changes, so a saved row coming
-	// back from the parent never overwrites what the user is typing.
+	// Local editable copies. A change of `item` with the same id only refreshes fields the user has
+	// no unsaved edit for, so a row coming back from the parent (or a retag on the board) shows up
+	// without overwriting what the user is typing.
 	let id = '';
 	let note = $state('');
 	let tags = $state<string[]>([]);
@@ -57,108 +58,74 @@
 	let regions = $state<Region[]>([]);
 	let active = $state<number | null>(null);
 
-	type Status = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
-	let status = $state<Status>('idle');
+	let status = $state<SaveState>('idle');
 	let failure = $state('');
-	let busy = $state<'' | 'copy' | 'delete'>('');
+	let busy = $state<'' | 'copy' | 'delete' | 'leave'>('');
 	let actionError = $state('');
 	let noteEl = $state<HTMLTextAreaElement | null>(null);
 
-	let dirty = false;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let inflight: Promise<void> | null = null;
-	/** The last failed save, kept so «Ξανά» can resend it even after the user moved to another image. */
-	let failed: { id: string; fields: EditableFields } | null = null;
+	// One saver for the panel's lifetime: it keeps unsaved edits per item id across item switches.
+	const saver = new Autosaver<EditableFields>(
+		(target, f) => updateInspiration(supabase, target, f).then((row) => onsaved(row)),
+		700,
+		(s, e) => {
+			status = s;
+			failure = e;
+		}
+	);
 
-	function load(it: Inspiration) {
-		id = it.id;
-		note = it.note ?? '';
-		tags = [...(it.tags ?? [])];
-		level = it.level ?? null;
-		regions = (it.regions ?? []).map((r) => ({ ...r }));
-		active = null;
-		dirty = false;
-		actionError = '';
-		if (status !== 'error') status = 'idle';
+	function sync(it: Inspiration, all: boolean) {
+		const dirty = all ? new Set() : saver.dirtyKeys(it.id);
+		if (!dirty.has('note')) note = it.note ?? '';
+		if (!dirty.has('tags')) tags = [...(it.tags ?? [])];
+		if (!dirty.has('level')) level = it.level ?? null;
+		if (!dirty.has('regions')) regions = (it.regions ?? []).map((r) => ({ ...r }));
 	}
 
 	$effect.pre(() => {
 		const it = item;
 		untrack(() => {
-			if (it.id === id) return;
-			if (id) void flush();
-			load(it);
+			if (it.id === id) {
+				sync(it, false);
+				return;
+			}
+			if (id) void saver.flush();
+			id = it.id;
+			sync(it, false);
+			active = null;
+			actionError = '';
 			if (focusNote) tick().then(() => noteEl?.focus());
 		});
 	});
 
-	// Flush a pending save when the panel goes away.
-	$effect(() => () => void flush());
+	// Send pending edits when the panel goes away.
+	$effect(() => () => void saver.flush());
 
-	function fields(): EditableFields {
-		return { note, tags: $state.snapshot(tags), level, regions: $state.snapshot(regions) };
+	function change<K extends keyof EditableFields>(key: K, value: EditableFields[K]) {
+		saver.set(id, key, value);
 	}
 
-	function touch() {
-		dirty = true;
-		if (status !== 'saving') status = 'pending';
-		clearTimeout(timer);
-		timer = setTimeout(() => void flush(), DELAY);
+	/** Close only once the edits are stored; on failure stay open with the error and «Ξανά». */
+	async function close() {
+		if (busy) return;
+		busy = 'leave';
+		const ok = await saver.flush();
+		busy = '';
+		if (ok || confirm('Οι αλλαγές δεν αποθηκεύτηκαν. Κλείσιμο χωρίς αποθήκευση;')) onclose();
 	}
 
-	function send(target: string, f: EditableFields): Promise<void> {
-		status = 'saving';
-		failure = '';
-		const run = updateInspiration(supabase, target, f)
-			.then((row) => {
-				if (failed?.id === target) failed = null;
-				onsaved(row);
-				if (status === 'saving' || status === 'error') status = dirty ? 'pending' : 'saved';
-			})
-			.catch((e: unknown) => {
-				failed = { id: target, fields: f };
-				failure = e instanceof Error ? e.message : String(e);
-				status = 'error';
-			})
-			.finally(() => {
-				if (inflight === run) inflight = null;
-			});
-		inflight = run;
-		return run;
-	}
-
-	/** Save now if anything changed. Resolves when every save so far has finished. */
-	async function flush(): Promise<void> {
-		clearTimeout(timer);
-		timer = undefined;
-		if (inflight) await inflight;
-		if (!dirty) return;
-		dirty = false;
-		await send(id, fields());
-		// Edits made while that save ran.
-		if (dirty) return flush();
-	}
-
-	function retry() {
-		const f = failed;
-		if (!f) return;
-		failed = null;
-		if (f.id === id) {
-			dirty = true;
-			void flush();
-		} else {
-			void send(f.id, f.fields);
-		}
-	}
-
-	function close() {
-		void flush();
-		onclose();
+	async function openFull() {
+		if (busy) return;
+		const target = id;
+		busy = 'leave';
+		const ok = await saver.flush();
+		busy = '';
+		if (ok) await goto(`/i/${target}`);
 	}
 
 	function setLevel(l: Level) {
 		level = level === l ? null : l;
-		touch();
+		change('level', level);
 	}
 
 	async function copyTo(e: Event & { currentTarget: HTMLSelectElement }) {
@@ -166,13 +133,14 @@
 		const value = sel.value;
 		sel.value = '';
 		if (!value || busy) return;
+		const target = id;
 		const projectId = value === '-' ? null : value;
 		busy = 'copy';
 		actionError = '';
 		try {
 			// The copy reads the stored row, so store the latest edits first.
-			await flush();
-			await copyInspiration(supabase, userId, id, projectId);
+			if (!(await saver.flush())) throw new Error('Οι αλλαγές δεν αποθηκεύτηκαν ακόμα. Πάτα «Ξανά».');
+			await copyInspiration(supabase, userId, target, projectId);
 			oncopied(projectId ? (projects.find((p) => p.id === projectId)?.name ?? null) : null);
 		} catch (err) {
 			actionError = err instanceof Error ? err.message : String(err);
@@ -186,16 +154,13 @@
 		const target = id;
 		busy = 'delete';
 		actionError = '';
-		clearTimeout(timer);
-		dirty = false;
 		try {
-			if (inflight) await inflight;
+			await saver.flush();
 			await deleteInspiration(supabase, target);
+			saver.discard(target);
 			ondeleted(target);
 		} catch (err) {
 			actionError = err instanceof Error ? err.message : String(err);
-			// The row is still there: keep saving the edits.
-			if (target === id) touch();
 		} finally {
 			busy = '';
 		}
@@ -220,7 +185,7 @@
 	});
 </script>
 
-<svelte:window onpagehide={() => void flush()} />
+<svelte:window onpagehide={() => void saver.flush()} />
 
 <section class="panel" aria-label="Επεξεργασία εικόνας">
 	<header>
@@ -233,7 +198,7 @@
 					Αποθηκεύτηκε ✓
 				{:else if status === 'error'}
 					<span class="err" title={failure}>Δεν αποθηκεύτηκε</span>
-					<button type="button" class="retry" onclick={retry}>Ξανά</button>
+					<button type="button" class="retry" onclick={() => void saver.retry()}>Ξανά</button>
 				{/if}
 			</span>
 		</div>
@@ -263,7 +228,7 @@
 			<RegionEditor
 				src={imageUrl}
 				alt={note || 'Έμπνευση'}
-				bind:regions={() => regions, (v) => ((regions = v), touch())}
+				bind:regions={() => regions, (v) => ((regions = v), change('regions', v))}
 				bind:active
 			/>
 		</div>
@@ -272,7 +237,7 @@
 			<span class="lbl">Σημείωση</span>
 			<textarea
 				bind:this={noteEl}
-				bind:value={() => note, (v) => ((note = v), touch())}
+				bind:value={() => note, (v) => ((note = v), change('note', v))}
 				{@attach autogrow}
 				rows="2"
 				placeholder="Τι σου αρέσει εδώ;"
@@ -283,7 +248,7 @@
 			<label class="lbl" for="panel-tags">Tags</label>
 			<TagInput
 				id="panel-tags"
-				bind:tags={() => tags, (v) => ((tags = v), touch())}
+				bind:tags={() => tags, (v) => ((tags = v), change('tags', v))}
 				{suggestions}
 				placeholder="ξύλο, φως…"
 			/>
@@ -302,7 +267,7 @@
 
 		<div class="field">
 			<span class="lbl">Περιοχές{regions.length ? ` · ${regions.length}` : ''}</span>
-			<RegionList bind:regions={() => regions, (v) => ((regions = v), touch())} bind:active />
+			<RegionList bind:regions={() => regions, (v) => ((regions = v), change('regions', v))} bind:active />
 		</div>
 
 		{#if safeSource}
@@ -325,7 +290,7 @@
 			</select>
 			<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" /></svg>
 		</label>
-		<a class="btn ghost" href={`/i/${item.id}`}>Πλήρης σελίδα</a>
+		<a class="btn ghost" href={`/i/${item.id}`} onclick={(e) => { e.preventDefault(); void openFull(); }}>Πλήρης σελίδα</a>
 		<span class="grow"></span>
 		<button type="button" class="btn ghost danger" disabled={!!busy} onclick={remove}>
 			{busy === 'delete' ? 'Διαγραφή…' : 'Διαγραφή'}

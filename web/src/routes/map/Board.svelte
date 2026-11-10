@@ -228,6 +228,7 @@
 
 		byId = new Map(next.map((n) => [n.id, n]));
 		members = new Map();
+		zoneBoxes.clear();
 		for (const n of next) {
 			if (n.zone === null) continue;
 			const arr = members.get(n.zone);
@@ -794,7 +795,6 @@
 	/** Pending positions per map scope: '<scope>|<node key>'. */
 	const pendingSaves = new Map<string, { scope: string; key: string; x: number; y: number }>();
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let saving = false;
 
 	function queueSave(key: string, x: number, y: number) {
 		if (!canSave || !seededScope) return;
@@ -803,28 +803,34 @@
 		saveTimer = setTimeout(() => void flushSaves(), 600);
 	}
 
+	/** All position writes (upserts and deletes) run one after another, so a delete can never be
+	 *  overtaken by an older upsert that brings the pin back. */
+	let writes: Promise<void> = Promise.resolve();
+	function serial(job: () => PromiseLike<unknown>, failText: string): Promise<void> {
+		writes = writes.then(job).then(
+			() => {},
+			() => ontoast(failText)
+		);
+		return writes;
+	}
+
 	/** Write the pending positions now, one call per map scope. Errors show a toast, never throw. */
-	async function flushSaves() {
+	function flushSaves(): Promise<void> {
 		clearTimeout(saveTimer);
 		saveTimer = undefined;
-		if (saving || pendingSaves.size === 0) return;
+		if (pendingSaves.size === 0) return writes;
 		const rows = [...pendingSaves.values()];
 		pendingSaves.clear();
-		saving = true;
-		try {
-			const byScope = new Map<string, { key: string; x: number; y: number }[]>();
-			for (const r of rows) {
-				const list = byScope.get(r.scope) ?? [];
-				list.push({ key: r.key, x: r.x, y: r.y });
-				byScope.set(r.scope, list);
-			}
-			await Promise.all([...byScope].map(([s, list]) => savePositions(supabase, s, list)));
-		} catch {
-			ontoast('Οι θέσεις δεν αποθηκεύτηκαν');
-		} finally {
-			saving = false;
+		const byScope = new Map<string, { key: string; x: number; y: number }[]>();
+		for (const r of rows) {
+			const list = byScope.get(r.scope) ?? [];
+			list.push({ key: r.key, x: r.x, y: r.y });
+			byScope.set(r.scope, list);
 		}
-		if (pendingSaves.size) void flushSaves();
+		return serial(
+			() => Promise.all([...byScope].map(([sc, list]) => savePositions(supabase, sc, list))),
+			'Οι θέσεις δεν αποθηκεύτηκαν'
+		);
 	}
 
 	/** Pin a new card where it was added and remember that spot for this map. */
@@ -847,7 +853,11 @@
 		if (pinned) queueSave(key, from.fx as number, from.fy as number);
 		else if (canSave && seededScope) {
 			pendingSaves.delete(`${seededScope}|${key}`);
-			void supabase.from('map_positions').delete().eq('scope', seededScope).eq('node_key', key).then(() => {});
+			const sc = seededScope;
+			void serial(async () => {
+				const { error } = await supabase.from('map_positions').delete().eq('scope', sc).eq('node_key', key);
+				if (error) throw error;
+			}, 'Η θέση δεν αποθηκεύτηκε');
 		}
 		reheat(0.3);
 	}
@@ -857,7 +867,7 @@
 		const key = `i:${itemId}`;
 		mem.delete(key);
 		for (const k of pendingSaves.keys()) if (k.endsWith(`|${key}`)) pendingSaves.delete(k);
-		if (canSave) void supabase.from('map_positions').delete().eq('node_key', key).then(() => {});
+		if (canSave) void serial(() => supabase.from('map_positions').delete().eq('node_key', key), 'Η θέση δεν σβήστηκε');
 	}
 
 	/** Unpin every card in view, forget their saved spots and lay the board out again. */
@@ -874,18 +884,17 @@
 		fitPending = true;
 		reheat(0.9);
 		if (!canSave || !seededScope) return;
-		try {
+		const sc = seededScope;
+		await serial(async () => {
 			for (let i = 0; i < keys.length; i += 200) {
 				const { error } = await supabase
 					.from('map_positions')
 					.delete()
-					.eq('scope', seededScope)
+					.eq('scope', sc)
 					.in('node_key', keys.slice(i, i + 200));
 				if (error) throw error;
 			}
-		} catch {
-			ontoast('Η νέα διάταξη δεν αποθηκεύτηκε');
-		}
+		}, 'Η νέα διάταξη δεν αποθηκεύτηκε');
 	}
 
 	// ------------------------------------------------------------- Lifecycle

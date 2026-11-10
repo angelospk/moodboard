@@ -102,7 +102,16 @@
 	{#if hints.length}
 		<div class="suggestions">
 			{#each hints as hint (hint)}
-				<button type="button" class="suggestion" onclick={() => add(hint)}>{hint}</button>
+				<button
+					type="button"
+					class="suggestion"
+					onpointerdown={(e) => e.preventDefault()}
+					onclick={() => {
+						// The suggestion replaces the typed prefix; it is not added as a tag of its own.
+						draft = '';
+						add(hint);
+					}}>{hint}</button
+				>
 			{/each}
 		</div>
 	{/if}

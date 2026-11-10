@@ -322,16 +322,20 @@
 		setItem({ ...item, tags: next });
 		try {
 			setItem(await updateInspiration(data.supabase, item.id, { tags: next }));
-			toast({ text: `+ #${tag}`, action: { label: 'Αναίρεση', run: () => void undoRezone(item.id, prev, from) } }, 5000);
+			toast({ text: `+ #${tag}`, action: { label: 'Αναίρεση', run: () => void undoRezone(item.id, tag, prev, from) } }, 5000);
 		} catch (err) {
 			setItem(item);
 			toast({ text: errText(err, 'Το tag δεν αποθηκεύτηκε'), tone: 'error' }, 6000);
 		}
 	}
 
-	async function undoRezone(id: string, tags: string[], from: From) {
+	/** Undo only the retag: later tag edits stay. */
+	async function undoRezone(id: string, tag: string, prev: string[], from: From) {
 		const cur = items.find((i) => i.id === id);
 		if (!cur) return;
+		const rest = (cur.tags ?? []).filter((t) => t !== tag);
+		const at = prev.indexOf(tag);
+		const tags = at < 0 ? rest : [...rest.slice(0, at), tag, ...rest.slice(at)];
 		setItem({ ...cur, tags });
 		board?.restore(id, from);
 		try {

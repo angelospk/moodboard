@@ -7,6 +7,7 @@
 	import RegionEditor from '#lib/components/RegionEditor.svelte';
 	import RegionList from '#lib/components/RegionList.svelte';
 	import { untrack } from 'svelte';
+	import { Autosaver, type SaveState } from '#lib/autosave.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -33,81 +34,60 @@
 		}
 	});
 
-	// ---------- autosave (same rules as InspirationPanel) ----------
-	type Status = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
-	let status = $state<Status>('idle');
+	// ---------- autosave: the shared Autosaver (same engine as InspirationPanel) ----------
+	let status = $state<SaveState>('idle');
 	let failure = $state('');
 	let deleting = $state(false);
-	let dirty = false;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let inflight: Promise<void> | null = null;
+	let leaving = false;
 
-	function fields(): EditableFields {
-		return {
-			note,
-			tags: $state.snapshot(tags),
-			level,
-			regions: $state.snapshot(regions),
-			project_id: projectId || null
-		};
+	const saver = new Autosaver<EditableFields>(
+		(id, f) => updateInspiration(data.supabase, id, f),
+		700,
+		(s, e) => {
+			status = s;
+			failure = e;
+		}
+	);
+
+	function change<K extends keyof EditableFields>(key: K, value: EditableFields[K]) {
+		saver.set(item.id, key, value);
 	}
 
-	function touch() {
-		dirty = true;
-		if (status !== 'saving') status = 'pending';
-		clearTimeout(timer);
-		timer = setTimeout(() => void flush(), 700);
-	}
+	const unsaved = () => status === 'pending' || status === 'saving' || status === 'error';
 
-	async function flush(): Promise<void> {
-		clearTimeout(timer);
-		timer = undefined;
-		if (inflight) await inflight;
-		if (!dirty || deleting) return;
-		dirty = false;
-		status = 'saving';
-		failure = '';
-		const run = updateInspiration(data.supabase, item.id, fields())
-			.then(() => {
-				status = dirty ? 'pending' : 'saved';
-			})
-			.catch((e: unknown) => {
-				// Keep the edits marked as unsaved, so «Ξανά» and leaving the page retry them.
-				dirty = true;
-				failure = e instanceof Error ? e.message : String(e);
-				status = 'error';
-			})
-			.finally(() => {
-				inflight = null;
-			});
-		inflight = run;
-		await run;
-		if (dirty && (status as Status) !== 'error') return flush();
-	}
-
-	beforeNavigate(() => void flush());
-	$effect(() => () => void flush());
+	// Hold in-app navigation until the edits are stored; on failure ask before leaving them.
+	beforeNavigate((nav) => {
+		if (leaving || deleting || nav.type === 'leave' || !unsaved()) return;
+		nav.cancel();
+		const to = nav.to?.url;
+		void saver.flush().then((ok) => {
+			if (!to) return;
+			if (ok || confirm('Οι αλλαγές δεν αποθηκεύτηκαν. Φεύγεις χωρίς αποθήκευση;')) {
+				leaving = true;
+				void goto(to);
+			}
+		});
+	});
+	$effect(() => () => void saver.flush());
 
 	function onBeforeUnload(e: BeforeUnloadEvent) {
-		if (!dirty && !inflight) return;
-		void flush();
+		if (!unsaved()) return;
+		void saver.flush();
 		e.preventDefault();
 	}
 
 	function setLevel(l: Level) {
 		level = level === l ? null : l;
-		touch();
+		change('level', level);
 	}
 
 	async function remove() {
 		if (deleting || !confirm('Διαγραφή αυτής της εικόνας;')) return;
 		deleting = true;
-		clearTimeout(timer);
-		failure = '';
 		try {
-			if (inflight) await inflight;
+			await saver.flush();
 			await deleteInspiration(data.supabase, item.id);
-			dirty = false;
+			saver.discard(item.id);
 			await goto(project ? `/map?project=${encodeURIComponent(project.id)}` : '/');
 		} catch (err) {
 			deleting = false;
@@ -127,7 +107,7 @@
 	<title>{note.trim() ? `${note.trim().slice(0, 40)} · ` : ''}Moodboard</title>
 </svelte:head>
 
-<svelte:window onbeforeunload={onBeforeUnload} />
+<svelte:window onbeforeunload={onBeforeUnload} onpagehide={() => void saver.flush()} />
 
 <div class="page">
 	<header>
@@ -137,7 +117,7 @@
 			{#if project}
 				<a class="proj" href={`/map?project=${encodeURIComponent(project.id)}`}>{project.name}</a>
 			{:else}
-				<a class="proj" href="/map">Χωρίς project</a>
+				<a class="proj" href="/map?project=none">Χωρίς project</a>
 			{/if}
 		</nav>
 		<span class="grow"></span>
@@ -148,7 +128,7 @@
 				Αποθηκεύτηκε ✓
 			{:else if status === 'error'}
 				<span class="err">Δεν αποθηκεύτηκε</span>
-				<button type="button" class="retry" onclick={() => ((dirty = true), void flush())}>Ξανά</button>
+				<button type="button" class="retry" onclick={() => void saver.retry()}>Ξανά</button>
 			{/if}
 		</span>
 	</header>
@@ -159,7 +139,7 @@
 				src={data.imageUrl}
 				alt={note || 'Έμπνευση'}
 				labels
-				bind:regions={() => regions, (v) => ((regions = v), touch())}
+				bind:regions={() => regions, (v) => ((regions = v), change('regions', v))}
 				bind:active
 			/>
 			<p class="hint">
@@ -176,13 +156,13 @@
 
 				<div class="field">
 					<span class="lbl">Περιοχές{regions.length ? ` · ${regions.length}` : ''}</span>
-					<RegionList bind:regions={() => regions, (v) => ((regions = v), touch())} bind:active />
+					<RegionList bind:regions={() => regions, (v) => ((regions = v), change('regions', v))} bind:active />
 				</div>
 
 				<label class="field">
 					<span class="lbl">Σημείωση εικόνας</span>
 					<textarea
-						bind:value={() => note, (v) => ((note = v), touch())}
+						bind:value={() => note, (v) => ((note = v), change('note', v))}
 						{@attach autogrow}
 						rows="3"
 						placeholder="Τι σου αρέσει εδώ;"
@@ -193,7 +173,7 @@
 					<label class="lbl" for="item-tags">Tags</label>
 					<TagInput
 						id="item-tags"
-						bind:tags={() => tags, (v) => ((tags = v), touch())}
+						bind:tags={() => tags, (v) => ((tags = v), change('tags', v))}
 						suggestions={data.tags}
 						placeholder="ξύλο, φως…"
 					/>
@@ -212,7 +192,7 @@
 
 				<label class="field">
 					<span class="lbl">Project</span>
-					<select bind:value={() => projectId, (v) => ((projectId = v), touch())}>
+					<select bind:value={() => projectId, (v) => ((projectId = v), change('project_id', v || null))}>
 						<option value="">Χωρίς project</option>
 						{#each data.projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 					</select>

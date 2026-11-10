@@ -78,7 +78,8 @@
 	}
 
 	function pick(tag: string) {
-		commit();
+		// The suggestion replaces the typed prefix; it is not added as a tag of its own.
+		draft = '';
 		add(tag);
 		inputEl?.focus();
 	}
@@ -104,7 +105,7 @@
 {#if visibleSuggestions.length > 0}
 	<div class="suggestions">
 		{#each visibleSuggestions as tag (tag)}
-			<button type="button" class="suggest" onclick={() => pick(tag)}>{tag}</button>
+			<button type="button" class="suggest" onpointerdown={(e) => e.preventDefault()} onclick={() => pick(tag)}>{tag}</button>
 		{/each}
 	</div>
 {/if}
