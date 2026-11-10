@@ -5,16 +5,34 @@ export const load: PageLoad = async ({ parent, depends }) => {
 	depends('moodboard:data');
 	const { supabase } = await parent();
 
+	// PostgREST returns at most 1000 rows per request, so read in pages until a short page.
+	const PAGE = 1000;
+	async function all<T>(query: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>) {
+		const rows: T[] = [];
+		for (let from = 0; ; from += PAGE) {
+			const { data, error } = await query(from, from + PAGE - 1);
+			if (error) return { rows, error };
+			rows.push(...((data ?? []) as T[]));
+			if (!data || data.length < PAGE) return { rows, error: null };
+		}
+	}
+
 	const [projectsRes, inspirationsRes] = await Promise.all([
-		supabase.from('projects').select('id, name, description, created_at').order('name'),
-		supabase
-			.from('inspirations')
-			.select('id, project_id, tags, level, note, image_path, regions')
-			.order('created_at', { ascending: false })
+		all<Project>((from, to) =>
+			supabase.from('projects').select('id, name, description, created_at').order('name').order('id').range(from, to)
+		),
+		all<Inspiration>((from, to) =>
+			supabase
+				.from('inspirations')
+				.select('id, project_id, tags, level, note, image_path, regions')
+				.order('created_at', { ascending: false })
+				.order('id')
+				.range(from, to)
+		)
 	]);
 	const err = projectsRes.error ?? inspirationsRes.error;
-	const projects = (projectsRes.data ?? []) as Project[];
-	const inspirations = (inspirationsRes.data ?? []) as Inspiration[];
+	const projects = projectsRes.rows;
+	const inspirations = inspirationsRes.rows;
 
 	// One batch call for every signed image URL (valid for an hour).
 	const urls: Record<string, string> = {};
