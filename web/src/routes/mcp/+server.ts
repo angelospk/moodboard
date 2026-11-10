@@ -14,10 +14,22 @@ const unauthorized = () =>
 		}
 	});
 
+/** Read the client_id claim. Call only after Supabase verified the token (getUser). */
+function hasClientId(jwt: string): boolean {
+	try {
+		const payload = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8'));
+		return typeof payload.client_id === 'string' && payload.client_id.length > 0;
+	} catch {
+		return false;
+	}
+}
+
 const handle: RequestHandler = async ({ request }) => {
 	const token = request.headers.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
 	if (!token) return unauthorized();
 	const auth = await clientForToken(token);
+	// Only tokens from the OAuth flow (they carry client_id) may call MCP; a web session token may not.
+	if (auth && !hasClientId(token)) return unauthorized();
 	if (!auth) return unauthorized();
 
 	// Stateless: a fresh server + transport per request, JSON responses, no sessions.

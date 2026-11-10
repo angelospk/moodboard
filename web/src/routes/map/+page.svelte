@@ -41,9 +41,11 @@
 			nodes.push({ group: 'nodes', data: { id: `p:${p.id}`, type: 'project', label: p.name } });
 		}
 
+		const known = new Set(data.projects.map((p) => p.id));
 		let orphans = false;
 		for (const i of items) {
-			if (!i.project_id) orphans = true;
+			const pid = i.project_id && known.has(i.project_id) ? i.project_id : null;
+			if (!pid) orphans = true;
 			nodes.push({
 				group: 'nodes',
 				data: {
@@ -54,13 +56,11 @@
 					badge: i.regions?.length ? String(i.regions.length) : ''
 				}
 			});
-			const target = i.project_id ? `p:${i.project_id}` : 'p:none';
-			if (i.project_id || orphans) {
-				edges.push({
-					group: 'edges',
-					data: { id: `e:i:${i.id}:${target}`, source: `i:${i.id}`, target }
-				});
-			}
+			const target = pid ? `p:${pid}` : 'p:none';
+			edges.push({
+				group: 'edges',
+				data: { id: `e:i:${i.id}:${target}`, source: `i:${i.id}`, target }
+			});
 		}
 
 		if (orphans) {
@@ -233,7 +233,6 @@
 	let repaint: (() => void) | null = null;
 
 	onMount(() => {
-		let disposed = false;
 		const theme = window.matchMedia('(prefers-color-scheme: dark)');
 		const onThemeChange = () => repaint?.();
 		theme.addEventListener('change', onThemeChange);
@@ -248,47 +247,58 @@
 		};
 		window.addEventListener('resize', onResize);
 
+		return () => {
+			clearTimeout(resizeTimer);
+			window.removeEventListener('resize', onResize);
+			theme.removeEventListener('change', onThemeChange);
+		};
+	});
+
+	// Create Cytoscape whenever the canvas element exists (it can appear after a reload of data).
+	$effect(() => {
+		const el = container;
+		if (!el) return;
+		let disposed = false;
+		let instance: cytoscape.Core | null = null;
 		(async () => {
 			const cytoscape = (await import('cytoscape')).default;
-			if (disposed || !container) return;
+			if (disposed) return;
 
-			const instance = cytoscape({
-				container,
+			const inst = cytoscape({
+				container: el,
 				elements: [],
 				style: stylesheet(),
 				minZoom: 0.15,
 				maxZoom: 3,
 				selectionType: 'single'
 			});
+			instance = inst;
 
-			instance.on('tap', 'node[type="inspiration"]', (e) => {
+			inst.on('tap', 'node[type="inspiration"]', (e) => {
 				const href = (e.target as cytoscape.NodeSingular).data('href') as string;
 				goto(href);
 			});
-			instance.on('tap', 'node[type="tag"]', (e) => {
-				focusTag(instance, e.target as cytoscape.NodeSingular);
+			inst.on('tap', 'node[type="tag"]', (e) => {
+				focusTag(inst, e.target as cytoscape.NodeSingular);
 			});
-			instance.on('tap', (e) => {
-				if (e.target === instance) clearFocus(instance);
+			inst.on('tap', (e) => {
+				if (e.target === inst) clearFocus(inst);
 			});
 
 			// Repaint with the current CSS variables when the colour scheme changes.
 			repaint = () => {
 				if (disposed) return;
-				instance.style(stylesheet());
-				instance.forceRender();
+				inst.style(stylesheet());
+				inst.forceRender();
 			};
 
-			cy = instance;
+			cy = inst;
 		})();
 
 		return () => {
 			disposed = true;
-			clearTimeout(resizeTimer);
-			window.removeEventListener('resize', onResize);
-			theme.removeEventListener('change', onThemeChange);
 			repaint = null;
-			cy?.destroy();
+			instance?.destroy();
 			cy = null;
 		};
 	});
