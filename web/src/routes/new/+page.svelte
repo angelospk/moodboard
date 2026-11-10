@@ -1,26 +1,19 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { BUCKET, LEVELS, type Level } from '#lib/types.js';
-	import { LEVEL_LABELS, normTags } from '#lib/tags.js';
+	import { LEVELS, type Level } from '#lib/types.js';
+	import { LEVEL_LABELS } from '#lib/tags.js';
+	import { checkImage, createInspiration } from '#lib/inspirations.js';
+	import TagInput from '#lib/components/TagInput.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
-
-	const EXT: Record<string, string> = {
-		'image/png': 'png',
-		'image/jpeg': 'jpg',
-		'image/webp': 'webp',
-		'image/gif': 'gif',
-		'image/avif': 'avif'
-	};
-	const MAX_BYTES = 10 * 1024 * 1024;
 
 	let file = $state<File | null>(null);
 	let preview = $state('');
 	let projectId = $state('');
 	let note = $state('');
-	let tags = $state('');
+	let tags = $state<string[]>([]);
 	let level = $state<Level | ''>('');
 	let busy = $state(false);
 	let error = $state('');
@@ -28,12 +21,10 @@
 	function accept(f: File | null) {
 		error = '';
 		if (!f) return;
-		if (!EXT[f.type]) {
-			error = 'Επιτρέπονται μόνο png, jpeg, webp, gif ή avif.';
-			return;
-		}
-		if (f.size > MAX_BYTES) {
-			error = 'Η εικόνα είναι μεγαλύτερη από 10MB.';
+		try {
+			checkImage(f);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Μη υποστηριζόμενη εικόνα.';
 			return;
 		}
 		file = f;
@@ -79,42 +70,23 @@
 	async function save(e: SubmitEvent) {
 		e.preventDefault();
 		if (!file || busy) return;
-		const f = file;
-		const ext = EXT[f.type];
-		if (!ext) { error = 'Μη υποστηριζόμενος τύπος εικόνας.'; return; }
 		if (!data.user) { error = 'Δεν βρέθηκε χρήστης. Συνδέσου ξανά.'; return; }
 
 		busy = true;
 		error = '';
-
-		const path = `${data.user.id}/${crypto.randomUUID()}.${ext}`;
-		const up = await data.supabase.storage.from(BUCKET).upload(path, f, { contentType: f.type });
-		if (up.error) {
-			busy = false;
-			error = `Αποτυχία ανεβάσματος: ${up.error.message}`;
-			return;
-		}
-
-		const { data: row, error: insErr } = await data.supabase
-			.from('inspirations')
-			.insert({
-				image_path: path,
+		try {
+			const { id } = await createInspiration(data.supabase, data.user.id, file, {
 				project_id: projectId || null,
-				note: note.trim(),
-				tags: normTags(tags),
+				note,
+				tags,
 				level: level || null
-			})
-			.select('id')
-			.single();
-
-		if (insErr || !row) {
-			await data.supabase.storage.from(BUCKET).remove([path]);
+			});
+			await goto(`/i/${id}`);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Αποτυχία αποθήκευσης.';
+		} finally {
 			busy = false;
-			error = `Αποτυχία αποθήκευσης: ${insErr?.message ?? 'άγνωστο σφάλμα'}`;
-			return;
 		}
-
-		await goto(`/i/${row.id}`);
 	}
 </script>
 
@@ -178,10 +150,10 @@
 				<textarea bind:value={note} rows="4" placeholder="Τι σου αρέσει εδώ; Φως, υλικό, αναλογίες…"></textarea>
 			</label>
 
-			<label class="wide">
-				<span>Tags <em>(χωρισμένα με κόμμα, έως 30)</em></span>
-				<input bind:value={tags} placeholder="ξύλο, πέργκολα, ζεστό φως" />
-			</label>
+			<div class="wide field">
+				<label for="tags">Tags <em>(έως 30)</em></label>
+				<TagInput id="tags" bind:tags suggestions={data.tags} placeholder="ξύλο, πέργκολα, ζεστό φως" />
+			</div>
 		</div>
 
 		{#if error}<p class="err">{error}</p>{/if}
@@ -233,6 +205,7 @@
 	.fields { display: grid; gap: 12px; }
 	@media (min-width: 560px) { .fields { grid-template-columns: 1fr 1fr; } }
 	label { display: grid; gap: 4px; font-size: 0.82rem; color: var(--muted); min-width: 0; }
+	.field { display: grid; gap: 4px; font-size: 0.82rem; color: var(--muted); min-width: 0; }
 	label :is(input, select, textarea) { width: 100%; color: var(--text); }
 	.wide { grid-column: 1 / -1; }
 	em { font-style: normal; opacity: 0.7; }

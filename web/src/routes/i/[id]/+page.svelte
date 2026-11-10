@@ -2,6 +2,7 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { BUCKET, LEVELS, type Level, type Region } from '#lib/types.js';
 	import { LEVEL_LABELS, normTags } from '#lib/tags.js';
+	import TagInput from '#lib/components/TagInput.svelte';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 
@@ -11,7 +12,7 @@
 	const item = untrack(() => data.inspiration);
 
 	let note = $state(item.note);
-	let tags = $state(item.tags.join(', '));
+	let tags = $state<string[]>(item.tags);
 	let level = $state<Level | ''>(item.level ?? '');
 	let projectId = $state(item.project_id ?? '');
 	let regions = $state<Region[]>(item.regions.map((r) => ({ ...r })));
@@ -86,11 +87,12 @@
 		busy = 'save';
 		message = '';
 		error = '';
+		const clean = normTags(tags.join(', '));
 		const { error: e } = await data.supabase
 			.from('inspirations')
 			.update({
 				note: note.trim(),
-				tags: normTags(tags),
+				tags: clean,
 				level: level || null,
 				project_id: projectId || null,
 				regions
@@ -101,7 +103,7 @@
 			error = `Αποτυχία αποθήκευσης: ${e.message}`;
 			return;
 		}
-		tags = normTags(tags).join(', ');
+		tags = clean;
 		message = 'Αποθηκεύτηκε.';
 		await invalidate('moodboard:data');
 	}
@@ -192,10 +194,10 @@
 			<textarea bind:value={note} rows="6" placeholder="Τι σου αρέσει εδώ;"></textarea>
 		</label>
 
-		<label>
-			<span>Tags <em>(χωρισμένα με κόμμα, έως 30)</em></span>
-			<input bind:value={tags} placeholder="ξύλο, πέργκολα" />
-		</label>
+		<div class="field">
+			<label for="item-tags">Tags <em>(έως 30)</em></label>
+			<TagInput id="item-tags" bind:tags suggestions={data.tags} placeholder="ξύλο, πέργκολα" />
+		</div>
 
 		<div class="row">
 			<label>
@@ -320,7 +322,7 @@
 
 	aside { display: grid; gap: 12px; min-width: 0; }
 	label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); min-width: 0; }
-	label :is(input, select, textarea) { width: 100%; color: var(--text); }
+	label :is(select, textarea) { width: 100%; color: var(--text); }
 	.field { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); min-width: 0; }
 	.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 	em { font-style: normal; opacity: 0.7; }
