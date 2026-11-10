@@ -5,6 +5,7 @@ import { LEVELS } from '#lib/types.js';
 import { addNote, getInspiration, listProjects, saveInspiration, searchInspirations } from './tools';
 
 const json = (v: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(v, null, 2) }] });
+const httpUrl = z.string().url().refine((u) => /^https?:\/\//i.test(u), 'must be an http(s) URL');
 const level = z.enum(LEVELS).describe('Scale of the inspiration: urban, building, interior, detail or material');
 
 /** One MCP server per request, bound to the caller's own Supabase client (RLS = authorization). */
@@ -67,7 +68,7 @@ export function buildMcpServer(sb: SupabaseClient, userId: string) {
 				note: z.string().max(5000).optional(),
 				tags: z.array(z.string().max(40)).max(30).optional(),
 				level: level.optional(),
-				source_url: z.string().url().optional(),
+				source_url: httpUrl.optional(),
 				source_title: z.string().max(300).optional()
 			},
 			annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }

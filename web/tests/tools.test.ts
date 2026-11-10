@@ -124,3 +124,17 @@ describe('MCP wiring', () => {
 		expect((got.content as { type: string }[]).map((c) => c.type)).toEqual(['text', 'image']);
 	});
 });
+
+describe('MCP input validation', () => {
+	it('rejects javascript: source_url', async () => {
+		const [ct, st] = InMemoryTransport.createLinkedPair();
+		await buildMcpServer(A.sb, A.id).connect(st);
+		const client = new Client({ name: 'test', version: '0' });
+		await client.connect(ct);
+		const res = await client.callTool({
+			name: 'save_inspiration',
+			arguments: { image_url: 'https://example.com/a.png', source_url: 'javascript:alert(1)' }
+		});
+		expect(res.isError).toBe(true);
+	});
+});
