@@ -151,18 +151,11 @@ export async function insertInspiration(
 }
 
 export async function addNote(sb: SupabaseClient, id: string, text: string) {
-	const cur = await sb.from('inspirations').select('note').eq('id', id).maybeSingle();
-	if (cur.error) fail('get failed', cur.error);
-	if (!cur.data) fail(`inspiration not found: ${id}`);
-	const note = cur.data.note ? `${cur.data.note}\n\n${text.trim()}` : text.trim();
-	const { data, error } = await sb
-		.from('inspirations')
-		.update({ note })
-		.eq('id', id)
-		.select('id, note')
-		.single();
+	// Atomic append in Postgres (see migration append_note); RLS limits it to the caller's rows.
+	const { data, error } = await sb.rpc('append_note', { p_id: id, p_text: text.trim() });
 	if (error) fail('update failed', error);
-	return data;
+	if (!data?.length) fail(`inspiration not found: ${id}`);
+	return data[0] as { id: string; note: string };
 }
 
 export function normTags(tags?: string[]) {
@@ -170,6 +163,23 @@ export function normTags(tags?: string[]) {
 }
 
 // ---- SSRF guard for server-side image fetch ----
+
+/** Expand an IPv6 address to 8 numbers (handles '::' and a dotted IPv4 tail). */
+function ipv6Groups(ip: string): number[] | null {
+	let s = ip.toLowerCase().split('%')[0];
+	const dotted = s.match(/(\d+\.\d+\.\d+\.\d+)$/);
+	if (dotted) {
+		const [a, b, c, d] = dotted[1].split('.').map(Number);
+		s = s.slice(0, -dotted[1].length) + `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+	}
+	const [head, tail] = s.split('::');
+	const h = head ? head.split(':') : [];
+	const t = tail !== undefined && tail !== '' ? tail.split(':') : [];
+	const fill = s.includes('::') ? 8 - h.length - t.length : 0;
+	const parts = [...h, ...Array(fill).fill('0'), ...t];
+	if (parts.length !== 8) return null;
+	return parts.map((p) => parseInt(p, 16));
+}
 
 export function isPrivateAddress(ip: string): boolean {
 	if (isIP(ip) === 4) {
@@ -182,9 +192,39 @@ export function isPrivateAddress(ip: string): boolean {
 			(a === 192 && b === 168)
 		);
 	}
-	const v6 = ip.toLowerCase();
-	if (v6.startsWith('::ffff:')) return isPrivateAddress(v6.slice(7));
-	return v6 === '::' || v6 === '::1' || /^f[cd]/.test(v6) || /^fe[89ab]/.test(v6);
+	const g = ipv6Groups(ip);
+	if (!g || g.some((n) => Number.isNaN(n))) return true; // unparseable: refuse
+	const v4 = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+	const zeroPrefix = g.slice(0, 5).every((n) => n === 0);
+	if (zeroPrefix && g[5] === 0xffff) return isPrivateAddress(v4(g[6], g[7])); // ::ffff:a.b.c.d
+	if (g[0] === 0x64 && g[1] === 0xff9b) return isPrivateAddress(v4(g[6], g[7])); // NAT64
+	if (zeroPrefix && g[5] === 0) return true; // ::, ::1, IPv4-compatible
+	return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xff00) === 0xff00;
+}
+
+/** Read a response body, aborting as soon as it passes `max` bytes. */
+export async function readCapped(res: Response, max: number): Promise<Uint8Array> {
+	if (!res.body) return new Uint8Array();
+	const reader = res.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > max) {
+			await reader.cancel();
+			fail('image too large');
+		}
+		chunks.push(value);
+	}
+	const out = new Uint8Array(total);
+	let off = 0;
+	for (const c of chunks) {
+		out.set(c, off);
+		off += c.byteLength;
+	}
+	return out;
 }
 
 /** Fetch a public https image. Rejects private/loopback hosts, redirects, non-images and big files.
@@ -205,7 +245,5 @@ export async function safeFetchImage(raw: string) {
 	const type = (res.headers.get('content-type') ?? '').split(';')[0].trim();
 	if (!EXT[type]) fail(`unsupported image type: ${type || 'unknown'}`);
 	if (Number(res.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) fail('image too large');
-	const bytes = new Uint8Array(await res.arrayBuffer());
-	if (bytes.byteLength > MAX_IMAGE_BYTES) fail('image too large');
-	return { bytes, type };
+	return { bytes: await readCapped(res, MAX_IMAGE_BYTES), type };
 }

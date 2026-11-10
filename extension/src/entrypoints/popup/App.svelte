@@ -187,6 +187,7 @@
 		level = '';
 		projectId = '';
 		errorMessage = '';
+		savedId = '';
 		creatingProject = false;
 		newProjectName = '';
 	}

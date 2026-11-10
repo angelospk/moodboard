@@ -138,3 +138,27 @@ describe('MCP input validation', () => {
 		expect(res.isError).toBe(true);
 	});
 });
+
+describe('review fixes', () => {
+	it('flags IPv4-mapped IPv6 in hex form (URL-normalized)', async () => {
+		expect(new URL('https://[::ffff:127.0.0.1]/').hostname).toBe('[::ffff:7f00:1]');
+		for (const ip of ['::ffff:7f00:1', '::ffff:a00:1', '::ffff:a9fe:a9fe', '0:0:0:0:0:ffff:7f00:1']) expect(isPrivateAddress(ip), ip).toBe(true);
+		expect(isPrivateAddress('::ffff:808:808')).toBe(false);
+		await expect(safeFetchImage('https://[::ffff:127.0.0.1]/a.png')).rejects.toThrow(/not public/);
+	});
+
+	it('concurrent add_note keeps every append', async () => {
+		const r = await saveInspiration(A.sb, A.id, { image_url: 'https://x/n.png', note: 'start' }, fakeFetch);
+		await Promise.all(Array.from({ length: 8 }, (_, i) => addNote(A.sb, r.id, `n${i}`)));
+		const { inspiration } = await getInspiration(A.sb, r.id);
+		for (let i = 0; i < 8; i++) expect(inspiration.note).toContain(`n${i}`);
+	});
+
+	it('stops reading an image body over the size cap', async () => {
+		const { readCapped } = await import('../src/lib/server/tools');
+		const big = new Response(new ReadableStream({
+			pull(c) { c.enqueue(new Uint8Array(1024 * 1024)); }
+		}));
+		await expect(readCapped(big, 3 * 1024 * 1024)).rejects.toThrow(/too large/);
+	});
+});

@@ -20,9 +20,11 @@ export async function setPending(capture: PendingCapture): Promise<void> {
 	}
 	try {
 		await browser.storage.session.set({ [KEY]: record });
+		await browser.storage.local.remove(KEY);
 	} catch {
 		// Session quota is 10MB; large screenshots fall back to local storage.
 		await browser.storage.local.set({ [KEY]: record });
+		await browser.storage.session.remove(KEY);
 	}
 }
 
