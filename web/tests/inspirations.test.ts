@@ -1,7 +1,7 @@
 // Client-side data helpers, against local Supabase (real RLS + storage).
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { copyInspiration, createInspiration, userTags } from '../src/lib/inspirations';
+import { copyInspiration, createInspiration, loadPositions, savePositions, userTags } from '../src/lib/inspirations';
 
 const URL_ = 'http://127.0.0.1:54421';
 const KEY = 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
@@ -85,5 +85,22 @@ describe('userTags', () => {
 		await createInspiration(C.sb, C.id, png(), { tags: ['x', 'y'] });
 		await createInspiration(C.sb, C.id, png(), { tags: ['y'] });
 		expect(await userTags(C.sb)).toEqual(['y', 'x']);
+	});
+});
+
+describe('map positions', () => {
+	it('saves, updates and loads per scope, isolated per user', async () => {
+		await savePositions(A.sb, p1, [{ key: 'i:x', x: 10, y: 20 }, { key: 't:ξύλο', x: -5.5, y: 3 }]);
+		await savePositions(A.sb, p1, [{ key: 'i:x', x: 11, y: 21 }]);
+		await savePositions(A.sb, 'all', [{ key: 'i:x', x: 99, y: 99 }]);
+		expect(await loadPositions(A.sb, p1)).toEqual({ 'i:x': { x: 11, y: 21 }, 't:ξύλο': { x: -5.5, y: 3 } });
+		expect(await loadPositions(A.sb, 'all')).toEqual({ 'i:x': { x: 99, y: 99 } });
+		expect(await loadPositions(B.sb, p1)).toEqual({});
+	});
+
+	it('skips non-finite coordinates and empty input', async () => {
+		await savePositions(A.sb, 'none', []);
+		await savePositions(A.sb, 'none', [{ key: 'i:bad', x: NaN, y: 1 }, { key: 'i:ok', x: 1, y: Infinity }, { key: 'i:good', x: 1, y: 2 }]);
+		expect(await loadPositions(A.sb, 'none')).toEqual({ 'i:good': { x: 1, y: 2 } });
 	});
 });

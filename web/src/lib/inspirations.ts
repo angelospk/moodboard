@@ -94,3 +94,39 @@ export async function userTags(sb: SupabaseClient): Promise<string[]> {
 	if (error) throw new Error(error.message);
 	return (data as { tag: string }[]).map((r) => r.tag);
 }
+
+export interface NodePosition {
+	/** 'i:<inspiration id>', 't:<tag>' or 'p:<project id>'. */
+	key: string;
+	x: number;
+	y: number;
+}
+
+/** Store where the user placed nodes on one map. scope = project id, 'all' or 'none'. */
+export async function savePositions(sb: SupabaseClient, scope: string, positions: NodePosition[]) {
+	const rows = positions
+		.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+		.map((p) => ({ scope, node_key: p.key, x: p.x, y: p.y, updated_at: new Date().toISOString() }));
+	if (!rows.length) return;
+	const { error } = await sb.from('map_positions').upsert(rows, { onConflict: 'user_id,scope,node_key' });
+	if (error) throw new Error(error.message);
+}
+
+/** Saved node positions of one map, by node key. */
+export async function loadPositions(
+	sb: SupabaseClient,
+	scope: string
+): Promise<Record<string, { x: number; y: number }>> {
+	const out: Record<string, { x: number; y: number }> = {};
+	for (let from = 0; ; from += 1000) {
+		const { data, error } = await sb
+			.from('map_positions')
+			.select('node_key, x, y')
+			.eq('scope', scope)
+			.order('node_key')
+			.range(from, from + 999);
+		if (error) throw new Error(error.message);
+		for (const r of data) out[r.node_key] = { x: r.x, y: r.y };
+		if (data.length < 1000) return out;
+	}
+}
