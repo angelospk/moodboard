@@ -3,7 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import type { Handle } from '@sveltejs/kit/hooks';
 import { PUBLIC_SUPABASE_KEY, PUBLIC_SUPABASE_URL } from '$app/env/public';
 
-const PUBLIC_PATHS = ['/login', '/mcp'];
+const PUBLIC_PATHS = ['/login', '/mcp', '/.well-known'];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_KEY, {
@@ -29,10 +29,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
 	if (!PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`))) {
 		const { user } = await event.locals.safeGetSession();
-		if (!user) redirect(303, `/login?next=${encodeURIComponent(path)}`);
+		if (!user) redirect(303, `/login?next=${encodeURIComponent(path + event.url.search)}`);
 	}
 
-	return resolve(event, {
+	const response = await resolve(event, {
 		filterSerializedResponseHeaders: (name) => name === 'content-range' || name === 'x-supabase-api-version'
 	});
+	// No framing anywhere: protects the OAuth consent page from clickjacking.
+	if (!response.headers.has('x-frame-options')) response.headers.set('x-frame-options', 'DENY');
+	return response;
 };

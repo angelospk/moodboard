@@ -2,11 +2,16 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import type { RequestHandler } from './$types';
 import { buildMcpServer } from '#lib/server/mcp.js';
 import { clientForToken } from '#lib/server/supabase.js';
+import { APP_URL } from '$app/env/private';
 
 const unauthorized = () =>
 	new Response(JSON.stringify({ error: 'unauthorized' }), {
 		status: 401,
-		headers: { 'content-type': 'application/json', 'www-authenticate': 'Bearer' }
+		headers: {
+			'content-type': 'application/json',
+			// RFC 9728: tells MCP clients where to start OAuth discovery.
+			'www-authenticate': `Bearer resource_metadata="${APP_URL}/.well-known/oauth-protected-resource/mcp"`
+		}
 	});
 
 const handle: RequestHandler = async ({ request }) => {
