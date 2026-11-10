@@ -8,6 +8,8 @@ export interface Region {
 	w: number;
 	h: number;
 	note: string;
+	/** 1 = not this, 5 = exactly this; null/absent = not rated. */
+	rating?: number | null;
 }
 
 export interface Project {

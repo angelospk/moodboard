@@ -25,6 +25,15 @@
 	// Title follows the project picker so a newly chosen project shows at once.
 	const projectName = $derived(data.projects.find((p) => p.id === projectId)?.name ?? '');
 
+	/** Words under the rating squares, indexed by rating (0 = not rated). */
+	const RATING_WORDS: Record<number, string> = {
+		1: 'όχι αυτό',
+		2: 'μάλλον όχι',
+		3: 'εντάξει',
+		4: 'μου αρέσει',
+		5: 'ακριβώς αυτό'
+	};
+
 	let stage = $state<HTMLDivElement | null>(null);
 	let origin = { x: 0, y: 0 };
 
@@ -75,6 +84,13 @@
 
 	function removeRegion(index: number) {
 		regions = regions.filter((_, i) => i !== index);
+		message = '';
+	}
+
+	/** Clicking the current rating again clears it. */
+	function setRating(index: number, n: number) {
+		const current = regions[index]?.rating ?? null;
+		regions = regions.map((r, i) => (i === index ? { ...r, rating: current === n ? null : n } : r));
 		message = '';
 	}
 
@@ -227,22 +243,38 @@
 
 		<section class="regions">
 			<h2>Σημειωμένες λεπτομέρειες ({regions.length})</h2>
+			{#if regions.length > 0}
+				<p class="legend">1 = όχι αυτό · 5 = ακριβώς αυτό</p>
+			{/if}
 			{#if regions.length === 0}
 				<p class="muted">Καμία ακόμα. Σύρε πάνω στην εικόνα.</p>
 			{/if}
 			{#each regions as r, i (i)}
 				<div class="region">
-					<div class="region-head">
-						<span class="num-chip">{i + 1}</span>
-						<button class="link" type="button" onclick={() => removeRegion(i)} aria-label={`Διαγραφή περιοχής ${i + 1}`}>
-							Διαγραφή
-						</button>
-					</div>
-					<textarea
-						rows="2"
+					<span class="num-chip">{i + 1}</span>
+					<input
+						class="region-note"
+						type="text"
 						placeholder="Τι σου αρέσει σε αυτό το σημείο;"
+						aria-label={`Σημείωση περιοχής ${i + 1}`}
 						bind:value={r.note}
-					></textarea>
+					/>
+					<button class="link del" type="button" onclick={() => removeRegion(i)} aria-label={`Διαγραφή περιοχής ${i + 1}`}>
+						Διαγραφή
+					</button>
+					<div class="rate" role="group" aria-label={`Βαθμός περιοχής ${i + 1}`}>
+						{#each [1, 2, 3, 4, 5] as n (n)}
+							<button
+								type="button"
+								class="sq"
+								class:on={n <= (r.rating ?? 0)}
+								aria-pressed={n === (r.rating ?? null)}
+								aria-label={`Βαθμός ${n} από 5`}
+								onclick={() => setRating(i, n)}
+							></button>
+						{/each}
+						<span class="rate-label">{RATING_WORDS[r.rating ?? 0] ?? 'χωρίς βαθμό'}</span>
+					</div>
 				</div>
 			{/each}
 		</section>
@@ -330,12 +362,28 @@
 
 	.regions { display: grid; gap: 8px; }
 	.regions h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 8px 0 0; }
+	.legend { color: var(--muted); font-size: 0.75rem; margin: 0; }
 	.muted { color: var(--muted); font-size: 0.82rem; margin: 0; }
-	.region { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; background: var(--surface); display: grid; gap: 6px; }
-	.region-head { display: flex; align-items: center; justify-content: space-between; }
-	.num-chip { background: var(--accent); color: #fff; border-radius: 999px; font-size: 0.7rem; padding: 0 0.4rem; min-width: 1.3rem; text-align: center; }
+	.region {
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		padding: 8px;
+		background: var(--surface);
+		display: grid;
+		grid-template-columns: 1.3rem minmax(0, 1fr) auto;
+		gap: 6px 8px;
+		align-items: center;
+		min-width: 0;
+	}
+	.num-chip { background: var(--accent); color: var(--on-accent); border-radius: 3px; font-size: 0.7rem; padding: 0 0.35rem; min-width: 1.3rem; text-align: center; font-variant-numeric: tabular-nums; }
+	.region-note { min-width: 0; width: 100%; font-size: 0.85rem; }
 	.link { border: none; background: none; padding: 0; color: var(--muted); font-size: 0.78rem; text-decoration: underline; }
 	.link:hover { color: #c0392b; }
-	.region textarea { width: 100%; }
+	.del { justify-self: end; }
+	.rate { grid-column: 2 / 4; display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-left: -3px; }
+	.rate .sq { width: 11px; height: 11px; flex: none; padding: 0; border: 1px solid var(--line-strong); background: none; border-radius: 2px; }
+	.rate .sq:hover { border-color: var(--accent); }
+	.rate .sq.on { background: var(--accent); border-color: var(--accent); }
+	.rate-label { color: var(--muted); font-size: 0.72rem; margin-left: 7px; }
 	.full { width: 100%; }
 </style>
