@@ -1,7 +1,7 @@
 // Client-side data helpers, against local Supabase (real RLS + storage).
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { copyInspiration, createInspiration, loadPositions, savePositions, userTags } from '../src/lib/inspirations';
+import { copyInspiration, createInspiration, deleteInspiration, loadPositions, savePositions, updateInspiration, userTags } from '../src/lib/inspirations';
 
 const URL_ = 'http://127.0.0.1:54421';
 const KEY = 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
@@ -102,5 +102,32 @@ describe('map positions', () => {
 		await savePositions(A.sb, 'none', []);
 		await savePositions(A.sb, 'none', [{ key: 'i:bad', x: NaN, y: 1 }, { key: 'i:ok', x: 1, y: Infinity }, { key: 'i:good', x: 1, y: 2 }]);
 		expect(await loadPositions(A.sb, 'none')).toEqual({ 'i:good': { x: 1, y: 2 } });
+	});
+});
+
+describe('update and delete', () => {
+	it('updates editable fields with clean tags and returns the row', async () => {
+		const { id } = await createInspiration(A.sb, A.id, png(), { note: 'a' });
+		const row = await updateInspiration(A.sb, id, {
+			note: ' b ', tags: ['Ξύλο', 'ξύλο'], level: 'detail', regions: [{ x: 0, y: 0, w: 0.5, h: 0.5, note: '', rating: 4 }]
+		});
+		expect(row).toMatchObject({ id, note: 'b', tags: ['ξύλο'], level: 'detail' });
+		expect(row.regions[0].rating).toBe(4);
+	});
+
+	it('another user cannot update or delete', async () => {
+		const { id } = await createInspiration(A.sb, A.id, png(), { note: 'mine' });
+		await expect(updateInspiration(B.sb, id, { note: 'x' })).rejects.toThrow();
+		await expect(deleteInspiration(B.sb, id)).rejects.toThrow();
+		expect((await A.sb.from('inspirations').select('note').eq('id', id).single()).data!.note).toBe('mine');
+	});
+
+	it('deletes the row and its image file', async () => {
+		const { id } = await createInspiration(A.sb, A.id, png(), {});
+		const path = (await A.sb.from('inspirations').select('image_path').eq('id', id).single()).data!.image_path;
+		await deleteInspiration(A.sb, id);
+		expect((await A.sb.from('inspirations').select('id').eq('id', id)).data).toEqual([]);
+		const name = path.split('/')[1];
+		expect((await A.sb.storage.from('inspirations').list(A.id, { search: name })).data).toEqual([]);
 	});
 });

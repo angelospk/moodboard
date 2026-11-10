@@ -130,3 +130,25 @@ export async function loadPositions(
 		if (data.length < 1000) return out;
 	}
 }
+
+export type EditableFields = Partial<Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id'>>;
+
+/** Save edits to one inspiration and return the updated row. Throws when it is not the caller's. */
+export async function updateInspiration(sb: SupabaseClient, id: string, fields: EditableFields): Promise<Inspiration> {
+	const patch: EditableFields = { ...fields };
+	if (patch.note !== undefined) patch.note = patch.note.trim();
+	if (patch.tags !== undefined) patch.tags = cleanTags(patch.tags);
+	const { data, error } = await sb.from('inspirations').update(patch).eq('id', id).select('*');
+	if (error) throw new Error(`Αποτυχία αποθήκευσης: ${error.message}`);
+	if (!data?.length) throw new Error('Η εικόνα δεν βρέθηκε.');
+	return data[0] as Inspiration;
+}
+
+/** Delete the row, then its image file. Throws when it is not the caller's. */
+export async function deleteInspiration(sb: SupabaseClient, id: string): Promise<void> {
+	const { data, error } = await sb.from('inspirations').delete().eq('id', id).select('image_path');
+	if (error) throw new Error(`Αποτυχία διαγραφής: ${error.message}`);
+	if (!data?.length) throw new Error('Η εικόνα δεν βρέθηκε.');
+	// The row is gone; a leftover file is only wasted space, so a storage error is not fatal.
+	await sb.storage.from(BUCKET).remove([data[0].image_path]);
+}

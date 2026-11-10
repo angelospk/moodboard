@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moodboard — ιδανική εκδοχή (mockups)</title>
+<style>
+/* ---------- tokens ---------- */
+:root{
+  --bg:#f4f1eb; --surface:#fbfaf7; --raised:#ffffff; --sunk:#ebe7df;
+  --text:#1e1c19; --muted:#6d675e; --faint:#9a9388; --line:#e0dacf; --line-strong:#c9c1b2;
+  --accent:#b4532a; --accent-soft:#f3e2d8; --on-accent:#ffffff;
+  --wood:#a9825a; --concrete:#8d8a84; --ok:#4f7a54;
+  --shadow:0 1px 2px rgba(40,30,20,.06),0 10px 28px rgba(40,30,20,.10);
+  --scrim:rgba(30,28,25,.42);
+  --r-img:4px; --r:8px; --r-l:14px;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme=light]){
+    --bg:#161513; --surface:#1d1c19; --raised:#262420; --sunk:#0f0e0d;
+    --text:#ece8e1; --muted:#a39d92; --faint:#716b62; --line:#33302b; --line-strong:#4c473f;
+    --accent:#e07a4c; --accent-soft:#3a251b; --on-accent:#1b120d;
+    --wood:#c39a6f; --concrete:#8f8c86; --ok:#86b08b;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6);
+  }
+}
+:root[data-theme=dark]{
+  --bg:#161513; --surface:#1d1c19; --raised:#262420; --sunk:#0f0e0d;
+  --text:#ece8e1; --muted:#a39d92; --faint:#716b62; --line:#33302b; --line-strong:#4c473f;
+  --accent:#e07a4c; --accent-soft:#3a251b; --on-accent:#1b120d;
+  --wood:#c39a6f; --concrete:#8f8c86; --ok:#86b08b;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+html{font-family:var(--sans);color:var(--text);background:var(--sunk);font-size:14px;line-height:1.45}
+body{margin:0;background:var(--sunk)}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:inherit}
+h1,h2,h3,p{margin:0}
+
+/* ---------- mockup chrome (not product UI) ---------- */
+.mock-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto}
+.mock-bar strong{font-family:var(--serif);font-size:16px;white-space:nowrap;margin-right:8px}
+.mock-tabs{display:flex;gap:4px;flex:1}
+.mock-tabs button{white-space:nowrap;border:1px solid transparent;background:none;border-radius:999px;padding:6px 12px;color:var(--muted);font-size:13px}
+.mock-tabs button:hover{background:var(--sunk)}
+.mock-tabs button.on{background:var(--text);color:var(--bg)}
+.mock-tabs button.later{border:1px dashed var(--line-strong)}
+.mock-tabs button.later.on{border-style:solid}
+.mock-tabs small{opacity:.7;margin-right:4px}
+#theme{border:1px solid var(--line);background:var(--raised);border-radius:999px;padding:6px 12px;white-space:nowrap;font-size:13px}
+.screen{display:none;padding:24px 16px 56px}
+.screen.on{display:block}
+.cap{max-width:1440px;margin:0 auto 12px;color:var(--muted);font-size:13px}
+.cap b{color:var(--text);font-weight:600}
+.stage{width:1440px;margin:0 auto}
+.frame{width:1440px;height:900px;background:var(--bg);border:1px solid var(--line-strong);border-radius:12px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.mobiles{display:flex;gap:32px;justify-content:center;flex-wrap:wrap;margin-top:32px}
+.mobiles figure{margin:0}
+.mobiles figcaption{color:var(--muted);font-size:13px;margin-top:8px;text-align:center}
+.phone{width:390px;height:780px;background:var(--bg);border:1px solid var(--line-strong);border-radius:28px;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.later-banner{display:flex;align-items:center;gap:10px;padding:8px 24px;background:var(--accent-soft);color:var(--text);font-size:13px;border-bottom:1px solid var(--line)}
+.later-banner b{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);border:1px dashed var(--accent);border-radius:999px;padding:2px 8px}
+
+/* ---------- primitives ---------- */
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-strong);background:var(--raised);border-radius:var(--r);padding:7px 12px;font-size:13px;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+.btn.ghost:hover{background:var(--sunk);color:var(--text)}
+.btn.block{width:100%;justify-content:center;padding:10px 12px}
+.btn.danger{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.kbd{font:11px/1 ui-monospace,Menlo,monospace;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:5px;padding:3px 5px;background:var(--raised);color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line-strong);background:var(--raised);border-radius:999px;padding:4px 10px;font-size:12.5px;line-height:1.3;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+button.chip:hover{border-color:var(--muted)}
+.chip.on{background:var(--text);border-color:var(--text);color:var(--bg)}
+.chip.soft{background:none;border-style:dashed;color:var(--muted)}
+.chip .x{opacity:.6;font-size:13px}
+.lbl{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:6px;display:block}
+.field{display:block;margin-bottom:14px}
+.input,.textarea,.select{width:100%;border:1px solid var(--line-strong);background:var(--raised);border-radius:var(--r);padding:8px 10px;font-size:14px}
+.textarea{resize:none;display:block}
+.input:focus,.textarea:focus,.input.focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r);overflow:hidden;background:var(--raised)}
+.seg button{border:0;background:none;padding:6px 12px;font-size:13px;color:var(--muted)}
+.seg button.on{background:var(--text);color:var(--bg)}
+.ph{background-color:var(--line);background-size:cover;background-position:center;border-radius:var(--r-img);position:relative;display:block}
+.ph.fill{width:100%;height:100%}
+.rate{display:inline-flex;gap:3px;vertical-align:middle}
+.rate button{width:11px;height:11px;padding:0;border:1px solid var(--line-strong);background:none;border-radius:2px}
+.rate button:hover{border-color:var(--accent)}
+.rate[data-v="1"] button:nth-child(-n+1),.rate[data-v="2"] button:nth-child(-n+2),.rate[data-v="3"] button:nth-child(-n+3),.rate[data-v="4"] button:nth-child(-n+4),.rate[data-v="5"] button:nth-child(-n+5){background:var(--accent);border-color:var(--accent)}
+.muted{color:var(--muted)} .small{font-size:12.5px} .serif{font-family:var(--serif)}
+
+/* ---------- app bar ---------- */
+.appbar{height:56px;flex:none;display:flex;align-items:center;gap:16px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--line)}
+.logo{font-family:var(--serif);font-size:18px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.logo i{width:14px;height:14px;background:var(--accent);border-radius:2px;display:block}
+.crumb{color:var(--muted);display:flex;align-items:center;gap:8px}
+.crumb b{color:var(--text);font-family:var(--serif);font-size:16px;font-weight:600}
+.grow{flex:1}
+.ctl{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+input[type=range]{accent-color:var(--accent);width:120px}
+input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px}
+.search{display:flex;align-items:center;gap:8px;border:1px solid var(--line-strong);background:var(--raised);border-radius:999px;padding:7px 14px;color:var(--muted);width:420px}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--wood);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:600}
+
+/* ---------- 1. home ---------- */
+.home{padding:36px 56px;flex:1;overflow:hidden}
+.home h1{font-family:var(--serif);font-size:28px;font-weight:600;letter-spacing:-.01em}
+.home-head{display:flex;align-items:baseline;gap:14px;margin-bottom:24px}
+.pgrid{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:312px;gap:24px}
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);overflow:hidden;display:flex;flex-direction:column;text-decoration:none}
+.pcard:hover{border-color:var(--line-strong);box-shadow:var(--shadow)}
+.pcard.big{grid-column:span 2;grid-row:span 2}
+.pcard.big .pmeta{flex:none}
+.collage{display:grid;grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr;gap:3px;height:180px;flex:none}
+.collage .ph{border-radius:0}
+.collage .ph:first-child{grid-row:span 2}
+.pmeta{padding:14px 16px;display:flex;flex-direction:column;gap:8px;flex:1}
+.pmeta h3{font-family:var(--serif);font-size:18px;font-weight:600}
+.pmeta .row{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12.5px}
+.minimap{flex:1;position:relative;overflow:hidden;background:var(--bg);border-bottom:1px solid var(--line)}
+.minimap .canvas{zoom:.56;position:absolute;left:28px;top:18px;pointer-events:none}
+.resume{position:absolute;left:16px;top:14px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);font-weight:700;background:var(--surface);padding:4px 10px;border-radius:999px;border:1px solid var(--line)}
+.pcard.new{border-style:dashed;background:none;align-items:center;justify-content:center;color:var(--muted);gap:6px}
+.pcard.new b{font-size:28px;font-weight:300;line-height:1}
+.pcard.inbox .stack{height:180px;flex:none;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--sunk);padding:20px}
+.pcard.inbox .stack .ph{height:110px}
+
+/* ---------- 2. map ---------- */
+.mapwrap{flex:1;display:flex;min-height:0}
+.canvas-area{flex:1;position:relative;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(var(--line) 1px,transparent 1.2px);background-size:24px 24px}
+.canvas{position:relative;--s:1}
+.links{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.links line{stroke:var(--line-strong);stroke-width:1}
+.links .l-p{stroke-width:1.5;stroke:var(--concrete);opacity:.55}
+.links .hot{stroke:var(--accent);stroke-width:1.5}
+.node{position:absolute;width:0;height:0}
+.pnode{position:absolute;transform:translate(-50%,-50%);background:var(--text);color:var(--bg);font-family:var(--serif);font-size:16px;font-weight:600;padding:10px 18px;border-radius:999px;white-space:nowrap;box-shadow:var(--shadow)}
+.tnode{position:absolute;transform:translate(-50%,-50%);z-index:3;display:flex;align-items:center;gap:6px;background:var(--raised);border:1px solid var(--line-strong);border-radius:999px;padding:5px 12px;font-size:13px;white-space:nowrap;cursor:pointer}
+.tnode b{font-weight:500;color:var(--faint);font-size:11.5px}
+.tnode .plus{position:absolute;left:calc(100% - 6px);top:50%;transform:translateY(-50%) scale(.6);opacity:0;width:24px;height:24px;border-radius:50%;border:0;background:var(--accent);color:var(--on-accent);font-size:16px;line-height:1;display:grid;place-items:center;transition:.15s;padding:0}
+.tnode:hover,.tnode.demo{border-color:var(--accent)}
+.tnode:hover .plus,.tnode.demo .plus{opacity:1;transform:translateY(-50%) scale(1);left:calc(100% + 6px)}
+.tnode::after{content:"";position:absolute;left:100%;top:-6px;bottom:-6px;width:36px}
+.tip{position:absolute;left:calc(100% + 38px);top:50%;transform:translateY(-50%);background:var(--text);color:var(--bg);font-style:normal;font-size:12px;padding:4px 8px;border-radius:6px}
+.card{position:absolute;transform:translate(-50%,-50%);width:calc(var(--w)*var(--s)*1px);cursor:pointer;z-index:1;transition:width .12s}
+.card .ph{width:100%;box-shadow:0 1px 2px rgba(40,30,20,.12),0 4px 12px rgba(40,30,20,.08);transition:box-shadow .15s}
+.card:hover .ph{box-shadow:0 0 0 2px var(--line-strong),0 6px 18px rgba(40,30,20,.16)}
+.card.sel{z-index:2}
+.card.sel .ph{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent),0 10px 28px rgba(40,30,20,.2)}
+.nnote{display:none;position:absolute;top:calc(100% + 7px);left:0;right:0;font-size:11.5px;line-height:1.35;color:var(--muted);-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.notes-on .nnote{display:-webkit-box}
+.reg{position:absolute;border:1.5px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:2px;display:none}
+.reg i{position:absolute;left:-1.5px;top:-1.5px;background:var(--accent);color:var(--on-accent);font:600 10px/1 var(--sans);font-style:normal;padding:2px 4px;border-radius:2px 0 2px 0}
+.zoomed .reg,.card.sel .reg,.always .reg{display:block}
+.float{position:absolute;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 6px;box-shadow:var(--shadow);font-size:12.5px;z-index:5}
+.float .chip{border-color:transparent;background:none}
+.float .chip.on{background:var(--text);color:var(--bg)}
+.hint{left:16px;bottom:16px;padding:7px 14px;color:var(--muted);gap:12px}
+.zoomctl{right:16px;bottom:16px}
+.zoomctl button{border:0;background:none;width:26px;height:26px;border-radius:50%}
+.zoomctl button:hover{background:var(--sunk)}
+.panel{width:380px;flex:none;background:var(--surface);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px 0}
+.panel-body{padding:14px 20px 20px;overflow:auto;flex:1}
+.panel-img{background:var(--sunk);border-radius:var(--r);padding:12px;display:flex;justify-content:center;margin-bottom:14px}
+.panel-note{font-size:15px;line-height:1.5;margin:14px 0 18px}
+.rlist{list-style:none;margin:0 0 18px;padding:0;border-top:1px solid var(--line)}
+.rlist li{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.rlist .n{width:20px;height:20px;flex:none;background:var(--accent);color:var(--on-accent);border-radius:3px;display:grid;place-items:center;font-size:11px;font-weight:600}
+.rlist .t{flex:1;min-width:0}
+.panel-foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center}
+
+/* ---------- 3. quick add ---------- */
+.scrim{position:absolute;inset:56px 0 0 0;background:var(--scrim);display:grid;place-items:center;z-index:10}
+.modal{width:680px;background:var(--surface);border-radius:var(--r-l);box-shadow:var(--shadow);overflow:hidden;border:1px solid var(--line)}
+.modal-body{display:grid;grid-template-columns:240px 1fr}
+.modal-prev{background:var(--sunk);padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.modal-form{padding:22px 22px 8px}
+.modal-form h2{font-family:var(--serif);font-size:20px;font-weight:600;margin-bottom:2px}
+.modal-foot{display:flex;align-items:center;gap:14px;padding:12px 22px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+.caret::after{content:"";display:inline-block;width:1.5px;height:1.1em;background:var(--accent);vertical-align:-2px;margin-left:1px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;border-top:1px solid var(--line);box-shadow:0 -10px 30px rgba(0,0,0,.15);padding:10px 16px 16px;z-index:6}
+.sheet::before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:var(--line-strong);margin:0 auto 12px}
+
+/* ---------- 4. editor ---------- */
+.editor{flex:1;display:flex;min-height:0}
+.ed-stage{flex:1;background:var(--sunk);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px}
+.ed-img{width:930px;position:relative;cursor:crosshair;touch-action:none;user-select:none}
+.ed-img .ph{width:100%}
+.ed-img .reg{display:block;border-width:2px}
+.ed-img .reg i{font-size:12px;padding:3px 6px}
+.ed-img .reg.draft{border-style:dashed}
+.ed-side{width:400px;flex:none;background:var(--surface);border-left:1px solid var(--line);display:flex;flex-direction:column}
+.ed-side .panel-body{padding-top:20px}
+.ed-reg{display:grid;grid-template-columns:22px 1fr auto;gap:8px 10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.ed-reg .n{width:22px;height:22px;background:var(--accent);color:var(--on-accent);border-radius:3px;display:grid;place-items:center;font-size:12px;font-weight:600}
+.ed-reg input{border:0;background:none;padding:4px 0;font-size:14px;width:100%;border-bottom:1px solid transparent}
+.ed-reg input:focus{outline:0;border-bottom-color:var(--accent)}
+.ed-reg .sub{grid-column:2/4;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px}
+.ed-reg .del{border:0;background:none;color:var(--faint);font-size:16px;padding:0 4px}
+.ed-reg .del:hover{color:var(--accent)}
+.saved{color:var(--ok);font-size:12.5px;display:flex;align-items:center;gap:6px}
+.saved::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+
+/* ---------- 5. extension ---------- */
+.browser{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--raised)}
+.b-top{height:44px;flex:none;background:var(--sunk);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 14px}
+.b-top .dots{display:flex;gap:6px}.b-top .dots i{width:11px;height:11px;border-radius:50%;background:var(--line-strong)}
+.b-url{flex:1;background:var(--raised);border-radius:999px;padding:6px 14px;color:var(--muted);font-size:12.5px;border:1px solid var(--line)}
+.b-ext{width:26px;height:26px;border-radius:6px;background:var(--accent-soft);display:grid;place-items:center}
+.b-ext i{width:12px;height:12px;background:var(--accent);border-radius:2px}
+.b-page{flex:1;position:relative;padding:40px 90px;overflow:hidden}
+.b-page .bar{height:12px;border-radius:6px;background:var(--sunk);margin-bottom:12px}
+.ctx{position:absolute;background:var(--raised);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);padding:5px;width:290px;font-size:13px;z-index:3}
+.ctx div{padding:6px 10px;border-radius:5px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.ctx div.hi{background:var(--accent);color:var(--on-accent)}
+.ctx hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.popup{position:absolute;width:360px;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;z-index:4}
+.popup-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}
+.popup-body{padding:14px}
+.popup .thumb{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+.popup .field{margin-bottom:12px}
+.tagbox{border:1px solid var(--line-strong);background:var(--raised);border-radius:var(--r);padding:6px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.tagbox span.typing{font-size:13px;color:var(--faint);padding:0 4px}
+.toast{display:flex;align-items:center;gap:12px;padding:14px}
+.toast .okdot{width:28px;height:28px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;flex:none}
+.tagnote{position:absolute;font-size:12px;color:var(--muted);background:var(--surface);border:1px dashed var(--line-strong);border-radius:6px;padding:4px 8px}
+
+/* ---------- 6. AI ---------- */
+.ai{flex:1;display:grid;grid-template-columns:400px 1fr 400px;min-height:0}
+.ai>section{padding:26px 28px;overflow:hidden}
+.ai>section+section{border-left:1px solid var(--line)}
+.ai h2{font-family:var(--serif);font-size:22px;font-weight:600;margin-bottom:4px}
+.taste{list-style:none;margin:20px 0 24px;padding:0}
+.taste li{padding:14px 0;border-top:1px solid var(--line)}
+.taste li strong{font-family:var(--serif);font-size:18px;font-weight:600;display:block;margin-bottom:6px}
+.taste .ev{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+.taste .ev .ph{width:30px;height:30px;flex:none}
+.bars div{display:grid;grid-template-columns:70px 1fr 34px;align-items:center;gap:10px;font-size:12.5px;margin-bottom:7px}
+.bars span{height:8px;border-radius:2px;background:var(--sunk);position:relative;overflow:hidden}
+.bars span i{position:absolute;inset:0 auto 0 0;background:var(--wood);border-radius:2px}
+.swatches{display:flex;gap:0;border-radius:4px;overflow:hidden;height:28px;margin-bottom:6px}
+.swatches i{flex:1}
+.sug{display:inline-flex;align-items:center;border:1px dashed var(--line-strong);border-radius:999px;font-size:13px;overflow:hidden;background:var(--raised)}
+.sug span{padding:5px 4px 5px 12px}
+.sug button{border:0;background:none;padding:5px 8px;color:var(--muted)}
+.sug button:hover{color:var(--accent)}
+.sug.yes{border-style:solid;background:var(--text);color:var(--bg);border-color:var(--text)}
+.sug.yes button{display:none}.sug.yes span{padding-right:12px}
+.sug.no{opacity:.35;text-decoration:line-through}
+.sug.no button{display:none}.sug.no span{padding-right:12px}
+.kv{display:grid;grid-template-columns:90px 1fr;gap:8px 12px;font-size:13.5px;margin:18px 0}
+.kv dt{color:var(--muted)}.kv dd{margin:0}
+.sim{display:grid;grid-template-columns:110px 1fr;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.sim .why{font-size:13px;margin-bottom:4px}
+.aireg{position:absolute;border:1.5px dashed var(--raised);box-shadow:0 0 0 1px rgba(0,0,0,.35);border-radius:2px}
+.aireg b{position:absolute;left:0;bottom:100%;margin-bottom:3px;background:var(--raised);color:var(--text);font-size:11px;font-weight:500;padding:2px 6px;border-radius:3px;white-space:nowrap}
+
+/* ---------- 7. live ---------- */
+.live{flex:1;display:grid;grid-template-columns:270px 1fr 380px;min-height:0}
+.live>section{padding:22px 24px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.live>section+section{border-left:1px solid var(--line)}
+.pin{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:12.5px}
+.pin input[type=range]{width:100%}
+.concept{position:relative;border-radius:var(--r);overflow:hidden;flex:none}
+.concept .ph{border-radius:0;height:430px;width:100%}
+.concept .tagv{position:absolute;left:12px;top:12px;background:var(--surface);border-radius:999px;padding:4px 10px;font-size:12px;border:1px solid var(--line)}
+.versions{display:flex;gap:8px;margin:12px 0}
+.versions .ph{width:76px;height:50px;opacity:.6;cursor:pointer}
+.versions .ph.on{opacity:1;box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent)}
+.versions .ph span{position:absolute;left:4px;bottom:3px;font-size:10px;color:#fff;text-shadow:0 1px 2px #000}
+.log{flex:1;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;margin-bottom:12px;font-size:13px}
+.log div{display:flex;gap:10px;color:var(--muted)}
+.log div b{color:var(--faint);font-weight:500;width:22px;flex:none}
+.log div:last-child{color:var(--text)}
+.dirbar{display:flex;align-items:center;gap:10px;border:1px solid var(--line-strong);background:var(--raised);border-radius:999px;padding:6px 6px 6px 8px;box-shadow:var(--shadow)}
+.dirbar input{flex:1;border:0;background:none;font-size:15px;outline:0;padding:6px 4px}
+.mic{width:38px;height:38px;border-radius:50%;border:0;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;flex:none;position:relative}
+.mic::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid var(--accent);opacity:.4;animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{from{transform:scale(.85);opacity:.5}to{transform:scale(1.25);opacity:0}}
+@media (prefers-reduced-motion:reduce){.mic::after,.caret::after{animation:none}}
+.plan{background:var(--raised);border:1px solid var(--line);border-radius:var(--r);padding:10px;color:var(--text)}
+.plan svg{display:block;width:100%;height:auto}
+.delta{list-style:none;margin:10px 0 0;padding:0;font-size:13px}
+.delta li{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+.delta li span:last-child{color:var(--accent);font-weight:600}
+
+/* ---------- mobile ---------- */
+.m-bar{height:52px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.m-list{flex:1;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:14px}
+.m-list .pcard .collage{height:130px}
+.fab{position:absolute;right:18px;bottom:22px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:var(--on-accent);border:0;font-size:28px;font-weight:300;box-shadow:var(--shadow);z-index:7}
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <strong>Moodboard · ιδανική εκδοχή</strong>
+  <nav class="mock-tabs" id="tabs">
+    <button data-tab="s1" class="on"><small>1</small>Αρχική</button>
+    <button data-tab="s2"><small>2</small>Χάρτης project</button>
+    <button data-tab="s3"><small>3</small>Γρήγορη προσθήκη</button>
+    <button data-tab="s4"><small>4</small>Επεξεργασία εικόνας</button>
+    <button data-tab="s5"><small>5</small>Extension</button>
+    <button data-tab="s6" class="later"><small>6 · αργότερα</small>AI ανάλυση &amp; προτάσεις</button>
+    <button data-tab="s7" class="later"><small>7 · αργότερα</small>Ζωντανή κατεύθυνση</button>
+  </nav>
+  <button id="theme" type="button">Σκούρο θέμα</button>
+</div>
+
+<!-- ================= 1. HOME ================= -->
+<section class="screen on" id="s1">
+  <p class="cap"><b>1 · Αρχική.</b> Μία ενέργεια μπροστά: συνέχισε το project που δούλευες. Τα υπόλοιπα είναι ήσυχες κάρτες.</p>
+  <div class="stage"><div class="frame">
+    <header class="appbar">
+      <div class="logo"><i></i>Moodboard</div>
+      <div class="grow"></div>
+      <div class="search"><span>⌕</span> Αναζήτηση σε σημειώσεις, tags και projects <span class="grow"></span><span class="kbd">/</span></div>
+      <div class="grow"></div>
+      <a class="btn primary">+ Νέα εικόνα</a>
+      <div class="avatar">Χ</div>
+    </header>
+    <div class="home">
+      <div class="home-head"><h1>Projects</h1><span class="muted">3 projects · 98 εικόνες · 9 χωρίς project</span></div>
+      <div class="pgrid">
+        <a class="pcard big" data-go="s2">
+          <div class="minimap"><div class="canvas" id="mini"></div><span class="resume">Συνέχισε εδώ</span></div>
+          <div class="pmeta">
+            <div class="row"><h3>Κατοικία στην Τήνο</h3><span class="btn primary">Άνοιγμα χάρτη →</span></div>
+            <div class="row"><span>63 εικόνες · 41 σημειωμένες περιοχές · τελευταία αλλαγή πριν 2 ώρες</span></div>
+            <div class="chips"><span class="chip">πέτρα</span><span class="chip">ξύλο</span><span class="chip">φως</span><span class="chip">αυλή</span><span class="chip">μπετόν</span></div>
+          </div>
+        </a>
+        <a class="pcard">
+          <div class="collage"><div class="ph fill" data-p="31,3,2"></div><div class="ph fill" data-p="32,1,1"></div><div class="ph fill" data-p="33,1,1"></div></div>
+          <div class="pmeta"><h3>Ξενώνας στο Πήλιο</h3><div class="row"><span>23 εικόνες</span><span>χθες</span></div>
+          <div class="chips"><span class="chip">στέγη</span><span class="chip">καστανιά</span><span class="chip">τζάκι</span></div></div>
+        </a>
+        <a class="pcard">
+          <div class="collage"><div class="ph fill" data-p="41,3,2"></div><div class="ph fill" data-p="42,1,1"></div><div class="ph fill" data-p="43,1,1"></div></div>
+          <div class="pmeta"><h3>Γραφείο στην Κυψέλη</h3><div class="row"><span>12 εικόνες</span><span>πριν 6 μέρες</span></div>
+          <div class="chips"><span class="chip">μωσαϊκό</span><span class="chip">μέταλλο</span></div></div>
+        </a>
+        <a class="pcard inbox">
+          <div class="stack"><div class="ph" data-p="51,2,3"></div><div class="ph" data-p="52,3,2"></div><div class="ph" data-p="53,1,1"></div></div>
+          <div class="pmeta"><h3>Χωρίς project</h3><div class="row"><span>9 εικόνες από το extension</span></div>
+          <div class="row"><span style="color:var(--accent);font-weight:600">Τακτοποίηση →</span></div></div>
+        </a>
+        <a class="pcard new"><b>+</b><span>Νέο project</span><span class="small">ή σύρε εδώ μια εικόνα</span></a>
+      </div>
+    </div>
+  </div></div>
+  <div class="mobiles">
+    <figure>
+      <div class="phone">
+        <div class="m-bar"><div class="logo"><i></i>Moodboard</div><span>⌕</span></div>
+        <div class="m-list">
+          <a class="pcard"><div class="collage"><div class="ph fill" data-p="15,3,2"></div><div class="ph fill" data-p="11,1,1"></div><div class="ph fill" data-p="17,1,1"></div></div>
+            <div class="pmeta"><div class="row"><h3>Κατοικία στην Τήνο</h3><span style="color:var(--accent);font-weight:600">Συνέχισε →</span></div><div class="row"><span>63 εικόνες · πριν 2 ώρες</span></div></div></a>
+          <a class="pcard"><div class="collage"><div class="ph fill" data-p="31,3,2"></div><div class="ph fill" data-p="32,1,1"></div><div class="ph fill" data-p="33,1,1"></div></div>
+            <div class="pmeta"><h3>Ξενώνας στο Πήλιο</h3><div class="row"><span>23 εικόνες · χθες</span></div></div></a>
+          <a class="pcard"><div class="pmeta"><h3>Γραφείο στην Κυψέλη</h3><div class="row"><span>12 εικόνες · πριν 6 μέρες</span></div></div></a>
+        </div>
+        <button class="fab" aria-label="Νέα εικόνα">+</button>
+      </div>
+      <figcaption>Κινητό · λίστα projects, ένα κουμπί «+» (κάμερα ή επικόλληση)</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ================= 2. MAP ================= -->
+<section class="screen" id="s2">
+  <p class="cap"><b>2 · Χάρτης project.</b> Δοκίμασε: σύρε το «Μέγεθος» (πάνω από 120% φαίνονται οι περιοχές), άλλαξε τις «Σημειώσεις», κάνε κλικ σε εικόνα, πέρνα το ποντίκι από ένα tag.</p>
+  <div class="stage"><div class="frame">
+    <header class="appbar">
+      <div class="logo"><i></i>Moodboard</div>
+      <div class="crumb"><span>Projects</span><span>/</span><b>Κατοικία στην Τήνο</b></div>
+      <div class="seg"><button class="on">Χάρτης</button><button>Πλέγμα</button></div>
+      <div class="grow"></div>
+      <label class="ctl">Μέγεθος <input type="range" id="size" min="70" max="140" value="100"> <span id="sizev" style="width:36px">100%</span></label>
+      <label class="ctl"><input type="checkbox" id="notes" checked> Σημειώσεις</label>
+      <a class="btn">⌕</a>
+      <a class="btn primary">+ Εικόνα</a>
+    </header>
+    <div class="mapwrap">
+      <div class="canvas-area">
+        <div class="float" style="left:16px;top:14px" id="levels">
+          <button class="chip on">Όλα</button><button class="chip">Αστικό</button><button class="chip">Κτίριο</button><button class="chip">Εσωτερικό</button><button class="chip">Λεπτομέρεια</button><button class="chip">Υλικό</button>
+        </div>
+        <div class="canvas notes-on" id="map"></div>
+        <div class="float hint"><span><span class="kbd">Ctrl</span> <span class="kbd">V</span> επικόλληση οπουδήποτε</span><span>·</span><span>διπλό κλικ στο κενό</span><span>·</span><span>«+» πάνω σε tag</span></div>
+        <div class="float zoomctl"><button>−</button><span>100%</span><button>+</button><button title="Τακτοποίηση">⤢</button></div>
+      </div>
+      <aside class="panel" id="panel"></aside>
+    </div>
+  </div></div>
+  <div class="mobiles">
+    <figure>
+      <div class="phone">
+        <div class="m-bar"><span>‹</span><b class="serif" style="font-size:16px">Κατοικία στην Τήνο</b><span>⌕</span></div>
+        <div class="canvas-area"><div class="canvas" id="mmap"></div>
+          <div class="sheet">
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div class="ph" data-p="15,2,3" style="width:64px;flex:none"></div>
+              <div><p style="font-size:14px;margin-bottom:8px">Σκάλα από δρυ· το φως πέφτει από ψηλά και ζεσταίνει τον τοίχο.</p>
+              <div class="chips"><span class="chip">ξύλο</span><span class="chip">φως</span><span class="chip soft">2 περιοχές</span></div></div>
+            </div>
+          </div>
+        </div>
+        <button class="fab" style="bottom:150px" aria-label="Νέα εικόνα">+</button>
+      </div>
+      <figcaption>Κινητό · ο χάρτης γεμίζει την οθόνη, η επιλεγμένη εικόνα ανοίγει σε κάτω φύλλο</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ================= 3. QUICK ADD ================= -->
+<section class="screen" id="s3">
+  <p class="cap"><b>3 · Γρήγορη προσθήκη.</b> Μετά από επικόλληση στον χάρτη. Όλα τα πεδία προαιρετικά· το Enter αποθηκεύει αμέσως.</p>
+  <div class="stage"><div class="frame">
+    <header class="appbar">
+      <div class="logo"><i></i>Moodboard</div>
+      <div class="crumb"><span>Projects</span><span>/</span><b>Κατοικία στην Τήνο</b></div>
+      <div class="seg"><button class="on">Χάρτης</button><button>Πλέγμα</button></div>
+    </header>
+    <div class="mapwrap"><div class="canvas-area"><div class="canvas notes-on" id="map3" style="margin-left:190px"></div></div></div>
+    <div class="scrim">
+      <div class="modal" role="dialog" aria-label="Νέα εικόνα">
+        <div class="modal-body">
+          <div class="modal-prev">
+            <div class="ph" data-p="77,2,3" style="width:170px"></div>
+            <span class="small muted">από το πρόχειρο · 1200×1800</span>
+          </div>
+          <div class="modal-form">
+            <h2>Νέα εικόνα</h2>
+            <p class="small muted" style="margin-bottom:16px">στο «Κατοικία στην Τήνο»</p>
+            <label class="field"><span class="lbl">Σημείωση</span>
+              <div class="input focus">Κουφώματα από ιρόκο, λεπτό προφίλ<span class="caret"></span></div></label>
+            <div class="field"><span class="lbl">Tags · ένα κλικ</span>
+              <div class="chips" data-multi>
+                <button class="chip on">ξύλο</button><button class="chip">φως</button><button class="chip">πέτρα</button><button class="chip">αυλή</button><button class="chip">μπετόν</button><button class="chip">σκάλα</button><button class="chip">κούφωμα</button><button class="chip soft">+ νέο tag</button>
+              </div></div>
+            <div class="field"><span class="lbl">Επίπεδο</span>
+              <div class="chips" data-single>
+                <button class="chip">Αστικό</button><button class="chip">Κτίριο</button><button class="chip">Εσωτερικό</button><button class="chip on">Λεπτομέρεια</button><button class="chip">Υλικό</button>
+              </div></div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span><span class="kbd">Enter</span> αποθήκευση</span><span><span class="kbd">Esc</span> άκυρο</span><span><span class="kbd">Tab</span> επόμενο πεδίο</span>
+          <span class="grow"></span>
+          <button class="btn ghost">Άκυρο</button><button class="btn primary">Αποθήκευση ⏎</button>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<!-- ================= 4. EDITOR ================= -->
+<section class="screen" id="s4">
+  <p class="cap"><b>4 · Επεξεργασία εικόνας.</b> Σύρε πάνω στην εικόνα για νέα περιοχή. Κάθε περιοχή έχει σημείωση και βαθμό 1–5 (κλικ στα τετράγωνα).</p>
+  <div class="stage"><div class="frame">
+    <header class="appbar">
+      <a class="btn ghost">‹ Χάρτης</a>
+      <div class="crumb"><span>Κατοικία στην Τήνο</span><span>/</span><b>Σκάλα από δρυ</b></div>
+      <div class="grow"></div>
+      <span class="saved">Αποθηκεύτηκε</span>
+      <a class="btn ghost">‹ Προηγούμενη</a><a class="btn ghost">Επόμενη ›</a>
+    </header>
+    <div class="editor">
+      <div class="ed-stage">
+        <div class="ed-img" id="edimg"><div class="ph" data-p="15,3,2"></div><div id="edregs"></div></div>
+        <div class="small muted">Σύρε για να σημειώσεις μια λεπτομέρεια · <a href="#">archdaily.com/…/tinos-house ›</a></div>
+      </div>
+      <aside class="ed-side">
+        <div class="panel-body">
+          <span class="lbl">Περιοχές · 1 = όχι αυτό, 5 = ακριβώς αυτό</span>
+          <div id="edlist" style="margin-bottom:22px"></div>
+          <label class="field"><span class="lbl">Σημείωση εικόνας</span>
+            <textarea class="textarea" rows="3">Σκάλα από δρυ· το φως πέφτει από ψηλά και ζεσταίνει τον τοίχο.</textarea></label>
+          <div class="field"><span class="lbl">Tags</span>
+            <div class="tagbox"><span class="chip on">ξύλο <span class="x">×</span></span><span class="chip on">φως <span class="x">×</span></span><span class="typing">πρόσθεσε…</span></div>
+            <div class="chips" style="margin-top:8px" data-multi><button class="chip">σκάλα</button><button class="chip">πέτρα</button><button class="chip">μπετόν</button></div></div>
+          <div class="field"><span class="lbl">Επίπεδο</span>
+            <div class="chips" data-single><button class="chip">Αστικό</button><button class="chip">Κτίριο</button><button class="chip on">Εσωτερικό</button><button class="chip">Λεπτομέρεια</button><button class="chip">Υλικό</button></div></div>
+          <label class="field"><span class="lbl">Project</span>
+            <select class="select"><option>Κατοικία στην Τήνο</option><option>Ξενώνας στο Πήλιο</option><option>Γραφείο στην Κυψέλη</option></select></label>
+        </div>
+        <div class="panel-foot"><button class="btn">Αντιγραφή σε άλλο project</button><span class="grow"></span><button class="btn ghost danger">Διαγραφή</button></div>
+      </aside>
+    </div>
+  </div></div>
+</section>
+
+<!-- ================= 5. EXTENSION ================= -->
+<section class="screen" id="s5">
+  <p class="cap"><b>5 · Extension.</b> Τρεις στιγμές σε μία εικόνα: δεξί κλικ → popup 360px → επιβεβαίωση. Το project μένει αυτό που διάλεξες τελευταία.</p>
+  <div class="stage"><div class="frame">
+    <div class="browser">
+      <div class="b-top"><div class="dots"><i></i><i></i><i></i></div><div class="b-url">archdaily.com/981234/house-in-tinos</div><div class="b-ext"><i></i></div></div>
+      <div class="b-page">
+        <div class="bar" style="width:420px;height:22px"></div><div class="bar" style="width:640px"></div><div class="bar" style="width:580px;margin-bottom:24px"></div>
+        <div class="ph" data-p="77,3,2" style="width:620px"></div>
+        <div class="bar" style="width:620px;margin-top:24px"></div><div class="bar" style="width:540px"></div>
+
+        <div class="ctx" style="left:420px;top:250px">
+          <div>Άνοιγμα εικόνας σε νέα καρτέλα</div><div>Αντιγραφή εικόνας</div><hr>
+          <div class="hi"><i style="width:10px;height:10px;background:currentColor;border-radius:2px"></i>Αποθήκευση στο Moodboard</div>
+          <div><i style="width:10px;height:10px;border:1.5px solid currentColor;border-radius:2px"></i>Λήψη ορατής καρτέλας</div>
+        </div>
+        <span class="tagnote" style="left:420px;top:400px">① δεξί κλικ στην εικόνα</span>
+
+        <div class="popup" style="right:330px;top:14px">
+          <div class="popup-head"><div class="logo" style="font-size:15px"><i></i>Αποθήκευση</div><span class="small muted">archdaily.com</span></div>
+          <div class="popup-body">
+            <div class="thumb"><div class="ph" data-p="77,3,2" style="width:108px;flex:none"></div>
+              <label style="flex:1"><span class="lbl">Project</span><select class="select"><option>Κατοικία στην Τήνο</option><option>Ξενώνας στο Πήλιο</option><option>Χωρίς project</option></select></label></div>
+            <label class="field"><span class="lbl">Σημείωση</span><div class="input focus" style="min-height:54px">Το κούφωμα χάνεται μέσα στον τοίχο<span class="caret"></span></div></label>
+            <div class="field"><span class="lbl">Tags</span>
+              <div class="tagbox"><span class="chip on">κούφωμα <span class="x">×</span></span><span class="typing">γράψε ή διάλεξε…</span></div>
+              <div class="chips" style="margin-top:8px" data-multi><button class="chip">ξύλο</button><button class="chip on">φως</button><button class="chip">πέτρα</button><button class="chip">αυλή</button><button class="chip">μπετόν</button><button class="chip">σκάλα</button></div></div>
+            <div class="field"><span class="lbl">Επίπεδο</span>
+              <div class="chips" data-single><button class="chip">Αστικό</button><button class="chip">Κτίριο</button><button class="chip">Εσωτερικό</button><button class="chip on">Λεπτομέρεια</button><button class="chip">Υλικό</button></div></div>
+            <button class="btn primary block">Αποθήκευση <span class="kbd" style="background:none;color:inherit;border-color:currentColor;opacity:.8">Enter</span></button>
+          </div>
+        </div>
+        <span class="tagnote" style="right:330px;top:478px">② popup · ο κέρσορας ξεκινά στη σημείωση</span>
+
+        <div class="popup" style="right:24px;top:14px;width:290px">
+          <div class="toast"><div class="okdot">✓</div><div><b>Αποθηκεύτηκε</b><div class="small muted">Κατοικία στην Τήνο · 2 tags</div></div></div>
+          <div class="panel-foot" style="padding:10px 14px"><a class="btn">Άνοιγμα στον χάρτη</a><span class="grow"></span><a class="btn ghost">Αναίρεση</a></div>
+        </div>
+        <span class="tagnote" style="right:24px;top:152px">③ κλείνει μόνο του σε 3″</span>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<!-- ================= 6. AI (LATER) ================= -->
+<section class="screen" id="s6">
+  <p class="cap"><b>6 · Αργότερα: AI ανάλυση &amp; προτάσεις.</b> Το AI προτείνει, εσύ αποδέχεσαι. Τίποτα δεν μπαίνει στο board χωρίς κλικ.</p>
+  <div class="stage"><div class="frame">
+    <header class="appbar">
+      <div class="logo"><i></i>Moodboard</div>
+      <div class="crumb"><span>Projects</span><span>/</span><b>Κατοικία στην Τήνο</b></div>
+      <div class="seg"><button>Χάρτης</button><button>Πλέγμα</button><button class="on">Ανάλυση</button></div>
+    </header>
+    <div class="later-banner"><b>Αργότερα</b> Πρόταση για επόμενη φάση. Χρειάζεται βαθμολογία περιοχών (οθόνη 4) και ανάλυση εικόνας από μοντέλο όρασης.</div>
+    <div class="ai">
+      <section>
+        <span class="lbl">Προφίλ γούστου</span>
+        <h2>Φαίνεται να σου αρέσει…</h2>
+        <p class="small muted">Από 63 εικόνες και 41 βαθμολογημένες περιοχές αυτού του project.</p>
+        <ul class="taste">
+          <li><strong>Ζεστό ξύλο δίπλα σε τραχιά πέτρα</strong><div class="ev"><div class="ph fill" data-p="15,1,1"></div><div class="ph fill" data-p="11,1,1"></div><div class="ph fill" data-p="12,1,1"></div> 14 περιοχές με βαθμό 4–5</div></li>
+          <li><strong>Φως από ψηλά, όχι από το πλάι</strong><div class="ev"><div class="ph fill" data-p="17,1,1"></div><div class="ph fill" data-p="16,1,1"></div> 9 περιοχές με βαθμό 4–5</div></li>
+          <li><strong>Λιγότερο: γυμνό μπετόν σε μεγάλες επιφάνειες</strong><div class="ev"><div class="ph fill" data-p="14,1,1"></div> 5 περιοχές με βαθμό 1–2</div></li>
+        </ul>
+        <span class="lbl">Υλικά στις περιοχές που βαθμολόγησες ψηλά</span>
+        <div class="bars" style="margin-bottom:18px">
+          <div>ξύλο<span><i style="width:76%"></i></span><span style="background:none;height:auto">38%</span></div>
+          <div>πέτρα<span><i style="width:54%"></i></span><span style="background:none;height:auto">27%</span></div>
+          <div>σοβάς<span><i style="width:28%"></i></span><span style="background:none;height:auto">14%</span></div>
+          <div>μπετόν<span><i style="width:18%;background:var(--concrete)"></i></span><span style="background:none;height:auto">9%</span></div>
+        </div>
+        <span class="lbl">Παλέτα</span>
+        <div class="swatches"><i style="background:#e9e2d3"></i><i style="background:#c9b08a"></i><i style="background:#a9825a"></i><i style="background:#8d8a84"></i><i style="background:#4a4640"></i><i style="background:#b4532a"></i></div>
+      </section>
+      <section>
+        <span class="lbl">Ανάλυση εικόνας · 1 από 6 νέες</span>
+        <div style="position:relative;width:560px;margin:10px auto 18px">
+          <div class="ph" data-p="77,3,2"></div>
+          <div class="aireg" style="left:12%;top:22%;width:30%;height:52%"><b>κούφωμα · ιρόκο</b></div>
+          <div class="aireg" style="left:58%;top:48%;width:32%;height:38%"><b>δάπεδο · πέτρα</b></div>
+        </div>
+        <span class="lbl">Προτεινόμενα tags</span>
+        <div class="chips" id="sugs">
+          <span class="sug yes"><span>ξύλο</span><button>✓</button><button>✕</button></span>
+          <span class="sug"><span>κούφωμα</span><button title="Αποδοχή">✓</button><button title="Απόρριψη">✕</button></span>
+          <span class="sug"><span>ιρόκο</span><button title="Αποδοχή">✓</button><button title="Απόρριψη">✕</button></span>
+          <span class="sug"><span>πλακόστρωτο</span><button title="Αποδοχή">✓</button><button title="Απόρριψη">✕</button></span>
+          <span class="sug no"><span>μινιμαλισμός</span><button>✓</button><button>✕</button></span>
+        </div>
+        <dl class="kv">
+          <dt>Επίπεδο</dt><dd>Λεπτομέρεια <span class="muted small">· πρόταση</span></dd>
+          <dt>Στυλ</dt><dd>Κυκλαδικός μοντερνισμός <span class="muted small">· μέτρια βεβαιότητα</span></dd>
+          <dt>Υλικά</dt><dd>ιρόκο, ασβεστόλιθος, λευκός σοβάς</dd>
+          <dt>Φως</dt><dd>φυσικό, πλάγιο, ζεστό απόγευμα</dd>
+        </dl>
+        <div style="display:flex;gap:8px"><button class="btn primary">Αποδοχή όλων &amp; επόμενη</button><button class="btn">Μόνο όσα διάλεξα</button><span class="grow"></span><button class="btn ghost">Παράλειψη</button></div>
+      </section>
+      <section>
+        <span class="lbl">Παρόμοιες αναφορές</span>
+        <h2 style="font-size:18px;margin-bottom:12px">Ίσως ταιριάζουν στο board</h2>
+        <div class="sim"><div class="ph" data-p="61,3,2"></div><div><p class="why">Ίδιο υλικό: δρυς δίπλα σε ξερολιθιά</p><p class="small muted" style="margin-bottom:8px">από το «Ξενώνας στο Πήλιο»</p><button class="btn">+ Στο board</button> <button class="btn ghost">Όχι τέτοια</button></div></div>
+        <div class="sim"><div class="ph" data-p="62,3,2"></div><div><p class="why">Φεγγίτης πάνω από σκάλα</p><p class="small muted" style="margin-bottom:8px">divisare.com ›</p><button class="btn">+ Στο board</button> <button class="btn ghost">Όχι τέτοια</button></div></div>
+        <div class="sim"><div class="ph" data-p="63,3,2"></div><div><p class="why">Στενή αυλή με ένα δέντρο</p><p class="small muted" style="margin-bottom:8px">archdaily.com ›</p><button class="btn">+ Στο board</button> <button class="btn ghost">Όχι τέτοια</button></div></div>
+        <div class="sim"><div class="ph" data-p="64,3,2"></div><div><p class="why">Λεπτό ξύλινο κούφωμα σε παχύ τοίχο</p><p class="small muted" style="margin-bottom:8px">από το «Χωρίς project»</p><button class="btn">+ Στο board</button> <button class="btn ghost">Όχι τέτοια</button></div></div>
+      </section>
+    </div>
+  </div></div>
+</section>
+
+<!-- ================= 7. LIVE (LATER) ================= -->
+<section class="screen" id="s7">
+  <p class="cap"><b>7 · Αργότερα: Ζωντανή κατεύθυνση.</b> Γράψε μια οδηγία και πάτα Enter: μπαίνει στο ιστορικό και βγαίνει νέα εκδοχή (εδώ αλλάζει μόνο η εικόνα-δείγμα).</p>
+  <div class="stage"><div class="frame">
+    <header class="appbar">
+      <div class="logo"><i></i>Moodboard</div>
+      <div class="crumb"><span>Projects</span><span>/</span><b>Κατοικία στην Τήνο</b></div>
+      <div class="seg"><button>Χάρτης</button><button>Πλέγμα</button><button>Ανάλυση</button><button class="on">Concept</button></div>
+      <div class="grow"></div>
+      <a class="btn">Αποθήκευση εκδοχής στο board</a>
+    </header>
+    <div class="later-banner"><b>Αργότερα</b> Πρόταση. Το concept και η κάτοψη είναι σκίτσα ιδέας από μοντέλο εικόνας, όχι σχέδια υπό κλίμακα.</div>
+    <div class="live">
+      <section>
+        <span class="lbl">Αναφορές που μετράνε</span>
+        <p class="small muted" style="margin-bottom:10px">Από το board. Το βάρος λέει πόσο επηρεάζει η καθεμία.</p>
+        <div class="pin"><div class="ph" data-p="15,3,2"></div><div>Σκάλα από δρυ<input type="range" value="90"></div></div>
+        <div class="pin"><div class="ph" data-p="11,3,2"></div><div>Ξερολιθιά<input type="range" value="70"></div></div>
+        <div class="pin"><div class="ph" data-p="17,3,2"></div><div>Φεγγίτης<input type="range" value="60"></div></div>
+        <div class="pin"><div class="ph" data-p="18,3,2"></div><div>Στενή αυλή<input type="range" value="45"></div></div>
+        <div class="pin"><div class="ph" data-p="14,3,2"></div><div>Μπετόν με καλούπι<input type="range" value="15"></div></div>
+        <button class="btn" style="margin-top:12px">+ Αναφορά από το board</button>
+      </section>
+      <section>
+        <div class="concept"><div class="ph" id="concept" data-p="84,16,10"></div><span class="tagv" id="vtag">Concept · εκδοχή 4</span></div>
+        <div class="versions" id="versions">
+          <div class="ph" data-p="81,3,2"><span>v1</span></div><div class="ph" data-p="82,3,2"><span>v2</span></div><div class="ph" data-p="83,3,2"><span>v3</span></div><div class="ph on" data-p="84,3,2"><span>v4</span></div>
+        </div>
+        <div class="log" id="log">
+          <div><b>v2</b><span>«άνοιξε την κουζίνα προς την αυλή»</span></div>
+          <div><b>v3</b><span>«χαμηλότερο ταβάνι στο καθιστικό, πιο πολύ ξύλο»</span></div>
+          <div><b>v4</b><span>«πιο ζεστό φως, λιγότερο μπετόν»</span></div>
+        </div>
+        <form class="dirbar" id="dir">
+          <button type="button" class="mic" aria-label="Μίλα"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg></button>
+          <input id="dirin" placeholder="Πες ή γράψε: «πιο σκούρο δάπεδο», «μεγαλύτερο άνοιγμα στον νότο»…" aria-label="Κατεύθυνση">
+          <button class="btn primary" type="submit">Νέα εκδοχή ⏎</button>
+        </form>
+      </section>
+      <section>
+        <span class="lbl">Σκίτσο κάτοψης · εκδοχή 4</span>
+        <div class="plan">
+          <svg viewBox="0 0 360 250" fill="none" stroke="currentColor" stroke-linecap="square">
+            <path d="M20 20H340V140H220M220 230H20V20" stroke-width="4"/>
+            <path d="M220 140V160M220 210V230" stroke-width="4"/>
+            <path d="M220 160V210" stroke="var(--accent)" stroke-width="2" stroke-dasharray="2 5"/>
+            <path d="M140 20V70M140 100V120M20 120H90M120 120H220V140" stroke-width="2.5"/>
+            <path d="M140 70A30 30 0 0 1 170 100M90 120A30 30 0 0 1 120 150" stroke-width=".8"/>
+            <path d="M220 140H340V230H220" stroke-width="1.2" stroke-dasharray="6 5"/>
+            <circle cx="300" cy="190" r="16" stroke-width="1"/><circle cx="300" cy="190" r="2" fill="currentColor"/>
+            <path d="M270 30V60M280 30V60M290 30V60M300 30V60M310 30V60M320 30V60M270 30H330V60H270" stroke-width=".8"/>
+            <g fill="currentColor" stroke="none" font-size="10" font-family="system-ui,sans-serif" text-anchor="middle">
+              <text x="80" y="74">Υ/Δ</text><text x="215" y="84">Καθιστικό</text><text x="110" y="184">Κουζίνα</text><text x="280" y="160">Αυλή</text>
+              <text x="300" y="74" font-size="8">σκάλα</text>
+              <text x="222" y="246" font-size="8" fill="var(--accent)">νέο άνοιγμα προς αυλή</text>
+            </g>
+            <path d="M30 244H80M30 241V247M80 241V247" stroke-width=".8"/>
+          </svg>
+        </div>
+        <span class="lbl" style="margin-top:18px">Τι άλλαξε από την εκδοχή 3</span>
+        <ul class="delta">
+          <li><span>Θερμοκρασία φωτός</span><span>4000K → 2900K</span></li>
+          <li><span>Μπετόν σε επιφάνειες</span><span>45% → 20%</span></li>
+          <li><span>Ξύλο (δρυς)</span><span>+15%</span></li>
+          <li><span>Κάτοψη</span><span>ίδια</span></li>
+        </ul>
+        <div class="grow"></div>
+        <div style="display:flex;gap:8px"><button class="btn">Εξαγωγή PDF</button><button class="btn ghost">Πίσω στην εκδοχή 3</button></div>
+      </section>
+    </div>
+  </div></div>
+</section>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const pic=(seed,w,h)=>{const k=640/Math.max(w,h);return `https://picsum.photos/seed/mb${seed}/${Math.round(w*k)}/${Math.round(h*k)}`};
+function fillPics(root=document){
+  $$('[data-p]',root).forEach(el=>{
+    const [s,w,h]=el.dataset.p.split(',').map(Number);
+    if(!el.classList.contains('fill')&&!el.style.height) el.style.aspectRatio=w+'/'+h;
+    el.style.backgroundImage=`url(${pic(s,w,h)})`;
+  });
+}
+const rateHTML=v=>`<span class="rate" data-v="${v}" title="Βαθμός ${v} από 5">${'<button type="button"></button>'.repeat(5)}</span>`;
+const LEVEL={urban:'Αστικό',building:'Κτίριο',interior:'Εσωτερικό',detail:'Λεπτομέρεια',material:'Υλικό'};
+
+/* ----- map data (positions = what a real build would persist per image/tag) ----- */
+const MAP={W:1060,H:844,p:{x:530,y:420,n:'Κατοικία στην Τήνο'},
+  tags:[{id:'t1',n:'πέτρα',x:300,y:270},{id:'t2',n:'ξύλο',x:690,y:285,demo:1},{id:'t3',n:'φως',x:780,y:575},{id:'t4',n:'αυλή',x:300,y:590},{id:'t5',n:'μπετόν',x:530,y:150}],
+  imgs:[
+   {id:'i1',x:100,y:170,w:120,r:[2,3],seed:11,t:['t1'],lv:'material',note:'Ξερολιθιά με ασβεστωμένους αρμούς.',src:'divisare.com',reg:[]},
+   {id:'i2',x:120,y:400,w:150,r:[3,2],seed:12,t:['t1','t4'],lv:'detail',note:'Πλακόστρωτο που συνεχίζει μέσα στο σπίτι.',src:'archdaily.com',reg:[[.1,.5,.5,.4,'Ίδια πλάκα μέσα–έξω',5]]},
+   {id:'i3',x:330,y:115,w:110,r:[1,1],seed:13,t:['t1','t5'],lv:'material',note:'Υφή σοβά, σχεδόν σαν πέτρα.',src:'pinterest.com',reg:[]},
+   {id:'i4',x:740,y:85,w:160,r:[3,2],seed:14,t:['t5','t2'],lv:'building',note:'Εμφανές μπετόν με ξύλινο καλούπι.',src:'dezeen.com',reg:[[.3,.2,.4,.5,'Το αποτύπωμα της σανίδας',3]]},
+   {id:'i5',x:905,y:330,w:190,r:[2,3],seed:15,t:['t2','t3'],lv:'interior',note:'Σκάλα από δρυ· το φως πέφτει από ψηλά και ζεσταίνει τον τοίχο.',src:'archdaily.com',
+     reg:[[.16,.52,.52,.3,'Πάτημα από μασίφ δρυ',5],[.52,.08,.38,.27,'Φεγγίτης, φως από ψηλά',4]]},
+   {id:'i6',x:930,y:690,w:150,r:[3,2],seed:16,t:['t3'],lv:'building',note:'Χαμηλός ήλιος σε λευκό τοίχο.',src:'divisare.com',reg:[]},
+   {id:'i7',x:640,y:712,w:110,r:[1,1],seed:17,t:['t3'],lv:'interior',note:'Φεγγίτης πάνω από τον πάγκο.',src:'pinterest.com',reg:[]},
+   {id:'i8',x:110,y:660,w:110,r:[2,3],seed:18,t:['t4'],lv:'urban',note:'Στενή αυλή με μία ελιά.',src:'archdaily.com',reg:[]},
+   {id:'i9',x:440,y:695,w:140,r:[3,2],seed:19,t:['t4'],lv:'detail',note:'Πέργκολα με καλάμι, σκιά όλη μέρα.',src:'dezeen.com',reg:[[.2,.1,.6,.35,'Πυκνότητα καλαμιού',4]]}
+  ]};
+const MMAP={W:390,H:500,p:{x:195,y:215,n:'Τήνος'},
+  tags:[{id:'t1',n:'πέτρα',x:100,y:125},{id:'t2',n:'ξύλο',x:290,y:135},{id:'t3',n:'φως',x:200,y:320}],
+  imgs:[{id:'a',x:70,y:50,w:90,r:[3,2],seed:12,t:['t1'],note:'',reg:[]},{id:'b',x:55,y:250,w:76,r:[2,3],seed:11,t:['t1'],note:'',reg:[]},
+   {id:'c',x:320,y:50,w:80,r:[1,1],seed:13,t:['t2'],note:'',reg:[]},{id:'d',x:330,y:262,w:84,r:[2,3],seed:15,t:['t2','t3'],note:'',reg:[[.16,.52,.52,.3,'',5]]},
+   {id:'e',x:85,y:400,w:100,r:[3,2],seed:16,t:['t3'],note:'',reg:[]}]};
+
+function drawMap(root,d,selId){
+  if(!root) return;
+  root.style.width=d.W+'px'; root.style.height=d.H+'px';
+  const T=Object.fromEntries(d.tags.map(t=>[t.id,t]));
+  let h=`<svg class="links" viewBox="0 0 ${d.W} ${d.H}">`;
+  d.tags.forEach(t=>h+=`<line class="l-p" x1="${d.p.x}" y1="${d.p.y}" x2="${t.x}" y2="${t.y}"/>`);
+  d.imgs.forEach(i=>i.t.forEach(k=>h+=`<line data-i="${i.id}" x1="${T[k].x}" y1="${T[k].y}" x2="${i.x}" y2="${i.y}"/>`));
+  h+=`</svg><div class="node" style="left:${d.p.x}px;top:${d.p.y}px"><div class="pnode">${d.p.n}</div></div>`;
+  d.tags.forEach(t=>{
+    const c=d.imgs.filter(i=>i.t.includes(t.id)).length;
+    h+=`<div class="node" style="left:${t.x}px;top:${t.y}px"><div class="tnode${t.demo?' demo':''}"><span>${t.n}</span><b>${c}</b><button class="plus" title="Νέα εικόνα με tag «${t.n}»">+</button>${t.demo?`<em class="tip">Νέα εικόνα με tag «${t.n}»</em>`:''}</div></div>`;
+  });
+  d.imgs.forEach(i=>{
+    const regs=i.reg.map((r,n)=>`<span class="reg" style="left:${r[0]*100}%;top:${r[1]*100}%;width:${r[2]*100}%;height:${r[3]*100}%"><i>${n+1}</i></span>`).join('');
+    h+=`<div class="node" style="left:${i.x}px;top:${i.y}px;--w:${i.w}"><div class="card" data-i="${i.id}" tabindex="0"><div class="ph" data-p="${i.seed},${i.r}">${regs}</div><p class="nnote">${i.note}</p></div></div>`;
+  });
+  root.innerHTML=h; fillPics(root);
+  if(selId) markSel(root,selId);
+}
+function markSel(root,id){
+  $$('.card',root).forEach(c=>c.classList.toggle('sel',c.dataset.i===id));
+  $$('.links line[data-i]',root).forEach(l=>l.classList.toggle('hot',l.dataset.i===id));
+}
+function drawPanel(id){
+  const i=MAP.imgs.find(x=>x.id===id), T=Object.fromEntries(MAP.tags.map(t=>[t.id,t.n]));
+  const tall=i.r[1]>i.r[0];
+  $('#panel').innerHTML=`
+   <div class="panel-head"><span class="lbl" style="margin:0">Εικόνα</span><button class="btn ghost" aria-label="Κλείσιμο">×</button></div>
+   <div class="panel-body">
+     <div class="panel-img"><div class="ph" data-p="${i.seed},${i.r}" style="width:${tall?'170px':'100%'}"></div></div>
+     <div class="chips"><span class="chip soft">${LEVEL[i.lv]}</span>${i.t.map(t=>`<span class="chip">${T[t]}</span>`).join('')}<span class="grow"></span><a class="small muted" href="#">${i.src} ›</a></div>
+     <p class="panel-note">${i.note}</p>
+     <span class="lbl">Περιοχές · ${i.reg.length}</span>
+     ${i.reg.length?`<ul class="rlist">${i.reg.map((r,n)=>`<li><span class="n">${n+1}</span><span class="t">${r[4]}</span>${rateHTML(r[5])}</li>`).join('')}</ul>`
+       :`<p class="small muted" style="margin-bottom:18px">Καμία ακόμα. Άνοιξε την επεξεργασία και σύρε πάνω στη λεπτομέρεια που σου αρέσει.</p>`}
+     <span class="lbl">Αντιγραφή σε άλλο project</span>
+     <div style="display:flex;gap:8px"><select class="select"><option>Ξενώνας στο Πήλιο</option><option>Γραφείο στην Κυψέλη</option></select><button class="btn">Αντιγραφή</button></div>
+   </div>
+   <div class="panel-foot"><button class="btn primary" data-go="s4">Επεξεργασία &amp; περιοχές</button><span class="grow"></span><button class="btn ghost danger">Διαγραφή</button></div>`;
+  fillPics($('#panel'));
+}
+drawMap($('#map'),MAP,'i5'); drawPanel('i5');
+drawMap($('#map3'),MAP); drawMap($('#mini'),MAP); drawMap($('#mmap'),MMAP,'d');
+$('#map').addEventListener('click',e=>{const c=e.target.closest('.card'); if(!c) return; markSel($('#map'),c.dataset.i); drawPanel(c.dataset.i);});
+$('#size').addEventListener('input',e=>{const s=e.target.value/100; $('#map').style.setProperty('--s',s); $('#sizev').textContent=e.target.value+'%'; $('#map').classList.toggle('zoomed',s>=1.2);});
+$('#notes').addEventListener('change',e=>$('#map').classList.toggle('notes-on',e.target.checked));
+$('#levels').addEventListener('click',e=>{const b=e.target.closest('.chip'); if(!b) return; $$('.chip',$('#levels')).forEach(c=>c.classList.toggle('on',c===b));});
+
+/* ----- editor ----- */
+let REG=[{x:.1,y:.22,w:.26,h:.42,note:'Αρμός πέτρας με ξύλο',v:5},{x:.5,y:.08,w:.3,h:.26,note:'Φως από τον φεγγίτη',v:4},{x:.63,y:.58,w:.22,h:.3,note:'Κουπαστή, πολύ βαριά',v:2}];
+let draft=null, o=null;
+const box=r=>`left:${r.x*100}%;top:${r.y*100}%;width:${r.w*100}%;height:${r.h*100}%`;
+function drawEd(){
+  $('#edregs').innerHTML=REG.map((r,n)=>`<span class="reg" style="${box(r)}"><i>${n+1}</i></span>`).join('')+(draft?`<span class="reg draft" style="${box(draft)}"></span>`:'');
+  if(draft) return;
+  $('#edlist').innerHTML=REG.map((r,n)=>`<div class="ed-reg"><span class="n">${n+1}</span><input value="${r.note}" placeholder="Τι σου αρέσει εδώ;" data-n="${n}" aria-label="Σημείωση περιοχής ${n+1}"><button class="del" data-del="${n}" aria-label="Διαγραφή περιοχής">×</button><div class="sub">${rateHTML(r.v).replace('<span','<span data-n="'+n+'"')}<span>${['','όχι αυτό','μάλλον όχι','εντάξει','μου αρέσει','ακριβώς αυτό'][r.v]||'χωρίς βαθμό'}</span></div></div>`).join('')
+    ||'<p class="small muted">Καμία περιοχή ακόμα.</p>';
+}
+drawEd();
+const ed=$('#edimg'), frac=e=>{const b=ed.getBoundingClientRect(),c=v=>Math.min(Math.max(v,0),1);return{x:c((e.clientX-b.left)/b.width),y:c((e.clientY-b.top)/b.height)}};
+ed.addEventListener('pointerdown',e=>{if(e.button)return;o=frac(e);draft={x:o.x,y:o.y,w:0,h:0,note:'',v:0};ed.setPointerCapture(e.pointerId);e.preventDefault();});
+ed.addEventListener('pointermove',e=>{if(!o)return;const p=frac(e);draft={x:Math.min(o.x,p.x),y:Math.min(o.y,p.y),w:Math.abs(p.x-o.x),h:Math.abs(p.y-o.y),note:'',v:0};drawEd();});
+ed.addEventListener('pointerup',()=>{if(!o)return;const d=draft;o=draft=null;if(d.w>=.01&&d.h>=.01)REG.push(d);drawEd();if(d.w>=.01&&d.h>=.01){const ins=$$('#edlist input');ins[ins.length-1].focus();}});
+$('#edlist').addEventListener('input',e=>{if(e.target.dataset.n)REG[e.target.dataset.n].note=e.target.value;});
+$('#edlist').addEventListener('click',e=>{const d=e.target.closest('[data-del]');if(d){REG.splice(+d.dataset.del,1);drawEd();}});
+
+/* ----- shared small interactions ----- */
+document.addEventListener('click',e=>{
+  const rb=e.target.closest('.rate button');
+  if(rb){const r=rb.parentNode,v=[...r.children].indexOf(rb)+1;r.dataset.v=r.dataset.v==v?0:v;if(r.dataset.n!==undefined&&r.closest('#edlist')){REG[r.dataset.n].v=+r.dataset.v;drawEd();}return;}
+  const ch=e.target.closest('button.chip');
+  if(ch&&ch.parentNode.hasAttribute('data-single')){$$('.chip',ch.parentNode).forEach(c=>c.classList.toggle('on',c===ch));return;}
+  if(ch&&ch.parentNode.hasAttribute('data-multi')&&!ch.classList.contains('soft')){ch.classList.toggle('on');return;}
+  const sg=e.target.closest('.sug button');
+  if(sg){sg.parentNode.classList.add(sg.textContent==='✓'?'yes':'no');return;}
+  const seg=e.target.closest('.seg button');
+  if(seg){$$('button',seg.parentNode).forEach(b=>b.classList.toggle('on',b===seg));return;}
+  const go=e.target.closest('[data-go]'); if(go) show(go.dataset.go);
+});
+
+/* ----- live direction ----- */
+let ver=4;
+$('#dir').addEventListener('submit',e=>{
+  e.preventDefault(); const t=$('#dirin').value.trim(); if(!t) return;
+  ver++; const d=document.createElement('div'); d.innerHTML=`<b>v${ver}</b><span></span>`; d.lastChild.textContent='«'+t+'»'; $('#log').append(d);
+  if($('#log').children.length>4) $('#log').firstElementChild.remove();
+  $('#concept').style.backgroundImage=`url(${pic(80+ver,16,10)})`; $('#vtag').textContent='Concept · εκδοχή '+ver;
+  $$('#versions .ph').forEach(p=>p.classList.remove('on'));
+  const v=document.createElement('div'); v.className='ph on'; v.dataset.p=(80+ver)+',3,2'; v.innerHTML=`<span>v${ver}</span>`; $('#versions').append(v); fillPics($('#versions'));
+  $('#dirin').value='';
+});
+
+/* ----- mockup chrome: tabs, theme, scale ----- */
+function show(id){
+  if(!$('#'+id)) return;
+  $$('.screen').forEach(s=>s.classList.toggle('on',s.id===id));
+  $$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===id));
+  history.replaceState(null,'','#'+id); window.scrollTo(0,0);
+}
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('button'); if(b) show(b.dataset.tab);});
+if(location.hash) show(location.hash.slice(1));
+const root=document.documentElement, mq=matchMedia('(prefers-color-scheme: dark)');
+const isDark=()=>root.dataset.theme?root.dataset.theme==='dark':mq.matches;
+const label=()=>$('#theme').textContent=isDark()?'Φωτεινό θέμα':'Σκούρο θέμα';
+$('#theme').addEventListener('click',()=>{root.dataset.theme=isDark()?'light':'dark';label();});
+mq.addEventListener('change',label); label();
+function fit(){const z=Math.min(1,(innerWidth-32)/1440);$$('.stage').forEach(s=>s.style.zoom=z);}
+addEventListener('resize',fit); fit();
+fillPics();
+</script>
+</body>
+</html>
