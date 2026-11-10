@@ -30,6 +30,7 @@
 		"@modelcontextprotocol/sdk": "^1.32.2",
 		"@supabase/ssr": "^0.12.7",
 		"@supabase/supabase-js": "^2.119.0",
+		"cytoscape": "^3.35.0",
 		"zod": "^4.6.7"
 	}
 }
