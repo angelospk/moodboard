@@ -15,7 +15,7 @@
 	} from 'd3-force';
 	import { LEVELS, type Level, type Inspiration } from '#lib/types.js';
 	import { LEVEL_LABELS } from '#lib/tags.js';
-	import { copyInspiration } from '#lib/inspirations.js';
+	import { copyInspiration, savePositions } from '#lib/inspirations.js';
 	import QuickAdd from '#lib/components/QuickAdd.svelte';
 	import type { PageProps } from './$types';
 
@@ -60,6 +60,12 @@
 		if (!p || p === 'all') return 'all';
 		if (p === 'none') return 'none';
 		return data.projects.some((x) => x.id === p) ? p : 'all';
+	});
+
+	/** Scope of the saved positions of this map, same rule as the page load. */
+	const scope = $derived.by(() => {
+		const p = projectParam;
+		return p && p !== 'all' ? p : 'all';
 	});
 
 	const projectName = $derived(
@@ -157,6 +163,10 @@
 
 	/** Last known position per node id, so filters and reloads keep the layout. */
 	const positions = new Map<string, { x?: number; y?: number; fx?: number | null; fy?: number | null }>();
+	/** Scope whose saved positions are already seeded into `positions`. */
+	let seededScope: string | null = null;
+	/** Skip the in-memory snapshot once, when a new scope replaces the whole map. */
+	let skipSnapshot = false;
 	const nodeEls = new Map<string, HTMLElement>();
 	const lineEls = new Map<string, SVGLineElement>();
 
@@ -288,9 +298,23 @@
 		sim.alpha(0.55).restart();
 	}
 
-	function buildGraph(items: Inspiration[], withTags: boolean): boolean {
+	function buildGraph(items: Inspiration[], withTags: boolean, loadedScope: string): boolean {
+		// A new map scope: saved positions replace everything kept in memory.
+		skipSnapshot = false;
+		if (seededScope !== loadedScope) {
+			// Rows still waiting for the debounce belong to the map we are leaving.
+			void flushSaves();
+			seededScope = loadedScope;
+			positions.clear();
+			for (const [key, p] of Object.entries(data.positions ?? {})) {
+				if (Number.isFinite(p?.x) && Number.isFinite(p?.y)) {
+					positions.set(key, { x: p.x, y: p.y, fx: p.x, fy: p.y });
+				}
+			}
+			skipSnapshot = true;
+		}
 		// Snapshot positions of what is on screen, so nothing jumps on a rebuild.
-		for (const n of nodes) positions.set(n.id, { x: n.x, y: n.y, fx: n.fx, fy: n.fy });
+		if (!skipSnapshot) for (const n of nodes) positions.set(n.id, { x: n.x, y: n.y, fx: n.fx, fy: n.fy });
 
 		const nextNodes: SimNode[] = [];
 		const nextLinks: SimLink[] = [];
@@ -422,8 +446,10 @@
 		const items = filtered;
 		const withTags = tagsOn;
 		const currentProject = project;
+		// A reload of the map (same or new scope) must re-seed the saved positions.
+		const loadedScope = data.positionsScope;
 		untrack(() => {
-			const fresh = buildGraph(items, withTags);
+			const fresh = buildGraph(items, withTags, loadedScope);
 			if (fresh || currentProject !== lastProject) {
 				lastProject = currentProject;
 				fitPending = true;
@@ -636,12 +662,68 @@
 		if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
 		if (d.moved) {
 			// Stay pinned where it was dropped.
-			n.fx = n.x ?? null;
-			n.fy = n.y ?? null;
+			const x = Number.isFinite(n.x) ? (n.x as number) : null;
+			const y = Number.isFinite(n.y) ? (n.y as number) : null;
+			n.fx = x;
+			n.fy = y;
 			positions.set(n.id, { x: n.x, y: n.y, fx: n.fx, fy: n.fy });
+			// Only a user drag writes a position back to the database.
+			if (x !== null && y !== null) queueSave(n.id, x, y);
 		} else {
 			nodeClick(n);
 		}
+	}
+
+	// ---------------------------------------------------------- Position saving
+
+	/** Pending drag positions per map scope: '<scope>|<node key>'. */
+	const pendingSaves = new Map<string, { scope: string; key: string; x: number; y: number }>();
+	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	let saving = false;
+
+	/** Remember one dragged node; the whole burst goes out after a short pause. */
+	function queueSave(key: string, x: number, y: number) {
+		if (!data.userId) return;
+		pendingSaves.set(`${scope}|${key}`, { scope, key, x, y });
+		clearTimeout(saveTimer);
+		saveTimer = setTimeout(() => void flushSaves(), 600);
+	}
+
+	/** Write the pending positions now, one call per map scope. Errors show a toast, never throw. */
+	async function flushSaves() {
+		clearTimeout(saveTimer);
+		saveTimer = undefined;
+		if (saving || pendingSaves.size === 0) return;
+		const rows = [...pendingSaves.values()];
+		pendingSaves.clear();
+		saving = true;
+		try {
+			const byScope = new Map<string, { key: string; x: number; y: number }[]>();
+			for (const r of rows) {
+				const list = byScope.get(r.scope) ?? [];
+				list.push({ key: r.key, x: r.x, y: r.y });
+				byScope.set(r.scope, list);
+			}
+			await Promise.all([...byScope].map(([s, list]) => savePositions(data.supabase, s, list)));
+		} catch {
+			showToast('Οι θέσεις δεν αποθηκεύτηκαν');
+		} finally {
+			saving = false;
+		}
+		if (pendingSaves.size) void flushSaves();
+	}
+
+	/** Unpin everything in the current view and let the simulation lay it out again. */
+	function autoLayout() {
+		for (const n of nodes) {
+			n.fx = null;
+			n.fy = null;
+			positions.set(n.id, { x: n.x, y: n.y, fx: null, fy: null });
+		}
+		reheat(0.7);
+		// A new automatic layout is worth fitting to.
+		autoFit = true;
+		fitPending = true;
 	}
 
 	function nodeClick(n: SimNode) {
@@ -705,6 +787,11 @@
 		else focusTag = null;
 	}
 
+	/** A reload or tab close must not drop positions that still wait for the debounce. */
+	function onPageHide() {
+		void flushSaves();
+	}
+
 	let wheelEl: HTMLElement | null = null;
 	let wheelFn: ((e: WheelEvent) => void) | null = null;
 
@@ -736,9 +823,12 @@
 
 		window.addEventListener('paste', onPaste);
 		window.addEventListener('keydown', onKeyDown);
+		window.addEventListener('pagehide', onPageHide);
 		return () => {
 			window.removeEventListener('paste', onPaste);
 			window.removeEventListener('keydown', onKeyDown);
+			window.removeEventListener('pagehide', onPageHide);
+			void flushSaves();
 			clearTimeout(toastTimer);
 			sim?.stop();
 			sim = null;
@@ -797,6 +887,7 @@
 				<span class="sizerVal">{size}</span>
 			</label>
 			<button type="button" onclick={fitAll}>Κεντράρισμα</button>
+			<button type="button" class="secondary" onclick={autoLayout}>Αυτόματη διάταξη</button>
 			<button type="button" class="primary" onclick={() => openAdd()}>+ Νέα</button>
 		</div>
 	</header>
@@ -1066,6 +1157,8 @@
 	.sizer input { width: 108px; max-width: 100%; padding: 0; accent-color: var(--accent); }
 	.sizerVal { font-variant-numeric: tabular-nums; min-width: 2.6ch; }
 	.controls button { padding: 0.38rem 0.7rem; font-size: 0.82rem; }
+	.controls button.secondary { background: var(--surface); color: var(--muted); border-color: var(--line); }
+	.controls button.secondary:hover { color: var(--text); border-color: var(--muted); }
 	button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 	.stage {

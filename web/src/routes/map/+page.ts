@@ -1,10 +1,15 @@
 import type { PageLoad } from './$types';
 import { BUCKET, type Inspiration, type Project } from '#lib/types.js';
-import { userTags } from '#lib/inspirations.js';
+import { loadPositions, userTags } from '#lib/inspirations.js';
 
-export const load: PageLoad = async ({ parent, depends }) => {
+export const load: PageLoad = async ({ parent, depends, url }) => {
 	depends('moodboard:data');
 	const { supabase, user } = await parent();
+
+	// Saved node positions belong to one map: a project id, 'none' or 'all'. Reading the URL here
+	// makes the load re-run when `?project=` changes.
+	const param = url.searchParams.get('project');
+	const scope = param && param !== 'all' ? param : 'all';
 
 	// PostgREST returns at most 1000 rows per request, so read in pages until a short page.
 	const PAGE = 1000;
@@ -48,7 +53,19 @@ export const load: PageLoad = async ({ parent, depends }) => {
 		}
 	}
 
-	const tags = await userTags(supabase).catch(() => []);
+	const [tags, positions] = await Promise.all([
+		userTags(supabase).catch(() => []),
+		loadPositions(supabase, scope).catch((): Record<string, { x: number; y: number }> => ({}))
+	]);
 
-	return { projects, inspirations, urls, tags, userId: user?.id, error: err ? err.message : null };
+	return {
+		projects,
+		inspirations,
+		urls,
+		tags,
+		positions,
+		positionsScope: scope,
+		userId: user?.id,
+		error: err ? err.message : null
+	};
 };
