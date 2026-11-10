@@ -82,7 +82,7 @@
 		<span class="who">{data.user?.email ?? ''}</span>
 	</div>
 	<div class="actions">
-		<a class="btn" href="/map">Χάρτης</a>
+		<a class="btn" href={selected === 'all' ? '/map' : `/map?project=${encodeURIComponent(selected)}`}>Χάρτης</a>
 		<a class="btn primary" href="/new">+ Νέα εικόνα</a>
 		<button type="button" disabled={loggingOut} onclick={logout}>Αποσύνδεση</button>
 	</div>

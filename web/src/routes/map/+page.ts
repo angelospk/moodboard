@@ -1,9 +1,10 @@
 import type { PageLoad } from './$types';
 import { BUCKET, type Inspiration, type Project } from '#lib/types.js';
+import { userTags } from '#lib/inspirations.js';
 
 export const load: PageLoad = async ({ parent, depends }) => {
 	depends('moodboard:data');
-	const { supabase } = await parent();
+	const { supabase, user } = await parent();
 
 	// PostgREST returns at most 1000 rows per request, so read in pages until a short page.
 	const PAGE = 1000;
@@ -24,7 +25,9 @@ export const load: PageLoad = async ({ parent, depends }) => {
 		all<Inspiration>((from, to) =>
 			supabase
 				.from('inspirations')
-				.select('id, project_id, tags, level, note, image_path, regions')
+				.select(
+					'id, project_id, tags, level, note, image_path, regions, source_url, source_title, created_at'
+				)
 				.order('created_at', { ascending: false })
 				.order('id')
 				.range(from, to)
@@ -45,5 +48,7 @@ export const load: PageLoad = async ({ parent, depends }) => {
 		}
 	}
 
-	return { projects, inspirations, urls, error: err ? err.message : null };
+	const tags = await userTags(supabase).catch(() => []);
+
+	return { projects, inspirations, urls, tags, userId: user?.id, error: err ? err.message : null };
 };
