@@ -9,12 +9,16 @@ Defined in `web/src/lib/app.css`. Use only these; no raw hex in components excep
 
 - Surfaces: `--bg` (paper), `--surface`, `--raised` (cards, dock, popovers), `--sunk`.
 - Text: `--text`, `--muted`, `--faint`. Lines: `--line`, `--line-strong`. Accent: `--accent` (terracotta, the only accent).
-- Type: system sans for UI; `--font-serif` for project names and page titles. Scale 11 (uppercase labels, +0.06em tracking) / 12.5 / 14 base / 16 / 18 / 22 / 28.
+- Type: system sans for UI; `--font-serif` for project names and page titles. Scale 12.5 (labels: sentence case, weight 600, `--muted`; no uppercase: Greek caps drop accents and read as shouting) / 14 base / 16 / 18 / 22 / 28.
 - Radius: `--r-img` 4, `--r-ctl` 8, `--r-panel` 14, `--r-pill` 999. Spacing 4-based.
 - Primitives: `.btn` `.btn.primary` `.btn.ghost`, `.chip` `.chip.on`, `.seg`, `.kbd`.
 - Shadows: card `0 1px 2px rgb(0 0 0 / .06), 0 8px 24px -12px rgb(0 0 0 / .25)`; floating (dock, popover) `0 12px 32px -12px rgb(0 0 0 / .3), 0 0 0 1px var(--line)`.
 - Motion: 150–200ms, `cubic-bezier(.2,.8,.2,1)`; respect `prefers-reduced-motion`.
 - Touch targets ≥ 32px (≥ 40px on touch screens), even when the visible mark is smaller.
+
+## Appearance (theme + canvas)
+
+Tokens are `light-dark()` pairs; `color-scheme` picks the side (OS by default, `html[data-theme]` when chosen). The dock's «Εμφάνιση» popover sets Θέμα (Αυτόματο · Ανοιχτό · Σκούρο) and Καμβάς: 4 swatches for the side in view (light: Χαρτί, Λευκό, Μπετό, Άμμος; dark: Νύχτα, Γραφίτης, Μαύρο, Καρυδιά). A light swatch is never offered in dark mode, so text keeps its contrast. Stored per viewer in localStorage (`src/lib/appearance.ts`); `src/app.html` applies it before first paint.
 
 ## Zone palette (tags on the board)
 
@@ -31,7 +35,7 @@ Layout, top to bottom:
 4. **Dock**: floating pill, bottom centre, 48px: `＋ Εικόνα` (primary) · Σημειώσεις toggle · size slider · Κεντράρισμα · Αυτόματη διάταξη. Tooltips show shortcuts. With < 3 images, a hint beside it: «⌘V επικόλληση · σύρε εικόνες εδώ».
 5. **Panel** (right, 400px, below header+tag row, slides in 180ms; dock shifts left to stay visible). Mobile: bottom sheet 75vh.
 
-Cards: "print" look: `--raised` frame with 6px padding, radius 6, card shadow; image whole (natural aspect ratio); note under it when Σημειώσεις is on (12.5px, 3 lines). Hover lifts 2px. Selected = 2px accent ring. Regions: count dot top-right when small; boxes when rendered width ≥ 200px; box notes when ≥ 360px.
+Cards: "print" look: `--raised` frame with 6px padding, radius 6, card shadow; image whole (natural aspect ratio); note and numbered region notes («1 ματι στο φως») under it when Σημειώσεις is on (12.5px, note 3 lines, each region 2 lines); with Σημειώσεις off the same block appears as a caption under the card on hover (250ms delay). Hovering a region row lights up its box. Hover lifts 2px and shows the region boxes at any size. Selected = 2px accent ring. Regions: count dot top-right when small; boxes when rendered width ≥ 200px; box notes when ≥ 360px.
 
 Interactions (all must be discoverable: tooltip, hint, or context menu):
 - **Add**: `＋ Εικόνα`/`N` → file picker (multi). Drop files on the canvas → created where dropped. `⌘V` image → created at the last pointer position. Right-click canvas → «Νέα εικόνα εδώ…», «Επικόλληση εδώ», «Κεντράρισμα». New images are saved immediately (capture first), get the current project and, if dropped inside a zone, that zone's tag; then the panel opens with the note focused.
@@ -41,4 +45,4 @@ Interactions (all must be discoverable: tooltip, hint, or context menu):
 
 ## Inspiration panel (inline editing, autosave)
 
-Header: level label (11px uppercase) · ‹ › · ×. Then the image with region boxes (draw a box by dragging on the image), note (auto-growing textarea, «Τι σου αρέσει εδώ;»), tags (TagInput + past tags), level chips (click again clears), region list (number, note, 5 rating squares with 28px hit areas, delete), source link, footer: «Αντιγραφή σε…», «Πλήρης σελίδα», «Διαγραφή». Autosave 700ms after the last edit; status «Αποθήκευση…» / «Αποθηκεύτηκε ✓» / error with retry. Flush on close and on item change.
+Header: level label (14px, weight 600) · ‹ › · ×. Then the image with region boxes (draw a box by dragging on the image), note (auto-growing textarea, «Τι σου αρέσει εδώ;»), tags (TagInput + past tags), level chips (click again clears), region list (number, note, 5 rating squares with 28px hit areas, delete), source link, footer: «Αντιγραφή σε…», «Πλήρης σελίδα», «Διαγραφή». Autosave 700ms after the last edit; status «Αποθήκευση…» / «Αποθηκεύτηκε ✓» / error with retry. Flush on close and on item change.

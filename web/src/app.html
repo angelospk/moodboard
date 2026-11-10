@@ -1,9 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="el">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// Appearance before first paint (see src/lib/appearance.ts).
+			try {
+				var a = JSON.parse(localStorage.getItem('moodboard.appearance') || '{}');
+				var r = document.documentElement;
+				if (a.theme === 'light' || a.theme === 'dark') r.dataset.theme = a.theme;
+				if (/^#[0-9a-f]{6}$/i.test(a.lc)) r.style.setProperty('--canvas-light', a.lc);
+				if (/^#[0-9a-f]{6}$/i.test(a.dc)) r.style.setProperty('--canvas-dark', a.dc);
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

@@ -396,9 +396,7 @@
 	}
 	.slabel {
 		margin: 6px 0 0;
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		font-size: 12.5px;
 		color: var(--muted);
 	}
 	.levelchips {

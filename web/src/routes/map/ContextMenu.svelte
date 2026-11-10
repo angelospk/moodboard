@@ -119,9 +119,7 @@
 		align-items: center;
 		gap: 4px;
 		padding: 4px 8px 6px 4px;
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		font-size: 12.5px;
 		color: var(--muted);
 		border-bottom: 1px solid var(--line);
 		margin-bottom: 4px;

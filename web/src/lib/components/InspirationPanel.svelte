@@ -347,11 +347,9 @@
 		min-width: 0;
 	}
 	.lvl {
-		font-size: 11px;
+		font-size: 14px;
 		font-weight: 600;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--muted);
+		color: var(--text);
 		white-space: nowrap;
 	}
 	.status {
@@ -429,10 +427,8 @@
 		min-width: 0;
 	}
 	.lbl {
-		font-size: 11px;
+		font-size: 12.5px;
 		font-weight: 600;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
 		color: var(--muted);
 	}
 

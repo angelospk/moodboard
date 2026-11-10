@@ -48,7 +48,7 @@
 		overflow: visible;
 	}
 	.tagchip {
-		--z: var(--zl, #7d7a72);
+		--z: light-dark(var(--zl, #7d7a72), var(--zd, #9a978f));
 		flex: none;
 		position: relative;
 		padding: 3px 10px 3px 8px;
@@ -63,11 +63,6 @@
 		content: '';
 		position: absolute;
 		inset: -5px -2px;
-	}
-	@media (prefers-color-scheme: dark) {
-		.tagchip {
-			--z: var(--zd, #9a978f);
-		}
 	}
 	.tagchip:hover {
 		border-color: color-mix(in srgb, var(--z) 55%, var(--line));

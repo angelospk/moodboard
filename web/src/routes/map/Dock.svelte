@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import Appearance from './Appearance.svelte';
 
 	interface Props {
 		notesOn: boolean;
@@ -53,6 +54,7 @@
 			<Icon name="layout" />
 			<span class="tip" aria-hidden="true">Αυτόματη διάταξη <kbd class="kbd">L</kbd></span>
 		</button>
+		<Appearance />
 	</div>
 	{#if hint}<p class="hint">{hint}</p>{/if}
 </div>
@@ -84,7 +86,7 @@
 			0 12px 32px -12px rgb(0 0 0 / 0.3),
 			0 0 0 1px var(--line);
 	}
-	.dbtn {
+	.dock :global(.dbtn) {
 		position: relative;
 		height: 36px;
 		min-width: 36px;
@@ -103,25 +105,25 @@
 			background-color 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
 			color 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
-	.dbtn.icon {
+	.dock :global(.dbtn.icon) {
 		padding: 0;
 		width: 36px;
 	}
-	.dbtn:hover {
+	.dock :global(.dbtn:hover) {
 		background: var(--sunk);
 		color: var(--text);
 	}
-	.dbtn.on {
+	.dock :global(.dbtn.on) {
 		color: var(--text);
 		background: var(--sunk);
 	}
-	.dbtn.primary {
+	.dock :global(.dbtn.primary) {
 		background: var(--accent);
 		color: var(--on-accent);
 		font-weight: 600;
 		padding: 0 14px 0 11px;
 	}
-	.dbtn.primary:hover {
+	.dock :global(.dbtn.primary:hover) {
 		background: color-mix(in srgb, var(--accent) 88%, var(--text));
 	}
 	.sep {
@@ -163,7 +165,7 @@
 	}
 
 	/* Tooltips: label plus shortcut, above the control. */
-	.tip {
+	.dock :global(.tip) {
 		position: absolute;
 		bottom: calc(100% + 10px);
 		left: 50%;
@@ -184,15 +186,15 @@
 			opacity 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
 			transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
-	.tip .kbd {
+	.dock :global(.tip .kbd) {
 		background: transparent;
 		color: inherit;
 		border-color: color-mix(in srgb, var(--bg) 40%, transparent);
 		padding: 2px 4px;
 	}
-	.dbtn:hover .tip,
-	.dbtn:focus-visible .tip,
-	.size:hover .tip {
+	.dock :global(.dbtn:hover .tip),
+	.dock :global(.dbtn:focus-visible .tip),
+	.size:hover :global(.tip) {
 		opacity: 1;
 		transform: translate(-50%, 0);
 		transition-delay: 0.35s;
@@ -218,17 +220,17 @@
 		.dockwrap {
 			left: 50%;
 		}
-		.lbl,
-		.tip {
+		.dock :global(.lbl),
+		.dock :global(.tip) {
 			display: none;
 		}
-		.dbtn {
+		.dock :global(.dbtn) {
 			width: 40px;
 			min-width: 40px;
 			height: 40px;
 			padding: 0;
 		}
-		.dbtn.primary {
+		.dock :global(.dbtn.primary) {
 			padding: 0;
 		}
 		.size input {
@@ -240,8 +242,8 @@
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.dockwrap,
-		.dbtn,
-		.tip {
+		.dock :global(.dbtn),
+		.dock :global(.tip) {
 			transition: none;
 		}
 	}

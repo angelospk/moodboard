@@ -1,22 +1,27 @@
-/* ---------- tokens (light) ---------- */
+/* ---------- tokens ----------
+ * One set of light-dark() pairs. color-scheme picks the side: the OS by default,
+ * or html[data-theme] when the viewer chooses (src/lib/appearance.ts).
+ */
 :root {
-	--bg: #f4f1eb;
-	--surface: #fbfaf7;
-	--raised: #ffffff;
-	--sunk: #ebe7df;
-	--text: #1e1c19;
-	--muted: #6d675e;
-	--faint: #9a9388;
-	--line: #e0dacf;
-	--line-strong: #c9c1b2;
-	--accent: #b4532a;
-	--accent-soft: #f3e2d8;
-	--on-accent: #ffffff;
-	--wood: #a9825a;
-	--concrete: #8d8a84;
-	--ok: #4f7a54;
-	--shadow: 0 1px 2px rgba(40, 30, 20, 0.06), 0 10px 28px rgba(40, 30, 20, 0.1);
-	--scrim: rgba(30, 28, 25, 0.42);
+	color-scheme: light dark;
+	--bg: light-dark(#f4f1eb, #161513);
+	--surface: light-dark(#fbfaf7, #1d1c19);
+	--raised: light-dark(#ffffff, #262420);
+	--sunk: light-dark(#ebe7df, #0f0e0d);
+	--text: light-dark(#1e1c19, #ece8e1);
+	--muted: light-dark(#6d675e, #a39d92);
+	--faint: light-dark(#9a9388, #716b62);
+	--line: light-dark(#e0dacf, #33302b);
+	--line-strong: light-dark(#c9c1b2, #4c473f);
+	--accent: light-dark(#b4532a, #e07a4c);
+	--accent-soft: light-dark(#f3e2d8, #3a251b);
+	--on-accent: light-dark(#ffffff, #1b120d);
+	--wood: light-dark(#a9825a, #c39a6f);
+	--concrete: light-dark(#8d8a84, #8f8c86);
+	--ok: light-dark(#4f7a54, #86b08b);
+	--shadow: 0 1px 2px light-dark(rgba(40, 30, 20, 0.06), rgba(0, 0, 0, 0.4)),
+		0 10px 28px light-dark(rgba(40, 30, 20, 0.1), rgba(0, 0, 0, 0.45));
+	--scrim: light-dark(rgba(30, 28, 25, 0.42), rgba(0, 0, 0, 0.6));
 	--r-img: 4px;
 	--r-ctl: 8px;
 	--r-panel: 14px;
@@ -24,32 +29,17 @@
 	--radius: var(--r-ctl);
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 	--font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+	/* Board canvas: the viewer's swatch per theme, else the page background. */
+	--canvas: light-dark(var(--canvas-light, #f4f1eb), var(--canvas-dark, #161513));
 	font-family: var(--font-sans);
 	color: var(--text);
 	background: var(--bg);
 }
-
-/* ---------- tokens (dark) ---------- */
-@media (prefers-color-scheme: dark) {
-	:root {
-		--bg: #161513;
-		--surface: #1d1c19;
-		--raised: #262420;
-		--sunk: #0f0e0d;
-		--text: #ece8e1;
-		--muted: #a39d92;
-		--faint: #716b62;
-		--line: #33302b;
-		--line-strong: #4c473f;
-		--accent: #e07a4c;
-		--accent-soft: #3a251b;
-		--on-accent: #1b120d;
-		--wood: #c39a6f;
-		--concrete: #8f8c86;
-		--ok: #86b08b;
-		--shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45);
-		--scrim: rgba(0, 0, 0, 0.6);
-	}
+:root[data-theme='light'] {
+	color-scheme: light;
+}
+:root[data-theme='dark'] {
+	color-scheme: dark;
 }
 
 /* ---------- base ---------- */

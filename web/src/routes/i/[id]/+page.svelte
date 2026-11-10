@@ -355,10 +355,8 @@
 		min-width: 0;
 	}
 	.lbl {
-		font-size: 11px;
+		font-size: 12.5px;
 		font-weight: 600;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
 		color: var(--muted);
 	}
 	textarea,

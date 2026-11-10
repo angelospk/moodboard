@@ -132,6 +132,8 @@
 	const cardWidth = $derived(size * view.k);
 	const showBoxes = $derived(cardWidth >= 200);
 	const showRegionNotes = $derived(cardWidth >= 360);
+	/** The region whose note row is under the pointer; its box lights up on the image. */
+	let hot = $state<{ id: string; r: number } | null>(null);
 
 	/** Dot grid spacing on screen: 24px × zoom, doubled while it is too dense to read. */
 	const grid = $derived.by(() => {
@@ -987,6 +989,7 @@
 			{@const item = n.item}
 			{@const url = urlOf(item)}
 			{@const regions = item.regions ?? []}
+			{@const marked = regions.map((r, ri) => ({ note: r.note, n: ri + 1 })).filter((r) => r.note?.trim())}
 			<div
 				class="node"
 				class:sel={selectedId === item.id}
@@ -1002,6 +1005,7 @@
 				role="button"
 				tabindex="0"
 				aria-label={alt(item)}
+				aria-describedby={marked.length ? `cap-${n.id}` : undefined}
 				aria-pressed={selectedId === item.id}
 			>
 				<div class="card">
@@ -1011,21 +1015,42 @@
 						{:else}
 							<span class="missing">χωρίς εικόνα</span>
 						{/if}
-						{#if showBoxes}
-							{#each regions as r, ri (ri)}
-								<div class="region" style={regionStyle(r)}>
-									<span class="rtag">
-										<span class="rnum">{ri + 1}</span>
-										{#if showRegionNotes && r.note}<span class="rnote">{r.note}</span>{/if}
-									</span>
-								</div>
-							{/each}
-						{:else if regions.length}
-							<span class="rcount" title={`${regions.length} περιοχές`}>{regions.length}</span>
+						{#each regions as r, ri (ri)}
+							<div
+								class="region"
+								class:boxed={showBoxes}
+								class:hot={hot?.id === item.id && hot.r === ri}
+								style={regionStyle(r)}
+							>
+								<span class="rtag">
+									<span class="rnum">{ri + 1}</span>
+									{#if showRegionNotes && r.note}<span class="rnote">{r.note}</span>{/if}
+								</span>
+							</div>
+						{/each}
+						{#if regions.length && !showBoxes}
+							<span class="rcount" title={`${regions.length} σημεία · πέρασε το ποντίκι για να τα δεις`}>
+								{regions.length}
+							</span>
 						{/if}
 					</div>
-					{#if notesOn && item.note}
-						<p class="cardnote">{item.note}</p>
+					{#if item.note || marked.length}
+						<!-- Notes under the card when Σημειώσεις is on; otherwise a hover caption. -->
+						<div class="cap" class:float={!notesOn} id={`cap-${n.id}`}>
+							{#if item.note}<p class="cardnote">{item.note}</p>{/if}
+							{#if marked.length}
+								<ol class="rlist">
+									{#each marked as r (r.n)}
+										<li
+											onpointerenter={() => (hot = { id: item.id, r: r.n - 1 })}
+											onpointerleave={() => (hot = null)}
+										>
+											<span class="rn">{r.n}</span><span class="rt">{r.note}</span>
+										</li>
+									{/each}
+								</ol>
+							{/if}
+						</div>
 					{/if}
 				</div>
 			</div>
@@ -1048,7 +1073,7 @@
 		overflow: hidden;
 		touch-action: none;
 		cursor: grab;
-		background-color: var(--bg);
+		background-color: var(--canvas);
 		background-image: radial-gradient(circle at 1px 1px, var(--line-strong) 1px, transparent 1.2px);
 		user-select: none;
 		-webkit-user-select: none;
@@ -1068,7 +1093,7 @@
 
 	/* ------------------------------------------------------------ zones */
 	.zone {
-		--z: var(--zl, #7d7a72);
+		--z: light-dark(var(--zl, #7d7a72), var(--zd, #9a978f));
 		position: absolute;
 		left: 0;
 		top: 0;
@@ -1080,11 +1105,6 @@
 			opacity 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
 			background-color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
 			border-color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
-	}
-	@media (prefers-color-scheme: dark) {
-		.zone {
-			--z: var(--zd, #9a978f);
-		}
 	}
 	.zone.dim {
 		opacity: 0.3;
@@ -1238,13 +1258,32 @@
 		font-size: 11px;
 		line-height: 1.3;
 	}
-	/* Region marks stay the same size on screen at any zoom (--k is the zoom). */
+	/* Region marks stay the same size on screen at any zoom (--k is the zoom).
+	   Small cards show only a count; hovering a card shows its boxes. */
 	.region {
 		position: absolute;
 		border: calc(1.5px / var(--k, 1)) solid var(--accent);
 		border-radius: calc(3px / var(--k, 1));
 		box-shadow: 0 0 0 calc(1px / var(--k, 1)) rgb(255 255 255 / 0.35);
 		pointer-events: none;
+		opacity: 0;
+		transition:
+			opacity 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
+			background-color 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.region.boxed,
+	.node:hover .region,
+	.node:focus-visible .region {
+		opacity: 1;
+	}
+	.region.hot {
+		opacity: 1;
+		background: color-mix(in srgb, var(--accent) 22%, transparent);
+		border-width: calc(2.5px / var(--k, 1));
+	}
+	.node:hover .rcount,
+	.node:focus-visible .rcount {
+		opacity: 0;
 	}
 	.rtag {
 		position: absolute;
@@ -1296,17 +1335,99 @@
 		border-radius: 999px;
 		box-shadow: 0 0 0 2px var(--raised);
 	}
-	.cardnote {
+	.cap {
+		display: grid;
+		gap: 5px;
 		margin: 7px 2px 1px;
 		font-size: 12.5px;
 		line-height: 1.4;
 		color: var(--text);
+	}
+	/* Σημειώσεις off: the same notes appear as a caption under the card on hover. */
+	.cap.float {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: calc(100% - 4px);
+		margin: 0;
+		padding: 8px 8px 9px;
+		background: var(--raised);
+		border-radius: 0 0 6px 6px;
+		box-shadow: 0 14px 28px -14px rgb(0 0 0 / 0.35);
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) 0s,
+			visibility 0s linear 0.15s;
+	}
+	@media (hover: hover) {
+		.node:hover .cap.float {
+			opacity: 1;
+			visibility: visible;
+			transition-delay: 0.25s, 0.25s;
+		}
+		.node:hover {
+			z-index: 4;
+		}
+	}
+	.node:focus-visible {
+		z-index: 4;
+	}
+	.node:focus-visible .cap.float {
+		opacity: 1;
+		visibility: visible;
+	}
+	.node:global(.dragging) .cap.float {
+		visibility: hidden;
+	}
+	.cardnote {
+		margin: 0;
 		display: -webkit-box;
 		-webkit-line-clamp: 3;
 		line-clamp: 3;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		overflow-wrap: anywhere;
+	}
+	.rlist {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 3px;
+		color: var(--muted);
+	}
+	.rlist li {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		min-width: 0;
+		border-radius: 4px;
+	}
+	.rn {
+		flex: none;
+		min-width: 1.45em;
+		padding: 0.1em 0.3em;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		color: var(--accent);
+		font-size: 0.85em;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		text-align: center;
+		line-height: 1.35;
+	}
+	.rt {
+		min-width: 0;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		overflow-wrap: anywhere;
+	}
+	.rlist li:hover .rt {
+		color: var(--text);
 	}
 
 	/* ------------------------------------------------------------ drop veil */
@@ -1336,7 +1457,9 @@
 		.zone,
 		.node,
 		.card,
-		.zadd {
+		.zadd,
+		.region,
+		.cap.float {
 			transition: none;
 		}
 		.node:hover .card,

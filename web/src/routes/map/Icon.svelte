@@ -17,7 +17,8 @@
 		trash: 'M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 8.6a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-8.6',
 		x: 'M4 4l8 8M12 4l-8 8',
 		check: 'M3 8.5l3 3 7-7',
-		upload: 'M8 11V3M4.5 6.5L8 3l3.5 3.5M3 13h10'
+		upload: 'M8 11V3M4.5 6.5L8 3l3.5 3.5M3 13h10',
+		contrast: 'M8 2.5a5.5 5.5 0 1 0 0 11a5.5 5.5 0 0 0 0-11zM8 2.5v11M8 5h3.8M8 8h5.5M8 11h3.8'
 	} as const;
 	export type IconName = keyof typeof PATHS;
 </script>
