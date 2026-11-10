@@ -3,13 +3,13 @@
 	import type { Session } from '@supabase/supabase-js';
 	import { supabase } from '@/lib/supabase';
 	import { clearPending, getPending, type CaptureResult, type PendingCapture } from '@/lib/pending';
+	import TagInput from '@/lib/TagInput.svelte';
 	import {
 		BUCKET,
 		LEVELS,
 		LEVEL_LABELS,
 		MIME_EXT,
 		normalizeMime,
-		parseTags,
 		type Level,
 		type Project,
 	} from '@/lib/types';
@@ -30,7 +30,8 @@
 	let creatingProject = $state(false);
 	let newProjectName = $state('');
 	let note = $state('');
-	let tagsInput = $state('');
+	let tags = $state<string[]>([]);
+	let tagSuggestions = $state<string[]>([]);
 	let level = $state<Level | ''>('');
 	let saving = $state(false);
 	let errorMessage = $state('');
@@ -52,6 +53,16 @@
 	async function refresh() {
 		pending = await getPending();
 		await loadProjects();
+		await loadUserTags();
+	}
+
+	async function loadUserTags() {
+		const { data, error } = await supabase.rpc('user_tags');
+		if (error) {
+			tagSuggestions = [];
+			return;
+		}
+		tagSuggestions = ((data ?? []) as { tag: string }[]).map((row) => row.tag);
 	}
 
 	async function loadProjects() {
@@ -146,7 +157,7 @@
 					image_path: path,
 					project_id: projectId || null,
 					note: note.trim(),
-					tags: parseTags(tagsInput),
+					tags,
 					level: level || null,
 					source_url: pending.sourceUrl,
 					source_title: pending.sourceTitle,
@@ -183,7 +194,7 @@
 		void clearPending();
 		pending = null;
 		note = '';
-		tagsInput = '';
+		tags = [];
 		level = '';
 		projectId = '';
 		errorMessage = '';
@@ -261,9 +272,10 @@
 						<textarea rows="3" bind:value={note}></textarea>
 					</label>
 
-					<label>Tags (χωρισμένα με κόμμα)
-						<input bind:value={tagsInput} placeholder="ξύλο, φως" />
-					</label>
+					<div class="field">
+						<span class="field-label">Tags</span>
+						<TagInput bind:tags suggestions={tagSuggestions} placeholder="ξύλο, φως" />
+					</div>
 
 					<label>Επίπεδο
 						<select bind:value={level}>
@@ -332,6 +344,15 @@
 		flex-direction: column;
 		gap: 3px;
 		font-size: 0.8rem;
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		font-size: 0.8rem;
+	}
+	.field-label {
+		color: inherit;
 	}
 	input,
 	select,
