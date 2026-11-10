@@ -15,10 +15,10 @@ export class Autosaver<F extends Record<string, unknown>> {
 	error = '';
 
 	#pending = new Map<string, Partial<F>>();
-	#inflight = new Map<string, Set<keyof F>>();
+	/** Batches handed to the queue and not finished yet (queued or being sent), oldest first. */
+	#outstanding: { id: string; fields: Partial<F> }[] = [];
 	#failed = new Set<string>();
 	#queue: Promise<void> = Promise.resolve();
-	#active = 0;
 	#timer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(
@@ -37,17 +37,23 @@ export class Autosaver<F extends Record<string, unknown>> {
 		this.#timer = setTimeout(() => void this.flush(), this.delay);
 	}
 
-	/** Send everything pending now. Resolves true when nothing is left unsaved or failed. */
-	flush(): Promise<boolean> {
+	/** Send everything pending now. Resolves, once the queue is empty (also of saves queued later),
+	 *  true when nothing is left unsaved or failed. */
+	async flush(): Promise<boolean> {
 		clearTimeout(this.#timer);
 		this.#timer = undefined;
-		const batch = [...this.#pending];
-		this.#pending.clear();
-		for (const [id, fields] of batch) {
-			this.#active++;
-			this.#queue = this.#queue.then(() => this.#send(id, fields));
+		for (const [id, fields] of this.#pending) {
+			const job = { id, fields };
+			this.#outstanding.push(job);
+			this.#queue = this.#queue.then(() => this.#send(job));
 		}
-		return this.#queue.then(() => this.#failed.size === 0 && this.#pending.size === 0);
+		this.#pending.clear();
+		let q: Promise<void>;
+		do {
+			q = this.#queue;
+			await q;
+		} while (q !== this.#queue);
+		return this.#failed.size === 0 && this.#pending.size === 0;
 	}
 
 	/** Try the failed saves again (with any newer edits merged in). */
@@ -57,11 +63,17 @@ export class Autosaver<F extends Record<string, unknown>> {
 		return this.flush();
 	}
 
-	/** Fields of `id` that are not stored yet (pending or being sent). */
+	/** Fields of `id` that are not stored yet (pending, queued or being sent). */
 	dirtyKeys(id: string): Set<keyof F> {
-		const keys = new Set<keyof F>(Object.keys(this.#pending.get(id) ?? {}) as (keyof F)[]);
-		for (const k of this.#inflight.get(id) ?? []) keys.add(k);
-		return keys;
+		return new Set(Object.keys(this.draft(id)) as (keyof F)[]);
+	}
+
+	/** The newest unsaved value of each field of `id` (what an editor should show for it). */
+	draft(id: string): Partial<F> {
+		const d: Partial<F> = {};
+		for (const job of this.#outstanding) if (job.id === id) Object.assign(d, job.fields);
+		Object.assign(d, this.#pending.get(id) ?? {});
+		return copy(d);
 	}
 
 	/** Forget unsaved edits of an item (e.g. it was deleted). */
@@ -70,21 +82,25 @@ export class Autosaver<F extends Record<string, unknown>> {
 		this.#failed.delete(id);
 	}
 
-	async #send(id: string, fields: Partial<F>) {
-		this.#inflight.set(id, new Set(Object.keys(fields) as (keyof F)[]));
+	async #send(job: { id: string; fields: Partial<F> }) {
+		const { id, fields } = job;
 		this.#emit('saving');
 		try {
 			await this.save(id, fields);
-			this.#failed.delete(id);
+			if (!this.#pending.has(id)) this.#failed.delete(id);
 		} catch (e) {
-			// Keep the edits; anything set since then is newer and wins.
-			this.#pending.set(id, { ...fields, ...(this.#pending.get(id) ?? {}) });
+			// Keep the edits for a retry, except fields a newer batch or edit already replaced.
+			const keep: Partial<F> = { ...fields };
+			const later = this.#outstanding.slice(this.#outstanding.indexOf(job) + 1);
+			for (const other of [...later.filter((j) => j.id === id).map((j) => j.fields), this.#pending.get(id) ?? {}]) {
+				for (const k of Object.keys(other)) delete keep[k as keyof F];
+			}
+			if (Object.keys(keep).length) this.#pending.set(id, { ...keep, ...(this.#pending.get(id) ?? {}) });
 			this.#failed.add(id);
 			this.error = e instanceof Error ? e.message : String(e);
 		} finally {
-			this.#inflight.delete(id);
-			this.#active--;
-			if (this.#active === 0) {
+			this.#outstanding.splice(this.#outstanding.indexOf(job), 1);
+			if (this.#outstanding.length === 0) {
 				this.#emit(this.#failed.size ? 'error' : this.#pending.size ? 'pending' : 'saved');
 			}
 		}

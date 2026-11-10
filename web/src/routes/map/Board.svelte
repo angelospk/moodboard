@@ -828,7 +828,12 @@
 			byScope.set(r.scope, list);
 		}
 		return serial(
-			() => Promise.all([...byScope].map(([sc, list]) => savePositions(supabase, sc, list))),
+			async () => {
+				// Wait for every scope before the chain moves on, so a later delete never races a write.
+				const res = await Promise.allSettled([...byScope].map(([sc, list]) => savePositions(supabase, sc, list)));
+				const bad = res.find((r) => r.status === 'rejected');
+				if (bad) throw bad.reason;
+			},
 			'Οι θέσεις δεν αποθηκεύτηκαν'
 		);
 	}

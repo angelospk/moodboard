@@ -147,6 +147,7 @@
 	const rightInset = $derived(panelOpen && innerWidth > MOBILE ? PANEL_W : 0);
 
 	let board = $state<ReturnType<typeof Board>>();
+	let panel = $state<ReturnType<typeof InspirationPanel>>();
 
 	function select(id: string | null, opts: { focus?: boolean } = {}) {
 		selectedId = id;
@@ -458,7 +459,7 @@
 			if (menu) menu = null;
 			else if (switcherOpen) switcherOpen = false;
 			else if (filtersOpen) filtersOpen = false;
-			else if (selectedId) select(null);
+			else if (selectedId) void (panel ? panel.close() : select(null));
 			else if (highlight) highlight = null;
 			else return;
 			e.preventDefault();
@@ -625,6 +626,7 @@
 		{#if panelOpen && selected && data.userId}
 			<div class="panelwrap">
 				<InspirationPanel
+					bind:this={panel}
 					supabase={data.supabase}
 					userId={data.userId}
 					item={selected}

@@ -123,6 +123,68 @@ describe('Autosaver', () => {
 		expect(calls).toHaveLength(0);
 	});
 
+	it('flush() resolves only after saves queued later by another flush are done', async () => {
+		const { save, calls } = fakeSave();
+		const a = new Autosaver<F>(save);
+		a.set('A', 'note', 'n1');
+		let done = false;
+		const f1 = a.flush().then((ok) => ((done = true), ok));
+		await settle();
+		a.set('A', 'note', 'n2');
+		void a.flush();
+		calls[0].resolve();
+		await settle();
+		expect(calls).toHaveLength(2);
+		expect(done).toBe(false);
+		calls[1].resolve();
+		expect(await f1).toBe(true);
+	});
+
+	it('dirtyKeys and draft include fields queued behind another save', async () => {
+		const { save } = fakeSave();
+		const a = new Autosaver<F>(save);
+		a.set('A', 'note', 'a');
+		a.set('B', 'note', 'b');
+		void a.flush();
+		await settle();
+		expect(a.dirtyKeys('B')).toEqual(new Set(['note']));
+		expect(a.draft('B')).toEqual({ note: 'b' });
+	});
+
+	it('draft(id) gives the newest unsaved values: pending over queued over inflight', async () => {
+		const { save } = fakeSave();
+		const a = new Autosaver<F>(save);
+		a.set('A', 'note', 'one');
+		a.set('A', 'level', 'urban');
+		void a.flush();
+		await settle();
+		a.set('A', 'note', 'two');
+		expect(a.draft('A')).toEqual({ note: 'two', level: 'urban' });
+		expect(a.draft('B')).toEqual({});
+	});
+
+	it('an old failed save never brings back a value that a newer queued save replaced', async () => {
+		const { save, calls } = fakeSave();
+		const a = new Autosaver<F>(save);
+		a.set('A', 'note', 'old');
+		a.set('A', 'level', 'urban');
+		const f = a.flush();
+		await settle();
+		a.set('A', 'note', 'new');
+		void a.flush();
+		calls[0].reject(new Error('offline'));
+		await settle();
+		expect(calls[1].fields).toEqual({ note: 'new' });
+		calls[1].resolve();
+		expect(await f).toBe(false);
+		expect(a.dirtyKeys('A')).toEqual(new Set(['level']));
+		const r = a.retry();
+		await settle();
+		expect(calls[2].fields).toEqual({ level: 'urban' });
+		calls[2].resolve();
+		expect(await r).toBe(true);
+	});
+
 	it('reports state changes to the listener', async () => {
 		const { save, calls } = fakeSave();
 		const states: string[] = [];

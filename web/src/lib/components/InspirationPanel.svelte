@@ -74,24 +74,25 @@
 		}
 	);
 
-	function sync(it: Inspiration, all: boolean) {
-		const dirty = all ? new Set() : saver.dirtyKeys(it.id);
-		if (!dirty.has('note')) note = it.note ?? '';
-		if (!dirty.has('tags')) tags = [...(it.tags ?? [])];
-		if (!dirty.has('level')) level = it.level ?? null;
-		if (!dirty.has('regions')) regions = (it.regions ?? []).map((r) => ({ ...r }));
+	/** Show the stored item, with the newest unsaved edits of that item on top. */
+	function sync(it: Inspiration) {
+		const d = saver.draft(it.id);
+		note = d.note !== undefined ? (d.note ?? '') : (it.note ?? '');
+		tags = [...((d.tags !== undefined ? d.tags : it.tags) ?? [])];
+		level = d.level !== undefined ? d.level : (it.level ?? null);
+		regions = ((d.regions !== undefined ? d.regions : it.regions) ?? []).map((r) => ({ ...r }));
 	}
 
 	$effect.pre(() => {
 		const it = item;
 		untrack(() => {
 			if (it.id === id) {
-				sync(it, false);
+				sync(it);
 				return;
 			}
 			if (id) void saver.flush();
 			id = it.id;
-			sync(it, false);
+			sync(it);
 			active = null;
 			actionError = '';
 			if (focusNote) tick().then(() => noteEl?.focus());
@@ -106,7 +107,7 @@
 	}
 
 	/** Close only once the edits are stored; on failure stay open with the error and «Ξανά». */
-	async function close() {
+	export async function close() {
 		if (busy) return;
 		busy = 'leave';
 		const ok = await saver.flush();
