@@ -1059,8 +1059,8 @@
 		left: 0;
 		top: 0;
 		border-radius: 20px;
-		background: color-mix(in srgb, var(--z) 7%, transparent);
-		border: 1px solid color-mix(in srgb, var(--z) 28%, transparent);
+		background: color-mix(in srgb, var(--z) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--z) 40%, transparent);
 		pointer-events: none;
 		transition:
 			opacity 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
@@ -1076,7 +1076,7 @@
 		opacity: 0.3;
 	}
 	.zone.hl {
-		background: color-mix(in srgb, var(--z) 11%, transparent);
+		background: color-mix(in srgb, var(--z) 16%, transparent);
 		border-color: color-mix(in srgb, var(--z) 55%, transparent);
 	}
 	.zone.target {

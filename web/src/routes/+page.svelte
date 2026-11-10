@@ -589,6 +589,13 @@
 	.collage img { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; display: block; }
 	.ph-missing { display: block; width: 100%; height: 100%; min-height: 0; background: var(--surface); }
 	.pcard.resume .collage { height: 260px; }
+	/* The resume card is wide: three equal tiles, so no small source image is stretched into a blur. */
+	.pcard.resume .collage[data-count='3'] {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-rows: minmax(0, 1fr);
+	}
+	.pcard.resume .collage[data-count='3'] .cover { grid-row: auto; }
+	.pcard.resume .collage[data-count='2'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 	.pmeta { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 14px; }
 	.headrow {
