@@ -1,1102 +1,657 @@
 <script lang="ts">
+	// Project board: header, tag row, canvas with tag zones, dock, inspiration panel.
+	// Board.svelte owns the canvas (simulation, pan/zoom, drag, drop, saved positions); this page owns
+	// the data, filters, selection, adding images, menus and toasts.
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount, tick, untrack } from 'svelte';
+	import type { Inspiration, Level } from '#lib/types.js';
 	import {
-		forceCenter,
-		forceCollide,
-		type ForceCollide,
-		forceLink,
-		forceManyBody,
-		forceSimulation,
-		type Simulation,
-		type SimulationLinkDatum,
-		type SimulationNodeDatum
-	} from 'd3-force';
-	import { LEVELS, type Level, type Inspiration } from '#lib/types.js';
-	import { LEVEL_LABELS } from '#lib/tags.js';
-	import { copyInspiration, savePositions } from '#lib/inspirations.js';
-	import QuickAdd from '#lib/components/QuickAdd.svelte';
+		checkImage,
+		copyInspiration,
+		createInspiration,
+		deleteInspiration,
+		updateInspiration
+	} from '#lib/inspirations.js';
+	import InspirationPanel from '#lib/components/InspirationPanel.svelte';
+	import Board, { type BoardContext, type Spot } from './Board.svelte';
+	import BoardHeader from './BoardHeader.svelte';
+	import TagChips from './TagChips.svelte';
+	import Dock from './Dock.svelte';
+	import ContextMenu, { type MenuItem } from './ContextMenu.svelte';
+	import Toasts, { type Toast } from './Toasts.svelte';
+	import Icon from './Icon.svelte';
+	import { CARD_GAP, isTyping, searchText, zoneColors } from './board.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	interface SimNode extends SimulationNodeDatum {
-		id: string;
-		kind: 'project' | 'tag' | 'inspiration';
-		label: string;
-		item?: Inspiration;
-		/** Collision radius, world px. */
-		r: number;
-		/** Measured width / height, world px. */
-		w: number;
-		h: number;
-		orphan?: boolean;
-	}
-
-	interface SimLink extends SimulationLinkDatum<SimNode> {
-		id: string;
-		fromId: string;
-		toId: string;
-		kind: 'project' | 'tag';
-		dist: number;
-	}
-
 	const LS_KEY = 'moodboard:map';
-	/** Select value for «Χωρίς project» (project ids are uuids, so this cannot clash). */
-	const NO_PROJECT = '__none';
 	const SIZE_MIN = 80;
 	const SIZE_MAX = 360;
+	const PANEL_W = 400;
+	const MOBILE = 640;
+	const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/avif';
+	const ROW_FIELDS = 'id, project_id, tags, level, note, image_path, regions, source_url, source_title, created_at';
 
 	const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-	// -------------------------------------------------------------- URL / filters
+	// ------------------------------------------------------------------ Data
+
+	/** Local copy of the rows: edits, adds and deletes show at once; a reload replaces it. */
+	let items = $derived(data.inspirations);
+	/** Blob URLs of images added in this session, by inspiration id. */
+	let localUrls = $state.raw<Record<string, string>>({});
+	/** Signed URL per image path, kept stable across reloads so images do not re-download. */
+	const urlCache = new Map<string, { url: string; at: number }>();
+
+	function urlOf(i: Inspiration): string | null {
+		const local = localUrls[i.id];
+		if (local) return local;
+		const fresh = data.urls[i.image_path];
+		const hit = urlCache.get(i.image_path);
+		// Signed URLs live an hour; take the newer one after 50 minutes.
+		if (hit && Date.now() - hit.at < 50 * 60_000) return hit.url;
+		if (!fresh) return hit?.url ?? null;
+		urlCache.set(i.image_path, { url: fresh, at: Date.now() });
+		return fresh;
+	}
+
+	function setItem(row: Inspiration) {
+		items = items.map((i) => (i.id === row.id ? { ...i, ...row } : i));
+	}
+
+	// -------------------------------------------------------------- Filters
 
 	// Shallow navigations update `page.shallow.url`, not `page.url` (SvelteKit 3).
 	const projectParam = $derived((page.shallow?.url ?? page.url).searchParams.get('project'));
-
 	const project = $derived.by(() => {
 		const p = projectParam;
 		if (!p || p === 'all') return 'all';
 		if (p === 'none') return 'none';
 		return data.projects.some((x) => x.id === p) ? p : 'all';
 	});
-
-	/** Scope of the saved positions of this map, same rule as the page load. */
-	const scope = $derived.by(() => {
-		const p = projectParam;
-		return p && p !== 'all' ? p : 'all';
-	});
-
 	const projectName = $derived(
 		project === 'all'
 			? 'Όλα τα projects'
 			: project === 'none'
 				? 'Χωρίς project'
-				: (data.projects.find((p) => p.id === project)?.name ?? 'Χάρτης')
+				: (data.projects.find((p) => p.id === project)?.name ?? 'Project')
 	);
+	/** Project of new images added on this board. */
+	const newProjectId = $derived(project === 'all' || project === 'none' ? null : project);
+
+	let level = $state<Level | ''>('');
+	let search = $state('');
+	let highlight = $state<string | null>(null);
+	let notesOn = $state(false);
+	let size = $state(160);
+	let prefsLoaded = false;
+
+	const inProject = $derived(
+		items.filter((i) => (project === 'none' ? i.project_id === null : project === 'all' || i.project_id === project))
+	);
+	const filtered = $derived(level ? inProject.filter((i) => i.level === level) : inProject);
+
+	const matches = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		if (!q) return null;
+		return new Set(filtered.filter((i) => searchText(i).includes(q)).map((i) => i.id));
+	});
+
+	const tagStats = $derived.by(() => {
+		const count = new Map<string, number>();
+		for (const i of filtered) for (const t of new Set(i.tags ?? [])) count.set(t, (count.get(t) ?? 0) + 1);
+		return [...count]
+			.map(([tag, n]) => ({ tag, count: n }))
+			.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+	});
+	const colors = $derived(zoneColors(tagStats.map((t) => t.tag)));
+
+	const options = $derived.by(() => {
+		const per = new Map<string | null, number>();
+		for (const i of items) per.set(i.project_id, (per.get(i.project_id) ?? 0) + 1);
+		return [
+			{ id: 'all', name: 'Όλα τα projects', count: items.length },
+			...data.projects.map((p) => ({ id: p.id, name: p.name, count: per.get(p.id) ?? 0 })),
+			{ id: 'none', name: 'Χωρίς project', count: per.get(null) ?? 0 }
+		];
+	});
+
+	// A highlighted tag that left the view is no longer a filter.
+	$effect(() => {
+		const h = highlight;
+		if (h && !tagStats.some((t) => t.tag === h)) untrack(() => (highlight = null));
+	});
 
 	function selectProject(id: string) {
 		const url = id === 'all' ? '/map' : `/map?project=${encodeURIComponent(id)}`;
-		// `reset: false` keeps focus and scroll, which is what the old keepFocus / noScroll options did.
+		highlight = null;
+		// `reset: false` keeps focus and scroll.
 		void goto(url, { replace: true, reset: false });
 	}
 
-	let level = $state<Level | ''>('');
-	let notesOn = $state(false);
-	let tagsOn = $state(true);
-	let size = $state(160);
-	let prefsLoaded = $state(false);
+	function toggleTag(tag: string) {
+		highlight = highlight === tag ? null : tag;
+	}
 
-	const filtered = $derived(
-		data.inspirations.filter((i) => {
-			if (project === 'none' ? i.project_id !== null : project !== 'all' && i.project_id !== project) {
-				return false;
-			}
-			if (level && i.level !== level) return false;
-			return true;
-		})
-	);
+	// ------------------------------------------------------------ Selection
 
-	const hasNone = $derived(data.inspirations.some((i) => i.project_id === null));
-
-	// ---------------------------------------------------------------- View state
-
-	let container = $state<HTMLDivElement | null>(null);
-	let view = $state({ x: 0, y: 0, k: 1 });
 	let selectedId = $state<string | null>(null);
-	let focusTag = $state<string | null>(null);
-	let hoverTag = $state<string | null>(null);
-	let toast = $state('');
-	let copyTarget = $state('');
+	let focusNote = $state(false);
+	let innerWidth = $state(1280);
 
-	const selected = $derived(selectedId ? (data.inspirations.find((i) => i.id === selectedId) ?? null) : null);
+	const selIndex = $derived(selectedId ? filtered.findIndex((i) => i.id === selectedId) : -1);
+	const selected = $derived(selIndex >= 0 ? filtered[selIndex] : null);
+	const panelOpen = $derived(!!selected && !!data.userId);
+	const rightInset = $derived(panelOpen && innerWidth > MOBILE ? PANEL_W : 0);
 
-	// Region boxes need room to read; region notes appear when there is more.
-	const cardWidth = $derived(size * view.k);
-	const showBoxes = $derived(cardWidth >= 200);
-	const showRegionNotes = $derived(cardWidth >= 360);
+	let board = $state<ReturnType<typeof Board>>();
 
-	/** Card ids of the focused tag's neighbourhood. */
-	const hood = $derived.by(() => {
-		if (!focusTag) return null;
-		const ids = new Set<string>([`t:${focusTag}`]);
-		for (const i of filtered) {
-			if (!i.tags.includes(focusTag)) continue;
-			ids.add(`i:${i.id}`);
-			if (i.project_id) ids.add(`p:${i.project_id}`);
-		}
-		return ids;
-	});
-
-	// ------------------------------------------------------------ Quick add state
-
-	let quickAdd = $state<{ open: boolean; file: File | null; tags: string[]; projectId: string | null }>({
-		open: false,
-		file: null,
-		tags: [],
-		projectId: null
-	});
-
-	/** World point where the next added image should appear (double-click / paste spot). */
-	let spawnPoint: { x: number; y: number } | null = null;
-
-	function openAdd(opts: { file?: File | null; tags?: string[]; projectId?: string | null } = {}) {
-		quickAdd = {
-			open: true,
-			file: opts.file ?? null,
-			tags: opts.tags ?? [],
-			projectId:
-				opts.projectId !== undefined
-					? opts.projectId
-					: project === 'all' || project === 'none'
-						? null
-						: project
-		};
+	function select(id: string | null, opts: { focus?: boolean } = {}) {
+		selectedId = id;
+		focusNote = !!opts.focus;
+		// The panel may now cover the card: pan it into view once the inset is known.
+		if (id) void tick().then(() => board?.reveal(id));
 	}
 
-	function closeAdd() {
-		quickAdd = { open: false, file: null, tags: [], projectId: null };
+	function step(dir: -1 | 1) {
+		if (selIndex < 0) return;
+		const next = filtered[selIndex + dir];
+		if (!next) return;
+		select(next.id);
 	}
 
-	// --------------------------------------------------------- Simulation / model
+	// ---------------------------------------------------------------- Toasts
 
-	/** Last known position per node id, so filters and reloads keep the layout. */
-	const positions = new Map<string, { x?: number; y?: number; fx?: number | null; fy?: number | null }>();
-	/** Scope whose saved positions are already seeded into `positions`. */
-	let seededScope: string | null = null;
-	/** Skip the in-memory snapshot once, when a new scope replaces the whole map. */
-	let skipSnapshot = false;
-	const nodeEls = new Map<string, HTMLElement>();
-	const lineEls = new Map<string, SVGLineElement>();
+	let toasts = $state<Toast[]>([]);
+	let toastSeq = 0;
+	const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
-	let nodes = $state.raw<SimNode[]>([]);
-	let links = $state.raw<SimLink[]>([]);
-	let sim: Simulation<SimNode, SimLink> | null = null;
-	/** Fit to the nodes once the layout has settled, until the user moves the view. */
-	let autoFit = true;
-	let fitPending = true;
-	let lastProject: string | null = null;
-
-	function radiusFor(kind: SimNode['kind'], w: number, h: number) {
-		// Before the image loads, assume a portrait card, so collision is not too small.
-		if (kind === 'inspiration') return (h > 0 ? Math.max(w, h) : w * 1.35) / 2 + 6;
-		return Math.max(h > 0 ? h / 2 : 16, w > 0 ? w / 4 : 20) + 8;
+	function dismiss(id: number) {
+		toasts = toasts.filter((t) => t.id !== id);
+		clearTimeout(toastTimers.get(id));
+		toastTimers.delete(id);
 	}
 
-	function placeNode(n: SimNode, el: HTMLElement) {
-		el.style.transform = `translate(${n.x ?? 0}px, ${n.y ?? 0}px) translate(-50%, -50%)`;
+	function toast(t: Omit<Toast, 'id'> | string, ms = 2800): number {
+		const id = ++toastSeq;
+		const entry = typeof t === 'string' ? { text: t } : t;
+		toasts = [...toasts, { ...entry, id }].slice(-4);
+		if (ms) toastTimers.set(id, setTimeout(() => dismiss(id), ms));
+		return id;
 	}
 
-	function placeLine(l: SimLink, el: SVGLineElement) {
-		const s = l.source as SimNode | undefined;
-		const t = l.target as SimNode | undefined;
-		const ax = view.x + (s?.x ?? 0) * view.k;
-		const ay = view.y + (s?.y ?? 0) * view.k;
-		const bx = view.x + (t?.x ?? 0) * view.k;
-		const by = view.y + (t?.y ?? 0) * view.k;
-		el.setAttribute('x1', String(ax));
-		el.setAttribute('y1', String(ay));
-		el.setAttribute('x2', String(bx));
-		el.setAttribute('y2', String(by));
-	}
+	const errText = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
 
-	function syncLines() {
-		for (const l of links) {
-			const el = lineEls.get(l.id);
-			if (el) placeLine(l, el);
-		}
-	}
+	// ------------------------------------------------------------ Adding
 
-	/** Register a node element; the simulation writes its transform directly. */
-	function nodeRef(el: HTMLElement, n: SimNode) {
-		nodeEls.set(n.id, el);
-		placeNode(n, el);
-		return {
-			destroy() {
-				if (nodeEls.get(n.id) === el) nodeEls.delete(n.id);
-			}
-		};
-	}
+	let fileInput = $state<HTMLInputElement | null>(null);
+	/** Where images picked in the file dialog go; null = centre of the view. */
+	let pickSpot: Spot | null = null;
+	let isMac = $state(true);
+	const mod = $derived(isMac ? '⌘' : 'Ctrl+');
 
-	function lineRef(el: SVGLineElement, l: SimLink) {
-		lineEls.set(l.id, el);
-		placeLine(l, el);
-		return {
-			destroy() {
-				if (lineEls.get(l.id) === el) lineEls.delete(l.id);
-			}
-		};
-	}
-
-	/** Read the real box of one node and grow its collision radius to match. */
-	function measureOne(n: SimNode) {
-		const el = nodeEls.get(n.id);
-		if (!el) return false;
-		const w = el.offsetWidth;
-		const h = el.offsetHeight;
-		if (w === n.w && h === n.h) return false;
-		n.w = w;
-		n.h = h;
-		const r = radiusFor(n.kind, w, h);
-		const grew = r > n.r + 0.5;
-		if (Math.abs(r - n.r) > 0.5) n.r = r;
-		return grew;
-	}
-
-	function measureAll() {
-		let grew = false;
-		for (const n of nodes) grew = measureOne(n) || grew;
-		// A bigger box needs a real push, not a nudge.
-		if (grew) reheat(0.45);
-	}
-
-	function reheat(alpha = 0.45) {
-		if (!sim || nodes.length === 0) return;
-		// forceCollide caches radii at initialize; re-set it so measured sizes take effect.
-		(sim.force('collide') as ForceCollide<SimNode> | undefined)?.radius((n) => n.r);
-		sim.alpha(Math.max(sim.alpha(), alpha)).restart();
-	}
-
-	function onTick() {
-		for (const n of nodes) {
-			const el = nodeEls.get(n.id);
-			if (el) placeNode(n, el);
-		}
-		syncLines();
-		if (fitPending && autoFit && sim && sim.alpha() < 0.05) {
-			fitPending = false;
-			fitAll();
-		}
-	}
-
-	function ensureSim(nextNodes: SimNode[], nextLinks: SimLink[]) {
-		if (!sim) {
-			sim = forceSimulation<SimNode, SimLink>(nextNodes)
-				.alphaMin(0.005)
-				.alphaDecay(0.07)
-				.velocityDecay(0.42)
-				.on('tick', onTick);
-		}
-		sim.nodes(nextNodes);
-		sim.force(
-			'link',
-			forceLink<SimNode, SimLink>(nextLinks)
-				.id((d) => d.id)
-				.distance((l) => l.dist)
-				.strength((l) => (l.kind === 'tag' ? 0.25 : 0.6))
-		);
-		sim.force('charge', forceManyBody<SimNode>().strength((n) => -Math.max(250, n.r * n.r * 0.45)));
-		sim.force(
-			'collide',
-			forceCollide<SimNode>()
-				.radius((n) => n.r)
-				.strength(0.85)
-				.iterations(2)
-		);
-		sim.force('center', forceCenter<SimNode>(0, 0).strength(0.05));
-		sim.alpha(0.55).restart();
-	}
-
-	function buildGraph(items: Inspiration[], withTags: boolean, loadedScope: string): boolean {
-		// A new map scope: saved positions replace everything kept in memory.
-		skipSnapshot = false;
-		if (seededScope !== loadedScope) {
-			// Rows still waiting for the debounce belong to the map we are leaving.
-			void flushSaves();
-			seededScope = loadedScope;
-			positions.clear();
-			for (const [key, p] of Object.entries(data.positions ?? {})) {
-				if (Number.isFinite(p?.x) && Number.isFinite(p?.y)) {
-					positions.set(key, { x: p.x, y: p.y, fx: p.x, fy: p.y });
-				}
-			}
-			skipSnapshot = true;
-		}
-		// Snapshot positions of what is on screen, so nothing jumps on a rebuild.
-		if (!skipSnapshot) for (const n of nodes) positions.set(n.id, { x: n.x, y: n.y, fx: n.fx, fy: n.fy });
-
-		const nextNodes: SimNode[] = [];
-		const nextLinks: SimLink[] = [];
-		const knownProjects = new Set(data.projects.map((p) => p.id));
-
-		const make = (id: string, kind: SimNode['kind'], label: string, item?: Inspiration) => {
-			const p = positions.get(id);
-			const n: SimNode = {
-				id,
-				kind,
-				label,
-				item,
-				r: kind === 'inspiration' ? size * 0.6 : 30,
-				w: kind === 'inspiration' ? size : 0,
-				h: 0,
-				x: p?.x,
-				y: p?.y,
-				fx: p?.fx ?? null,
-				fy: p?.fy ?? null
-			};
-			nextNodes.push(n);
-			return n;
-		};
-
-		const usedProjects = new Set<string>();
-		let orphans = false;
-		for (const i of items) {
-			const pid = i.project_id && knownProjects.has(i.project_id) ? i.project_id : null;
-			if (pid) usedProjects.add(pid);
-			else orphans = true;
-			const n = make(`i:${i.id}`, 'inspiration', i.note.slice(0, 80), i);
-			n.label = i.note.slice(0, 80);
-		}
-
-		// "Χωρίς project" is a pill only in the all-view.
-		if (project === 'all' && orphans) {
-			const n = make('p:none', 'project', 'Χωρίς project');
-			n.orphan = true;
-		}
-		for (const p of data.projects) {
-			if (!usedProjects.has(p.id)) continue;
-			make(`p:${p.id}`, 'project', p.name);
-		}
-		if (withTags) {
-			const usedTags = new Set<string>();
-			for (const i of items) for (const t of i.tags) usedTags.add(t);
-			for (const t of [...usedTags].sort()) make(`t:${t}`, 'tag', t);
-		}
-
-		const byId = new Map(nextNodes.map((n) => [n.id, n]));
-
-		const addLink = (from: SimNode, to: SimNode, kind: 'project' | 'tag') => {
-			const dist = kind === 'tag' ? size * 0.55 + 36 : size * 0.7 + 56;
-			nextLinks.push({
-				id: `e:${from.id}>${to.id}`,
-				fromId: from.id,
-				toId: to.id,
-				kind,
-				dist,
-				source: from,
-				target: to
-			});
-		};
-
-		for (const i of items) {
-			const from = byId.get(`i:${i.id}`);
-			if (!from) continue;
-			const pid = i.project_id && knownProjects.has(i.project_id) ? i.project_id : null;
-			const to = byId.get(pid ? `p:${pid}` : 'p:none');
-			if (to) addLink(from, to, 'project');
-			if (!withTags) continue;
-			for (const t of new Set(i.tags)) {
-				const tn = byId.get(`t:${t}`);
-				if (tn) addLink(from, tn, 'tag');
-			}
-		}
-
-		// Place nodes that have no position yet: at the spawn point, near a neighbour, else the origin.
-		const spawn = spawnPoint;
-		let spawnUsed = false;
-		let spawned = false;
-		for (const n of nextNodes) {
-			if (n.x !== undefined && n.x !== null && !Number.isNaN(n.x)) continue;
-			let bx = 0;
-			let by = 0;
-			if (spawn && n.kind === 'inspiration' && !spawnUsed) {
-				bx = spawn.x;
-				by = spawn.y;
-				spawnUsed = true;
-			} else {
-				const nb = nextLinks.find((l) => {
-					const s = l.source as SimNode;
-					const t = l.target as SimNode;
-					return (s === n && t.x != null) || (t === n && s.x != null);
-				});
-				if (nb) {
-					const other = (nb.source === n ? nb.target : nb.source) as SimNode;
-					bx = other.x ?? 0;
-					by = other.y ?? 0;
-				}
-			}
-			// Start at a realistic link distance, so nothing is born overlapping.
-			const a = Math.random() * Math.PI * 2;
-			const d = (n.kind === 'inspiration' ? size * 0.75 + 70 : 130) + Math.random() * 40;
-			n.x = bx + Math.cos(a) * d;
-			n.y = by + Math.sin(a) * d;
-			n.vx = 0;
-			n.vy = 0;
-			spawned = true;
-		}
-		if (spawn) spawnPoint = null;
-
-		links = nextLinks;
-		nodes = nextNodes;
-
-		if (nextNodes.length === 0) {
-			sim?.stop();
-			return spawned;
-		}
-		ensureSim(nextNodes, nextLinks);
-		void tick().then(() => {
-			untrack(() => measureAll());
-		});
-		return spawned;
-	}
-
-	// Rebuild when the data or the filters change; positions live outside Svelte state.
-	$effect(() => {
-		const items = filtered;
-		const withTags = tagsOn;
-		const currentProject = project;
-		// A reload of the map (same or new scope) must re-seed the saved positions.
-		const loadedScope = data.positionsScope;
-		untrack(() => {
-			const fresh = buildGraph(items, withTags, loadedScope);
-			if (fresh || currentProject !== lastProject) {
-				lastProject = currentProject;
-				fitPending = true;
-			}
-		});
-	});
-
-	// Card size and note visibility change the measured height; keep collision in sync.
-	$effect(() => {
-		size;
-		notesOn;
-		void tick().then(() => untrack(() => measureAll()));
-	});
-
-	// ------------------------------------------------------------- Pan and zoom
-
-	function stageRect() {
-		return container?.getBoundingClientRect() ?? new DOMRect(0, 0, 1, 1);
-	}
-
-	function fitAll() {
-		// The button is an explicit choice: stop fitting on its own.
-		fitPending = false;
-		autoFit = false;
-		const el = container;
-		if (!el || nodes.length === 0) {
-			view = { x: (el?.clientWidth ?? 0) / 2, y: (el?.clientHeight ?? 0) / 2, k: 1 };
-			svgSync();
+	function pickFiles(spot: Spot | null = null) {
+		if (!data.userId) {
+			toast({ text: 'Συνδέσου για να προσθέσεις εικόνες', tone: 'error' }, 5000);
 			return;
 		}
-		let minX = Infinity;
-		let minY = Infinity;
-		let maxX = -Infinity;
-		let maxY = -Infinity;
-		for (const n of nodes) {
-			const w = (n.w || size) / 2;
-			const h = (n.h || size) / 2;
-			const x = n.x ?? 0;
-			const y = n.y ?? 0;
-			minX = Math.min(minX, x - w);
-			maxX = Math.max(maxX, x + w);
-			minY = Math.min(minY, y - h);
-			maxY = Math.max(maxY, y + h);
-		}
-		if (!Number.isFinite(minX)) return;
-		const W = el.clientWidth;
-		const H = el.clientHeight;
-		const pad = 60;
-		const bw = Math.max(1, maxX - minX);
-		const bh = Math.max(1, maxY - minY);
-		const k = clamp(Math.min((W - pad * 2) / bw, (H - pad * 2) / bh), 0.2, 1.5);
-		view = { k, x: W / 2 - ((minX + maxX) / 2) * k, y: H / 2 - ((minY + maxY) / 2) * k };
-		svgSync();
-	}
-
-	function svgSync() {
-		syncLines();
-	}
-
-	function zoomAt(clientX: number, clientY: number, factor: number) {
-		autoFit = false;
-		const rect = stageRect();
-		const px = clientX - rect.left;
-		const py = clientY - rect.top;
-		const k = clamp(view.k * factor, 0.2, 4);
-		const wx = (px - view.x) / view.k;
-		const wy = (py - view.y) / view.k;
-		view = { k, x: px - wx * k, y: py - wy * k };
-		svgSync();
-	}
-
-	const pointers = new Map<number, { x: number; y: number }>();
-	let panFrom: { x: number; y: number } | null = null;
-	let panPointer: number | null = null;
-	let panMoved = false;
-	let pinch: { dist: number; k: number; wx: number; wy: number } | null = null;
-
-	function onStageDown(e: PointerEvent) {
-		if (e.pointerType === 'mouse' && e.button !== 0) return;
-		if ((e.target as HTMLElement).closest('.node')) return;
-		autoFit = false;
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-		if (pointers.size === 1) {
-			panPointer = e.pointerId;
-			panFrom = { x: e.clientX, y: e.clientY };
-			panMoved = false;
-		} else if (pointers.size === 2) {
-			const [a, b] = [...pointers.values()];
-			const rect = stageRect();
-			const mx = (a.x + b.x) / 2 - rect.left;
-			const my = (a.y + b.y) / 2 - rect.top;
-			pinch = {
-				dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
-				k: view.k,
-				wx: (mx - view.x) / view.k,
-				wy: (my - view.y) / view.k
-			};
-			panPointer = null;
-			panFrom = null;
+		pickSpot = spot;
+		if (fileInput) {
+			fileInput.value = '';
+			fileInput.click();
 		}
 	}
 
-	function onStageMove(e: PointerEvent) {
-		if (!pointers.has(e.pointerId)) return;
-		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-		if (pointers.size >= 2 && pinch) {
-			const [a, b] = [...pointers.values()];
-			const rect = stageRect();
-			const mx = (a.x + b.x) / 2 - rect.left;
-			const my = (a.y + b.y) / 2 - rect.top;
-			const k = clamp((pinch.k * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.dist, 0.2, 4);
-			view = { k, x: mx - pinch.wx * k, y: my - pinch.wy * k };
-			svgSync();
-			return;
-		}
-		if (!panFrom) return;
-		const dx = e.clientX - panFrom.x;
-		const dy = e.clientY - panFrom.y;
-		if (Math.abs(dx) + Math.abs(dy) >= 2) panMoved = true;
-		view = { ...view, x: view.x + dx, y: view.y + dy };
-		panFrom = { x: e.clientX, y: e.clientY };
-		svgSync();
+	function onFilesPicked(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const files = [...(input.files ?? [])];
+		const spot = pickSpot ?? board?.centreSpot() ?? { x: 0, y: 0, zone: null };
+		pickSpot = null;
+		if (files.length) void addFiles(files, spot);
 	}
 
-	function onStageUp(e: PointerEvent) {
-		const el = e.currentTarget as HTMLElement;
-		if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
-		const known = pointers.delete(e.pointerId);
-		if (pointers.size < 2) pinch = null;
-		panFrom = pointers.size === 1 ? { ...([...pointers.values()][0]) } : null;
-		if (pointers.size === 0) {
-			const clicked = known && panPointer === e.pointerId && !panMoved;
-			panPointer = null;
-			if (clicked) {
-				focusTag = null;
-				selectedId = null;
-			}
-		}
+	async function fetchRow(id: string, fallback: Inspiration): Promise<Inspiration> {
+		const { data: row } = await data.supabase.from('inspirations').select(ROW_FIELDS).eq('id', id).maybeSingle();
+		return row ? ({ ...fallback, ...(row as Partial<Inspiration>) } as Inspiration) : fallback;
 	}
 
-	function onWheel(e: WheelEvent) {
-		e.preventDefault();
-		zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015));
-	}
-
-	function onDoubleClick(e: MouseEvent) {
-		if ((e.target as HTMLElement).closest('.node')) return;
-		const rect = stageRect();
-		spawnPoint = {
-			x: (e.clientX - rect.left - view.x) / view.k,
-			y: (e.clientY - rect.top - view.y) / view.k
-		};
-		openAdd();
-	}
-
-	// -------------------------------------------------------------- Node dragging
-
-	let drag: {
-		n: SimNode;
-		id: number;
-		startX: number;
-		startY: number;
-		lastX: number;
-		lastY: number;
-		moved: boolean;
-	} | null = null;
-
-	function nodeDown(e: PointerEvent, n: SimNode) {
-		if (e.pointerType === 'mouse' && e.button !== 0) return;
-		if ((e.target as HTMLElement).closest('.addtag')) return;
-		e.stopPropagation();
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-		autoFit = false;
-		drag = {
-			n,
-			id: e.pointerId,
-			startX: e.clientX,
-			startY: e.clientY,
-			lastX: e.clientX,
-			lastY: e.clientY,
-			moved: false
-		};
-	}
-
-	function nodeMove(e: PointerEvent) {
-		const d = drag;
-		if (!d || e.pointerId !== d.id) return;
-		if (!d.moved) {
-			if (Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) < 4) return;
-			d.moved = true;
-			reheat(0.25);
-		}
-		d.n.x = (d.n.x ?? 0) + (e.clientX - d.lastX) / view.k;
-		d.n.y = (d.n.y ?? 0) + (e.clientY - d.lastY) / view.k;
-		d.n.fx = d.n.x;
-		d.n.fy = d.n.y;
-		d.lastX = e.clientX;
-		d.lastY = e.clientY;
-		const el = nodeEls.get(d.n.id);
-		if (el) placeNode(d.n, el);
-		syncLines();
-	}
-
-	function nodeUp(e: PointerEvent, n: SimNode) {
-		const d = drag;
-		if (!d || e.pointerId !== d.id) return;
-		drag = null;
-		const el = e.currentTarget as HTMLElement;
-		if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
-		if (d.moved) {
-			// Stay pinned where it was dropped.
-			const x = Number.isFinite(n.x) ? (n.x as number) : null;
-			const y = Number.isFinite(n.y) ? (n.y as number) : null;
-			n.fx = x;
-			n.fy = y;
-			positions.set(n.id, { x: n.x, y: n.y, fx: n.fx, fy: n.fy });
-			// Only a user drag writes a position back to the database.
-			if (x !== null && y !== null) queueSave(n.id, x, y);
-		} else {
-			nodeClick(n);
-		}
-	}
-
-	// ---------------------------------------------------------- Position saving
-
-	/** Pending drag positions per map scope: '<scope>|<node key>'. */
-	const pendingSaves = new Map<string, { scope: string; key: string; x: number; y: number }>();
-	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let saving = false;
-
-	/** Remember one dragged node; the whole burst goes out after a short pause. */
-	function queueSave(key: string, x: number, y: number) {
-		if (!data.userId) return;
-		pendingSaves.set(`${scope}|${key}`, { scope, key, x, y });
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(() => void flushSaves(), 600);
-	}
-
-	/** Write the pending positions now, one call per map scope. Errors show a toast, never throw. */
-	async function flushSaves() {
-		clearTimeout(saveTimer);
-		saveTimer = undefined;
-		if (saving || pendingSaves.size === 0) return;
-		const rows = [...pendingSaves.values()];
-		pendingSaves.clear();
-		saving = true;
-		try {
-			const byScope = new Map<string, { key: string; x: number; y: number }[]>();
-			for (const r of rows) {
-				const list = byScope.get(r.scope) ?? [];
-				list.push({ key: r.key, x: r.x, y: r.y });
-				byScope.set(r.scope, list);
-			}
-			await Promise.all([...byScope].map(([s, list]) => savePositions(data.supabase, s, list)));
-		} catch {
-			showToast('Οι θέσεις δεν αποθηκεύτηκαν');
-		} finally {
-			saving = false;
-		}
-		if (pendingSaves.size) void flushSaves();
-	}
-
-	/** Unpin everything in the current view and let the simulation lay it out again. */
-	function autoLayout() {
-		for (const n of nodes) {
-			n.fx = null;
-			n.fy = null;
-			positions.set(n.id, { x: n.x, y: n.y, fx: null, fy: null });
-		}
-		reheat(0.7);
-		// A new automatic layout is worth fitting to.
-		autoFit = true;
-		fitPending = true;
-	}
-
-	function nodeClick(n: SimNode) {
-		if (n.kind === 'inspiration') {
-			selectedId = n.item?.id ?? null;
-			copyTarget = '';
-		} else if (n.kind === 'tag') {
-			focusTag = focusTag === n.label ? null : n.label;
-		} else if (n.kind === 'project' && !n.orphan) {
-			selectProject(n.id.slice(2));
-		}
-	}
-
-	// --------------------------------------------------------------- Copy / toast
-
-	async function copySelected(target: string) {
-		const item = selected;
+	/** Save each image at once, pinned where it was added, then open the first in the panel. */
+	async function addFiles(files: File[], spot: Spot) {
 		const userId = data.userId;
-		if (!item || !userId || !target) return;
-		copyTarget = '';
-		const projectId = target === NO_PROJECT ? null : target;
-		try {
-			await copyInspiration(data.supabase, userId, item.id, projectId);
-			const name = projectId ? data.projects.find((p) => p.id === projectId)?.name : undefined;
-			showToast(name ? `Αντιγράφηκε στο ${name}` : 'Αντιγράφηκε χωρίς project');
-			await invalidate('moodboard:data');
-		} catch (err) {
-			showToast(err instanceof Error ? err.message : 'Αποτυχία αντιγραφής');
+		if (!userId) {
+			toast({ text: 'Συνδέσου για να προσθέσεις εικόνες', tone: 'error' }, 5000);
+			return;
 		}
+		// A new image must be visible where it lands: clear what would hide or fade it.
+		search = '';
+		if (highlight && highlight !== spot.zone) highlight = null;
+		const projectId = newProjectId;
+		const tags = spot.zone ? [spot.zone] : [];
+		const cols = Math.ceil(Math.sqrt(files.length));
+		let first: string | null = null;
+		let added = 0;
+		for (let i = 0; i < files.length; i++) {
+			const file = files[i];
+			const x = spot.x + (i % cols) * (size + CARD_GAP);
+			const y = spot.y + Math.floor(i / cols) * (size * 0.9 + CARD_GAP);
+			const label = files.length > 1 ? `Ανεβαίνει ${i + 1} από ${files.length}…` : 'Ανεβαίνει η εικόνα…';
+			const busy = toast({ text: label, tone: 'busy' }, 0);
+			try {
+				checkImage(file);
+				const { id } = await createInspiration(data.supabase, userId, file, {
+					project_id: projectId,
+					tags,
+					level: level || null
+				});
+				const now = new Date().toISOString();
+				const row = await fetchRow(id, {
+					id,
+					project_id: projectId,
+					image_path: '',
+					source_url: null,
+					source_title: null,
+					note: '',
+					tags,
+					level: level || null,
+					regions: [],
+					created_at: now,
+					updated_at: now
+				});
+				localUrls = { ...localUrls, [id]: URL.createObjectURL(file) };
+				board?.place(id, x, y);
+				items = [row, ...items];
+				first ??= id;
+				added++;
+			} catch (err) {
+				const name = file.name && file.name !== 'image.png' ? `${file.name}: ` : '';
+				toast({ text: name + errText(err, 'Η εικόνα δεν αποθηκεύτηκε'), tone: 'error' }, 8000);
+			} finally {
+				dismiss(busy);
+			}
+		}
+		if (!first) return;
+		select(first, { focus: true });
+		if (added > 1) toast(`Προστέθηκαν ${added} εικόνες`);
+		void invalidate('moodboard:data');
 	}
-
-	let toastTimer: ReturnType<typeof setTimeout> | undefined;
-
-	function showToast(msg: string) {
-		toast = msg;
-		clearTimeout(toastTimer);
-		toastTimer = setTimeout(() => (toast = ''), 2600);
-	}
-
-	// ------------------------------------------------------------ Global events
 
 	function onPaste(e: ClipboardEvent) {
-		if (quickAdd.open) return;
-		const editable = 'input, textarea, select, [contenteditable="true"]';
-		for (const el of [e.target, document.activeElement]) {
-			if (el instanceof Element && el.closest(editable)) return;
+		if (isTyping(e.target) || isTyping(document.activeElement)) return;
+		const files: File[] = [];
+		for (const it of e.clipboardData?.items ?? []) {
+			if (it.kind !== 'file' || !it.type.startsWith('image/')) continue;
+			const f = it.getAsFile();
+			if (f) files.push(f);
 		}
-		for (const item of e.clipboardData?.items ?? []) {
-			if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
-			const file = item.getAsFile();
-			if (!file) continue;
-			e.preventDefault();
-			openAdd({ file });
-			break;
+		if (!files.length) return;
+		e.preventDefault();
+		menu = null;
+		void addFiles(files, board?.pointerSpot() ?? { x: 0, y: 0, zone: null });
+	}
+
+	/** «Επικόλληση εδώ»: read an image from the clipboard (needs permission; falls back to a hint). */
+	async function pasteAt(spot: Spot) {
+		try {
+			const entries = await navigator.clipboard.read();
+			const files: File[] = [];
+			for (const entry of entries) {
+				const type = entry.types.find((t) => t.startsWith('image/'));
+				if (!type) continue;
+				const blob = await entry.getType(type);
+				files.push(new File([blob], `paste.${type.split('/')[1]}`, { type }));
+			}
+			if (!files.length) {
+				toast('Δεν υπάρχει εικόνα στο πρόχειρο');
+				return;
+			}
+			await addFiles(files, spot);
+		} catch {
+			toast(`Πάτα ${mod}V για επικόλληση`, 4000);
 		}
 	}
 
-	function onKeyDown(e: KeyboardEvent) {
-		if (e.key !== 'Escape' || quickAdd.open) return;
-		if (selectedId) selectedId = null;
-		else focusTag = null;
+	// ------------------------------------------------------------ Organising
+
+	type From = { x?: number; y?: number; fx?: number | null; fy?: number | null };
+
+	async function rezone(item: Inspiration, tag: string, from: From) {
+		const prev = item.tags ?? [];
+		const next = [tag, ...prev.filter((t) => t !== tag)];
+		setItem({ ...item, tags: next });
+		try {
+			setItem(await updateInspiration(data.supabase, item.id, { tags: next }));
+			toast({ text: `+ #${tag}`, action: { label: 'Αναίρεση', run: () => void undoRezone(item.id, prev, from) } }, 5000);
+		} catch (err) {
+			setItem(item);
+			toast({ text: errText(err, 'Το tag δεν αποθηκεύτηκε'), tone: 'error' }, 6000);
+		}
 	}
 
-	/** A reload or tab close must not drop positions that still wait for the debounce. */
-	function onPageHide() {
-		void flushSaves();
+	async function undoRezone(id: string, tags: string[], from: From) {
+		const cur = items.find((i) => i.id === id);
+		if (!cur) return;
+		setItem({ ...cur, tags });
+		board?.restore(id, from);
+		try {
+			setItem(await updateInspiration(data.supabase, id, { tags }));
+		} catch (err) {
+			setItem(cur);
+			toast({ text: errText(err, 'Η αναίρεση απέτυχε'), tone: 'error' }, 6000);
+		}
 	}
 
-	let wheelEl: HTMLElement | null = null;
-	let wheelFn: ((e: WheelEvent) => void) | null = null;
-
-	function attachStage(el: HTMLElement | null) {
-		if (wheelEl && wheelFn) wheelEl.removeEventListener('wheel', wheelFn);
-		wheelEl = el;
-		wheelFn = el ? onWheel : null;
-		if (el && wheelFn) el.addEventListener('wheel', wheelFn, { passive: false });
+	async function copyTo(id: string, projectId: string | null) {
+		const userId = data.userId;
+		if (!userId) return;
+		try {
+			await copyInspiration(data.supabase, userId, id, projectId);
+			onCopied(projectId ? (data.projects.find((p) => p.id === projectId)?.name ?? null) : null);
+		} catch (err) {
+			toast({ text: errText(err, 'Η αντιγραφή απέτυχε'), tone: 'error' }, 6000);
+		}
 	}
 
-	$effect(() => {
-		attachStage(container);
-		return () => attachStage(null);
+	function onCopied(projectName: string | null) {
+		toast(projectName ? `Αντιγράφηκε στο ${projectName}` : 'Αντιγράφηκε χωρίς project');
+		void invalidate('moodboard:data');
+	}
+
+	function onDeleted(id: string) {
+		items = items.filter((i) => i.id !== id);
+		if (selectedId === id) select(null);
+		board?.forget(id);
+		toast('Η εικόνα διαγράφηκε');
+	}
+
+	async function remove(id: string) {
+		try {
+			await deleteInspiration(data.supabase, id);
+			onDeleted(id);
+		} catch (err) {
+			toast({ text: errText(err, 'Η διαγραφή απέτυχε'), tone: 'error' }, 6000);
+		}
+	}
+
+	// ----------------------------------------------------------------- Menus
+
+	type Menu =
+		| { view: 'canvas'; x: number; y: number; spot: Spot }
+		| { view: 'card' | 'copy' | 'delete'; x: number; y: number; id: string };
+
+	let menu = $state<Menu | null>(null);
+	let switcherOpen = $state(false);
+	let filtersOpen = $state(false);
+
+	function onContext(c: BoardContext) {
+		menu =
+			c.kind === 'card'
+				? { view: 'card', x: c.clientX, y: c.clientY, id: c.id }
+				: { view: 'canvas', x: c.clientX, y: c.clientY, spot: c.spot };
+	}
+
+	function act(fn: () => void) {
+		return () => {
+			menu = null;
+			fn();
+		};
+	}
+
+	const menuModel = $derived.by((): { title?: string; onback?: () => void; items: MenuItem[] } | null => {
+		const m = menu;
+		if (!m) return null;
+		if (m.view === 'canvas') {
+			const spot = m.spot;
+			return {
+				items: [
+					{ label: 'Νέα εικόνα εδώ…', icon: 'image', kbd: 'N', onselect: act(() => pickFiles(spot)) },
+					{ label: 'Επικόλληση εδώ', icon: 'paste', kbd: `${mod}V`, onselect: act(() => void pasteAt(spot)) },
+					{ label: 'Κεντράρισμα', icon: 'fit', kbd: 'F', onselect: act(() => board?.fit()) }
+				]
+			};
+		}
+		const id = m.id;
+		const back = () => (menu = { ...m, view: 'card' });
+		if (m.view === 'copy') {
+			return {
+				title: 'Αντιγραφή σε',
+				onback: back,
+				items: [
+					...data.projects.map((p) => ({ label: p.name, onselect: act(() => void copyTo(id, p.id)) })),
+					{ label: 'Χωρίς project', onselect: act(() => void copyTo(id, null)) }
+				]
+			};
+		}
+		if (m.view === 'delete') {
+			return {
+				title: 'Διαγραφή εικόνας;',
+				onback: back,
+				items: [
+					{ label: 'Διαγραφή οριστικά', icon: 'trash', danger: true, onselect: act(() => void remove(id)) },
+					{ label: 'Άκυρο', onselect: () => (menu = null) }
+				]
+			};
+		}
+		return {
+			items: [
+				{ label: 'Άνοιγμα', icon: 'open', onselect: act(() => select(id)) },
+				{ label: 'Αντιγραφή σε…', icon: 'copy', more: true, onselect: () => (menu = { ...m, view: 'copy' }) },
+				{ label: 'Διαγραφή', icon: 'trash', danger: true, more: true, onselect: () => (menu = { ...m, view: 'delete' }) }
+			]
+		};
 	});
 
+	// -------------------------------------------------------------- Keyboard
+
+	function onKey(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			// First Esc leaves the field (e.g. the note focused after adding); the next one closes.
+			if (isTyping(e.target)) {
+				if (!e.defaultPrevented && e.target instanceof HTMLElement && !e.target.closest('.menu, .pop')) e.target.blur();
+				return;
+			}
+			if (menu) menu = null;
+			else if (switcherOpen) switcherOpen = false;
+			else if (filtersOpen) filtersOpen = false;
+			else if (selectedId) select(null);
+			else if (highlight) highlight = null;
+			else return;
+			e.preventDefault();
+			return;
+		}
+		if (e.metaKey || e.ctrlKey || e.altKey || e.repeat && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+		if (isTyping(e.target) || menu || switcherOpen || filtersOpen) return;
+		const t = e.target as HTMLElement | null;
+		// e.code, so the keys also work with a Greek keyboard layout.
+		if (e.code === 'KeyN') pickFiles(null);
+		else if (e.code === 'KeyF') board?.fit();
+		else if (e.code === 'KeyL') void board?.autoLayout();
+		else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && selected && t?.getAttribute('type') !== 'range') {
+			step(e.key === 'ArrowLeft' ? -1 : 1);
+		} else return;
+		e.preventDefault();
+	}
+
+	// ------------------------------------------------------------- Lifecycle
+
 	onMount(() => {
+		isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 		try {
 			const raw = localStorage.getItem(LS_KEY);
 			if (raw) {
-				const v = JSON.parse(raw) as { size?: unknown; notesOn?: unknown; tagsOn?: unknown };
+				const v = JSON.parse(raw) as { size?: unknown; notesOn?: unknown };
 				if (typeof v.size === 'number' && Number.isFinite(v.size)) size = clamp(Math.round(v.size), SIZE_MIN, SIZE_MAX);
 				if (typeof v.notesOn === 'boolean') notesOn = v.notesOn;
-				if (typeof v.tagsOn === 'boolean') tagsOn = v.tagsOn;
 			}
 		} catch {
 			/* storage unavailable: keep the defaults */
 		}
 		prefsLoaded = true;
-
-		window.addEventListener('paste', onPaste);
-		window.addEventListener('keydown', onKeyDown);
-		window.addEventListener('pagehide', onPageHide);
 		return () => {
-			window.removeEventListener('paste', onPaste);
-			window.removeEventListener('keydown', onKeyDown);
-			window.removeEventListener('pagehide', onPageHide);
-			void flushSaves();
-			clearTimeout(toastTimer);
-			sim?.stop();
-			sim = null;
+			for (const t of toastTimers.values()) clearTimeout(t);
+			for (const u of Object.values(localUrls)) URL.revokeObjectURL(u);
 		};
 	});
 
 	$effect(() => {
+		const prefs = { size, notesOn };
 		if (!prefsLoaded) return;
-		const prefs = { size, notesOn, tagsOn };
-		untrack(() => {
-			try {
-				localStorage.setItem(LS_KEY, JSON.stringify(prefs));
-			} catch {
-				/* ignore */
-			}
-		});
+		try {
+			localStorage.setItem(LS_KEY, JSON.stringify(prefs));
+		} catch {
+			/* ignore */
+		}
 	});
 
-	// ------------------------------------------------------------------ Helpers
-
-	const pct = (v: number) => `${clamp(Number.isFinite(v) ? v : 0, 0, 1) * 100}%`;
-
-	function regionStyle(r: { x: number; y: number; w: number; h: number }) {
-		return `left:${pct(r.x)};top:${pct(r.y)};width:${pct(r.w)};height:${pct(r.h)}`;
-	}
-
-	const regionsOf = (i: Inspiration) => i.regions ?? [];
-	const tagsOf = (i: Inspiration) => i.tags ?? [];
-	const isFaded = (id: string) => (hood ? !hood.has(id) : false);
-	const lineFaded = (l: SimLink) => (hood ? !(hood.has(l.fromId) && hood.has(l.toId)) : false);
-	const isHttp = (url: string | null) => !!url && /^https?:\/\//i.test(url);
+	const boardEmpty = $derived(inProject.length === 0);
+	const hint = $derived(filtered.length < 3 && !boardEmpty ? `${mod}V επικόλληση · σύρε εικόνες εδώ` : null);
 </script>
 
 <svelte:head>
-	<title>{projectName} · Χάρτης · Moodboard</title>
+	<title>{projectName} · Moodboard</title>
 </svelte:head>
 
+<svelte:window bind:innerWidth onkeydown={onKey} onpaste={onPaste} />
+
 <div class="page">
-	<header class="bar">
-		<a class="back" href="/">← Πίνακας</a>
-		<div class="controls">
-			<select aria-label="Project" value={project} onchange={(e) => selectProject(e.currentTarget.value)}>
-				<option value="all">Όλα τα projects</option>
-				{#each data.projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-				{#if hasNone}<option value="none">Χωρίς project</option>{/if}
-			</select>
-			<select bind:value={level} aria-label="Επίπεδο">
-				<option value="">Όλα τα επίπεδα</option>
-				{#each LEVELS as l (l)}<option value={l}>{LEVEL_LABELS[l]}</option>{/each}
-			</select>
-			<label class="toggle"><input type="checkbox" bind:checked={notesOn} />Σημειώσεις</label>
-			<label class="toggle"><input type="checkbox" bind:checked={tagsOn} />Tags</label>
-			<label class="sizer">
-				Μέγεθος
-				<input type="range" min={SIZE_MIN} max={SIZE_MAX} step="10" bind:value={size} aria-label="Μέγεθος εικόνας" />
-				<span class="sizerVal">{size}</span>
-			</label>
-			<button type="button" onclick={fitAll}>Κεντράρισμα</button>
-			<button type="button" class="secondary" onclick={autoLayout}>Αυτόματη διάταξη</button>
-			<button type="button" class="primary" onclick={() => openAdd()}>+ Νέα</button>
+	<BoardHeader
+		current={project}
+		currentName={projectName}
+		{options}
+		onproject={selectProject}
+		bind:search
+		bind:level
+		bind:switcherOpen
+		bind:filtersOpen
+		tags={tagStats}
+		{colors}
+		{highlight}
+		ontoggletag={toggleTag}
+	/>
+
+	{#if tagStats.length}
+		<div class="tagrow">
+			<TagChips tags={tagStats} {colors} {highlight} ontoggle={toggleTag} />
 		</div>
-	</header>
+	{/if}
 
-	{#if data.error}
-		<p class="msg">Σφάλμα φόρτωσης: {data.error}</p>
-	{:else}
-		<div
-			class="stage"
-			bind:this={container}
-			style="--card: {size}px"
-			role="application"
-			aria-label="Χάρτης"
-			onpointerdown={onStageDown}
-			onpointermove={onStageMove}
-			onpointerup={onStageUp}
-			onpointercancel={onStageUp}
-			ondblclick={onDoubleClick}
-		>
-			<svg class="edges" aria-hidden="true">
-				{#each links as l (l.id)}
-					<line use:lineRef={l} class:fade={lineFaded(l)} />
-				{/each}
-			</svg>
+	<div class="body">
+		{#if data.error}
+			<p class="msg">Σφάλμα φόρτωσης: {data.error}</p>
+		{:else}
+			<Board
+				bind:this={board}
+				supabase={data.supabase}
+				items={filtered}
+				{urlOf}
+				{colors}
+				{size}
+				{notesOn}
+				selectedId={panelOpen ? selectedId : null}
+				{highlight}
+				{matches}
+				scope={data.positionsScope}
+				seed={data.positions}
+				canSave={!!data.userId}
+				{rightInset}
+				onselect={(id) => select(id)}
+				onbackground={() => {
+					if (selectedId) select(null);
+				}}
+				oncontext={onContext}
+				onfiles={(files, spot) => void addFiles(files, spot)}
+				onpick={(spot) => pickFiles(spot)}
+				onrezone={(item, tag, from) => void rezone(item, tag, from)}
+				onzoneadd={(_tag, spot) => pickFiles(spot)}
+				ontoast={(msg) => toast({ text: msg, tone: 'error' }, 5000)}
+			/>
 
-			<div class="world" style="transform: translate({view.x}px, {view.y}px) scale({view.k})">
-				{#each nodes as n (n.id)}
-					{#if n.kind === 'inspiration' && n.item}
-						{@const item = n.item}
-						<div
-							class="node card"
-							class:sel={selectedId === item.id}
-							class:fade={isFaded(n.id)}
-							use:nodeRef={n}
-							onpointerdown={(e) => nodeDown(e, n)}
-							onpointermove={nodeMove}
-							onpointerup={(e) => nodeUp(e, n)}
-							onpointercancel={(e) => nodeUp(e, n)}
-							role="button"
-							tabindex={-1}
-							aria-label={item.note ? item.note.slice(0, 80) : 'Εικόνα'}
-						>
-							<div class="shot">
-								{#if data.urls[item.image_path]}
-									<img
-										src={data.urls[item.image_path]}
-										alt={item.note ? item.note.slice(0, 80) : ''}
-										loading="lazy"
-										decoding="async"
-										draggable={false}
-										onload={() => {
-											if (measureOne(n)) reheat(0.35);
-										}}
-									/>
-								{:else}
-									<span class="missing">χωρίς εικόνα</span>
-								{/if}
-								{#if showBoxes}
-									{#each regionsOf(item) as r, ri (ri)}
-										<div class="region" style={regionStyle(r)}>
-											{#if showRegionNotes && r.note}<span class="rnote">{r.note}</span>{/if}
-										</div>
-									{/each}
-								{:else if regionsOf(item).length}
-									<span class="rcount">{regionsOf(item).length}</span>
-								{/if}
-							</div>
-							{#if notesOn && item.note}
-								<p class="cardnote">{item.note}</p>
-							{/if}
-						</div>
-					{:else if n.kind === 'tag'}
-						<div
-							class="node tag"
-							class:fade={isFaded(n.id)}
-							class:on={focusTag === n.label}
-							use:nodeRef={n}
-							onpointerenter={() => (hoverTag = n.label)}
-							onpointerleave={() => (hoverTag = hoverTag === n.label ? null : hoverTag)}
-							onpointerdown={(e) => nodeDown(e, n)}
-							onpointermove={nodeMove}
-							onpointerup={(e) => nodeUp(e, n)}
-							onpointercancel={(e) => nodeUp(e, n)}
-							role="button"
-							tabindex={-1}
-							aria-label={`Tag ${n.label}`}
-						>
-							<span>#{n.label}</span>
+			{#if boardEmpty}
+				<div class="empty" style:--inset="{rightInset}px">
+					<div class="emptybox">
+						<svg class="emptyart" viewBox="0 0 96 64" aria-hidden="true">
+							<rect x="6" y="14" width="34" height="42" rx="3" />
+							<rect x="30" y="6" width="40" height="30" rx="3" />
+							<rect x="52" y="28" width="38" height="30" rx="3" />
+						</svg>
+						<h1>{project === 'all' ? 'Ο πίνακας είναι άδειος' : `Το «${projectName}» δεν έχει εικόνες`}</h1>
+						<p>Σύρε εικόνες εδώ, κάνε επικόλληση με <kbd class="kbd">{mod}V</kbd> ή διάλεξε αρχεία.</p>
+						<div class="emptyacts">
+							<button type="button" class="btn primary" onclick={() => pickFiles(null)}>
+								<Icon name="plus" size={15} /> Εικόνα <kbd class="kbd onacc">N</kbd>
+							</button>
 							<button
 								type="button"
-								class="addtag"
-								class:show={hoverTag === n.label || focusTag === n.label}
-								aria-label={`Νέα εικόνα με tag ${n.label}`}
-								onpointerdown={(e) => e.stopPropagation()}
-								onclick={(e) => {
-									e.stopPropagation();
-									openAdd({ tags: [n.label] });
-								}}
+								class="btn"
+								onclick={() => void pasteAt(board?.centreSpot() ?? { x: 0, y: 0, zone: null })}
 							>
-								+
+								<Icon name="paste" size={15} /> Επικόλληση
 							</button>
 						</div>
-					{:else}
-						<div
-							class="node pill"
-							class:orphan={n.orphan}
-							class:fade={isFaded(n.id)}
-							use:nodeRef={n}
-							onpointerdown={(e) => nodeDown(e, n)}
-							onpointermove={nodeMove}
-							onpointerup={(e) => nodeUp(e, n)}
-							onpointercancel={(e) => nodeUp(e, n)}
-							role="button"
-							tabindex={-1}
-							aria-label={n.label}
-						>
-							{n.label}
-						</div>
-					{/if}
-				{/each}
-			</div>
-
-			{#if data.inspirations.length === 0}
-				<p class="empty">
-					Δεν υπάρχουν ακόμα εικόνες.
-					<a href="/new">Πρόσθεσε την πρώτη →</a>
-					<span class="sub">ή κάνε paste μια εικόνα εδώ</span>
-				</p>
-			{:else if filtered.length === 0}
-				<p class="empty small">Καμία εικόνα με αυτά τα φίλτρα.</p>
-			{/if}
-		</div>
-	{/if}
-
-	{#if selected}
-		{@const item = selected}
-		<aside class="panel" aria-label="Λεπτομέρειες εικόνας">
-			<div class="phead">
-				<span class="ptitle">{item.level ? LEVEL_LABELS[item.level] : 'Εικόνα'}</span>
-				<button type="button" class="close" onclick={() => (selectedId = null)} aria-label="Κλείσιμο">×</button>
-			</div>
-
-			<div class="pshot">
-				{#if data.urls[item.image_path]}
-					<img src={data.urls[item.image_path]} alt="" decoding="async" />
-				{/if}
-				{#each regionsOf(item) as r, ri (ri)}
-					<div class="region" style={regionStyle(r)}>
-						<span class="rnum">{ri + 1}</span>
-						{#if r.note}<span class="rnote">{r.note}</span>{/if}
 					</div>
-				{/each}
-			</div>
-
-			{#if regionsOf(item).length}
-				<ol class="rlist">
-					{#each regionsOf(item) as r, ri (ri)}
-						<li><span class="rnum2">{ri + 1}</span><span>{r.note || '—'}</span></li>
-					{/each}
-				</ol>
-			{/if}
-
-			{#if item.note}<p class="pnote">{item.note}</p>{/if}
-
-			{#if tagsOf(item).length}
-				<div class="chips">
-					{#each tagsOf(item) as t (t)}
-						<button type="button" class="chip" onclick={() => (focusTag = t)}>#{t}</button>
-					{/each}
 				</div>
+			{:else if filtered.length === 0}
+				<div class="empty" style:--inset="{rightInset}px">
+					<div class="emptybox small">
+						<p>Καμία εικόνα σε αυτό το επίπεδο.</p>
+						<button type="button" class="btn" onclick={() => (level = '')}>Όλα τα επίπεδα</button>
+					</div>
+				</div>
+			{:else if matches && matches.size === 0}
+				<p class="nomatch" style:--inset="{rightInset}px">Καμία εικόνα για «{search.trim()}»</p>
 			{/if}
 
-			{#if isHttp(item.source_url)}
-				<a class="plink" href={item.source_url} target="_blank" rel="noopener">
-					{item.source_title || item.source_url}
-				</a>
+			{#if !boardEmpty}
+				<Dock
+					bind:notesOn
+					bind:size
+					min={SIZE_MIN}
+					max={SIZE_MAX}
+					{hint}
+					inset={rightInset}
+					onadd={() => pickFiles(null)}
+					onfit={() => board?.fit()}
+					onlayout={() => void board?.autoLayout()}
+				/>
 			{/if}
+			<Toasts {toasts} inset={rightInset} ondismiss={dismiss} />
+		{/if}
 
-			<div class="pactions">
-				<a class="btn primary" href={`/i/${item.id}`}>Επεξεργασία</a>
-				<select bind:value={copyTarget} onchange={(e) => copySelected(e.currentTarget.value)} aria-label="Αντιγραφή σε project">
-					<option value="">Αντιγραφή σε project…</option>
-					<option value={NO_PROJECT}>Χωρίς project</option>
-					{#each data.projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-				</select>
+		{#if panelOpen && selected && data.userId}
+			<div class="panelwrap">
+				<InspirationPanel
+					supabase={data.supabase}
+					userId={data.userId}
+					item={selected}
+					imageUrl={urlOf(selected)}
+					projects={data.projects}
+					suggestions={data.tags}
+					{focusNote}
+					onsaved={setItem}
+					oncopied={onCopied}
+					ondeleted={onDeleted}
+					onclose={() => select(null)}
+					onprev={selIndex > 0 ? () => step(-1) : undefined}
+					onnext={selIndex >= 0 && selIndex < filtered.length - 1 ? () => step(1) : undefined}
+				/>
 			</div>
-		</aside>
-	{/if}
-
-	{#if toast}<p class="toast">{toast}</p>{/if}
+		{/if}
+	</div>
 </div>
 
-{#if quickAdd.open && data.userId}
-	<QuickAdd
-		supabase={data.supabase}
-		userId={data.userId}
-		projects={data.projects}
-		file={quickAdd.file}
-		tags={quickAdd.tags}
-		projectId={quickAdd.projectId}
-		suggestions={data.tags}
-		onclose={closeAdd}
-		onsaved={(id) => {
-			closeAdd();
-			selectedId = id;
-			void invalidate('moodboard:data');
-		}}
+{#if menu && menuModel}
+	<ContextMenu
+		x={menu.x}
+		y={menu.y}
+		items={menuModel.items}
+		title={menuModel.title}
+		onback={menuModel.onback}
+		onclose={() => (menu = null)}
 	/>
 {/if}
+
+<input bind:this={fileInput} class="file" type="file" accept={ACCEPT} multiple tabindex="-1" aria-hidden="true" onchange={onFilesPicked} />
 
 <style>
 	.page {
@@ -1107,386 +662,174 @@
 		background: var(--bg);
 		overflow: hidden;
 	}
-
-	.bar {
+	.tagrow {
+		flex: none;
+		height: 40px;
 		display: flex;
-		flex-wrap: wrap;
 		align-items: center;
-		gap: 8px;
-		padding: 8px 12px;
-		border-bottom: 1px solid var(--line);
+		padding: 0 20px;
 		background: var(--surface);
-		min-width: 0;
+		border-bottom: 1px solid var(--line);
+		position: relative;
+		z-index: 20;
 	}
-	.back {
-		display: inline-flex;
-		align-items: center;
-		border-radius: 8px;
-		padding: 0.4rem 0.7rem;
-		border: 1px solid var(--line);
-		text-decoration: none;
-		white-space: nowrap;
-		font-size: 0.9rem;
-	}
-	.controls {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px;
-		min-width: 0;
-		flex: 1 1 auto;
-	}
-	.controls select { min-width: 0; max-width: 100%; }
-	.toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		color: var(--muted);
-		font-size: 0.82rem;
-		white-space: nowrap;
-	}
-	.toggle input { accent-color: var(--accent); margin: 0; }
-	.sizer {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		color: var(--muted);
-		font-size: 0.82rem;
-		min-width: 0;
-	}
-	.sizer input { width: 108px; max-width: 100%; padding: 0; accent-color: var(--accent); }
-	.sizerVal { font-variant-numeric: tabular-nums; min-width: 2.6ch; }
-	.controls button { padding: 0.38rem 0.7rem; font-size: 0.82rem; }
-	.controls button.secondary { background: var(--surface); color: var(--muted); border-color: var(--line); }
-	.controls button.secondary:hover { color: var(--text); border-color: var(--muted); }
-	button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-	.stage {
+	.body {
 		position: relative;
 		flex: 1;
 		min-height: 0;
-		overflow: hidden;
-		touch-action: none;
-		cursor: grab;
-		background: var(--bg);
 	}
-	.edges {
-		position: absolute;
-		left: 0;
-		top: 0;
-		width: 100%;
-		height: 100%;
-		pointer-events: none;
-		overflow: visible;
-	}
-	.edges line {
-		stroke: var(--line);
-		stroke-width: 1.4;
-		opacity: 0.9;
-	}
-	.edges line.fade { opacity: 0.15; }
-
-	.world {
-		position: absolute;
-		left: 0;
-		top: 0;
-		width: 0;
-		height: 0;
-		transform-origin: 0 0;
-	}
-
-	.node {
-		position: absolute;
-		left: 0;
-		top: 0;
-		transform: translate(-50%, -50%);
-		user-select: none;
-		cursor: grab;
-		transition: opacity 0.15s ease;
-	}
-	.node.fade { opacity: 0.2; }
-
-	.card {
-		width: var(--card, 160px);
-		display: flex;
-		flex-direction: column;
-		border-radius: 12px;
-		background: var(--surface);
-		border: 1px solid var(--line);
-		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
-		overflow: hidden;
-	}
-	.card.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
-	.shot { position: relative; background: var(--bg); line-height: 0; min-height: 8px; }
-	.shot img { display: block; width: 100%; height: auto; }
-	.missing {
-		display: block;
-		padding: 24px 8px;
-		text-align: center;
+	.msg {
 		color: var(--muted);
-		font-size: 11px;
-		line-height: 1.3;
-	}
-	.region {
-		position: absolute;
-		border: 2px solid var(--accent);
-		border-radius: 3px;
-		box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
-		pointer-events: none;
-	}
-	.rnote {
-		position: absolute;
-		top: 0;
-		left: 0;
-		max-width: 100%;
-		background: rgba(0, 0, 0, 0.62);
-		color: #fff;
-		font-size: 10px;
-		line-height: 1.25;
-		padding: 2px 5px;
-		border-radius: 0 0 4px 0;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-		word-break: break-word;
-	}
-	.rnum {
-		position: absolute;
-		top: 0;
-		left: 0;
-		background: var(--accent);
-		color: #fff;
-		font-size: 11px;
-		font-weight: 700;
-		line-height: 1;
-		padding: 3px 5px;
-		border-radius: 0 0 4px 0;
-	}
-	.rcount {
-		position: absolute;
-		top: 6px;
-		right: 6px;
-		background: var(--accent);
-		color: #fff;
-		font-size: 11px;
-		line-height: 1;
-		padding: 3px 6px;
-		border-radius: 999px;
-	}
-	.cardnote {
+		padding: 32px 20px;
 		margin: 0;
-		padding: 6px 8px 8px;
-		font-size: 12px;
-		line-height: 1.35;
-		display: -webkit-box;
-		-webkit-line-clamp: 3;
-		line-clamp: 3;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
 	}
 
-	.tag {
-		display: inline-flex;
-		align-items: center;
-		gap: 2px;
+	.panelwrap {
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: 400px;
+		z-index: 25;
+		overflow-y: auto;
+		overscroll-behavior: contain;
 		background: var(--surface);
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		padding: 2px 9px;
-		color: var(--muted);
-		font-size: 11px;
-		white-space: nowrap;
+		border-left: 1px solid var(--line);
+		box-shadow: -16px 0 32px -24px rgb(0 0 0 / 0.35);
+		animation: slide 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
-	.tag.on { border-color: var(--accent); color: var(--accent); }
-	.addtag {
-		width: 17px;
-		height: 17px;
-		margin-right: -5px;
-		padding: 0;
-		border-radius: 999px;
-		border: 1px solid var(--accent);
-		background: var(--accent);
-		color: #fff;
-		font-size: 12px;
-		line-height: 1;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		opacity: 0;
-		pointer-events: none;
-		transition: opacity 0.12s ease;
-	}
-	.addtag.show { opacity: 1; pointer-events: auto; }
-
-	.pill {
-		background: var(--accent);
-		color: #fff;
-		border-radius: 999px;
-		padding: 6px 14px;
-		font-size: 12px;
-		font-weight: 600;
-		white-space: nowrap;
-		max-width: 220px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.pill.orphan {
-		background: var(--surface);
-		color: var(--muted);
-		border: 1px solid var(--line);
-		font-weight: 500;
+	@keyframes slide {
+		from {
+			transform: translateX(24px);
+			opacity: 0;
+		}
 	}
 
 	.empty {
 		position: absolute;
-		left: 50%;
-		top: 50%;
-		transform: translate(-50%, -50%);
-		margin: 0;
+		inset: 0 var(--inset, 0px) 0 0;
+		display: grid;
+		place-items: center;
+		padding: 16px;
+		pointer-events: none;
+	}
+	.emptybox {
+		pointer-events: auto;
+		max-width: 380px;
 		text-align: center;
-		color: var(--muted);
-		background: var(--surface);
-		border: 1px solid var(--line);
-		border-radius: 12px;
-		padding: 14px 18px;
-		font-size: 0.88rem;
-		line-height: 1.7;
-		max-width: min(360px, 86vw);
-	}
-	.empty a { color: var(--accent); text-decoration: none; white-space: nowrap; }
-	.empty .sub { display: block; font-size: 0.78rem; opacity: 0.8; }
-	.empty.small { padding: 8px 14px; border-radius: 999px; font-size: 0.82rem; }
-
-	.msg { color: var(--muted); padding: 32px 16px; margin: 0; }
-
-	.panel {
-		position: fixed;
-		top: 0;
-		right: 0;
-		width: 360px;
-		max-width: 100vw;
-		height: 100%;
 		display: flex;
 		flex-direction: column;
+		align-items: center;
 		gap: 10px;
-		padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
-		background: var(--surface);
-		border-left: 1px solid var(--line);
-		box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		z-index: 20;
 	}
-	.phead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-	.ptitle { font-weight: 600; font-size: 0.92rem; }
-	.close {
-		border: none;
-		background: none;
-		font-size: 1.35rem;
-		line-height: 1;
-		padding: 0 4px;
-		color: var(--muted);
-		border-radius: 6px;
+	.emptyart {
+		width: 96px;
+		height: 64px;
+		margin-bottom: 8px;
+		fill: var(--raised);
+		stroke: var(--line-strong);
+		stroke-width: 1;
 	}
-	.close:hover { color: var(--text); background: var(--bg); }
-	.pshot {
-		position: relative;
-		background: var(--bg);
-		border: 1px solid var(--line);
-		border-radius: 10px;
-		overflow: hidden;
-		line-height: 0;
-	}
-	.pshot img { display: block; width: 100%; height: auto; }
-	.rlist {
+	.emptybox h1 {
 		margin: 0;
-		padding: 0;
-		list-style: none;
+		font-size: 22px;
+		font-weight: 600;
+		line-height: 1.25;
+		text-wrap: balance;
+	}
+	.emptybox p {
+		margin: 0;
+		color: var(--muted);
+		font-size: 14px;
+		line-height: 1.55;
+		text-wrap: pretty;
+	}
+	.emptyacts {
 		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		font-size: 0.82rem;
+		gap: 8px;
+		margin-top: 10px;
 	}
-	.rlist li { display: flex; gap: 7px; align-items: baseline; }
-	.rnum2 {
-		flex: 0 0 auto;
-		width: 18px;
-		height: 18px;
-		border-radius: 999px;
-		background: var(--accent);
-		color: #fff;
-		font-size: 10px;
-		font-weight: 700;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
+	.emptyacts .btn {
+		min-height: 38px;
 	}
-	.pnote {
-		margin: 0;
-		font-size: 0.86rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		word-break: break-word;
+	.kbd.onacc {
+		background: transparent;
+		color: inherit;
+		border-color: color-mix(in srgb, var(--on-accent) 45%, transparent);
+		margin-left: 2px;
 	}
-	.chips { display: flex; flex-wrap: wrap; gap: 5px; }
-	.chip {
-		border-radius: 999px;
-		padding: 2px 9px;
-		font-size: 0.76rem;
-		background: var(--bg);
-		color: var(--muted);
+	.emptybox.small {
+		flex-direction: row;
+		gap: 12px;
+		padding: 8px 8px 8px 16px;
+		border-radius: var(--r-pill);
+		background: var(--raised);
+		box-shadow:
+			0 12px 32px -12px rgb(0 0 0 / 0.3),
+			0 0 0 1px var(--line);
+		max-width: none;
 	}
-	.chip:hover { border-color: var(--accent); color: var(--accent); }
-	.plink {
-		color: var(--accent);
-		font-size: 0.8rem;
-		text-decoration: none;
-		word-break: break-all;
-	}
-	.plink:hover { text-decoration: underline; }
-	.pactions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
-	.pactions select { width: 100%; }
-	.btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		text-decoration: none;
-		border-radius: 8px;
-		padding: 0.45rem 0.9rem;
-		border: 1px solid var(--line);
-	}
-	.toast {
-		position: fixed;
-		left: 50%;
-		bottom: 24px;
+	.nomatch {
+		position: absolute;
+		top: 14px;
+		left: calc((100% - var(--inset, 0px)) / 2);
 		transform: translateX(-50%);
 		margin: 0;
-		background: var(--text);
-		color: var(--bg);
-		padding: 8px 16px;
-		border-radius: 999px;
-		font-size: 0.82rem;
-		z-index: 40;
-		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+		padding: 6px 14px;
+		border-radius: var(--r-pill);
+		background: var(--raised);
+		box-shadow: 0 0 0 1px var(--line);
+		font-size: 13px;
+		color: var(--muted);
+		white-space: nowrap;
+		pointer-events: none;
+	}
+	.file {
+		position: fixed;
+		width: 1px;
+		height: 1px;
+		opacity: 0;
+		pointer-events: none;
+		left: -10px;
+		top: -10px;
 	}
 
-	@media (max-width: 560px) {
-		.bar { padding: 6px 10px; gap: 6px; }
-		.controls { gap: 6px; }
-		.controls select { flex: 1 1 132px; }
-		.panel {
+	@media (max-width: 640px) {
+		.tagrow {
+			display: none;
+		}
+		.panelwrap {
+			position: fixed;
 			top: auto;
 			left: 0;
-			right: 0;
 			width: auto;
-			height: auto;
-			max-height: 70vh;
-			border-left: none;
-			border-top: 1px solid var(--line);
-			border-radius: 14px 14px 0 0;
-			box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+			height: 75vh;
+			height: 75dvh;
+			z-index: 45;
+			border-left: 0;
+			border-radius: var(--r-panel) var(--r-panel) 0 0;
+			box-shadow: 0 -16px 40px -16px rgb(0 0 0 / 0.4);
+			padding-bottom: env(safe-area-inset-bottom);
+			animation-name: sheet;
+		}
+		@keyframes sheet {
+			from {
+				transform: translateY(32px);
+				opacity: 0;
+			}
+		}
+		.emptyacts {
+			flex-direction: column;
+			width: 100%;
+		}
+		.emptyacts .btn {
+			justify-content: center;
+			min-height: 42px;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.panelwrap {
+			animation: none;
 		}
 	}
 </style>
