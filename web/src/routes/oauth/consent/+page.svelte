@@ -26,6 +26,12 @@
 			error = e?.message ?? 'Κάτι πήγε στραβά.';
 			return;
 		}
+		// Dynamic registration is open, so refuse any scheme except http(s) (blocks javascript:).
+		if (!/^https?:\/\//i.test(r.redirect_url)) {
+			busy = false;
+			error = 'Μη έγκυρη διεύθυνση επιστροφής.';
+			return;
+		}
 		window.location.assign(r.redirect_url);
 	}
 </script>
