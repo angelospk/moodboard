@@ -5,13 +5,13 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount, tick, untrack } from 'svelte';
-	import type { Inspiration, Level } from '#lib/types.js';
+	import type { Crop, Inspiration, Level } from '#lib/types.js';
 	import {
 		checkImage,
+		newId,
 		copyInspiration,
 		createInspiration,
 		deleteInspiration,
-		getInspiration,
 		updateInspiration,
 		imageUrls,
 		toInspiration
@@ -19,6 +19,7 @@
 	import { applyEvent, subscribeLive } from '#lib/realtime.js';
 	import type { RecordModel, RecordSubscription } from 'pocketbase';
 	import InspirationPanel from '#lib/components/InspirationPanel.svelte';
+	import ImageViewer from '#lib/components/ImageViewer.svelte';
 	import Board, { type BoardContext, type Spot } from './Board.svelte';
 	import BoardHeader from './BoardHeader.svelte';
 	import TagChips from './TagChips.svelte';
@@ -42,26 +43,25 @@
 
 	// ------------------------------------------------------------------ Data
 
+	/** Cards added here whose upload has not finished, by id. Not reactive: read only when the server
+	 *  data reloads, so a reload during an upload keeps those cards on the board. */
+	const pendingRows = new Map<string, Inspiration>();
+	$effect(() => {
+		for (const i of data.inspirations) pendingRows.delete(i.id);
+	});
 	/** Local copy of the rows: edits, adds and deletes show at once; a reload replaces it. */
-	let items = $derived(data.inspirations);
+	let items = $derived.by(() => {
+		const known = new Set(data.inspirations.map((i) => i.id));
+		return [...[...pendingRows.values()].filter((r) => !known.has(r.id)), ...data.inspirations];
+	});
 	/** Blob URLs of images added in this session, by inspiration id. */
 	let localUrls = $state.raw<Record<string, string>>({});
-	/** Signed URL per image path, kept stable across reloads so images do not re-download. */
-	const urlCache = new Map<string, { url: string; at: number }>();
-
 	/** Image URLs of rows that arrived live (added on another device), by image path. */
 	let liveUrls = $state.raw<Record<string, string>>({});
 
+	/** Full-size URL. The file token is cached for days, so a reload gives the same URL (browser cache). */
 	function urlOf(i: Inspiration): string | null {
-		const local = localUrls[i.id];
-		if (local) return local;
-		const fresh = data.urls[i.image_path] ?? liveUrls[i.image_path];
-		const hit = urlCache.get(i.image_path);
-		// Signed URLs live an hour; take the newer one after 50 minutes.
-		if (hit && Date.now() - hit.at < 50 * 60_000) return hit.url;
-		if (!fresh) return hit?.url ?? null;
-		urlCache.set(i.image_path, { url: fresh, at: Date.now() });
-		return fresh;
+		return localUrls[i.id] ?? data.urls[i.image_path] ?? liveUrls[i.image_path] ?? null;
 	}
 
 	function setItem(row: Inspiration) {
@@ -220,11 +220,12 @@
 		if (files.length) void addFiles(files, spot);
 	}
 
-	async function fetchRow(id: string, fallback: Inspiration): Promise<Inspiration> {
-		return (await getInspiration(data.pb, id)) ?? fallback;
-	}
+	/** Ids of cards whose image is still uploading (shown faded; the panel waits for them). */
+	let uploading = $state.raw<Set<string>>(new Set());
+	const UPLOADS_AT_ONCE = 3;
 
-	/** Save each image at once, pinned where it was added, then open the first in the panel. */
+	/** Show every image at once where it was added, under its final id, and upload in the background
+	 *  (3 at a time). A failed upload takes its card away again and says why. */
 	async function addFiles(files: File[], spot: Spot) {
 		const userId = data.userId;
 		if (!userId) {
@@ -236,52 +237,74 @@
 		if (highlight && highlight !== spot.zone) highlight = null;
 		const projectId = newProjectId;
 		const tags = spot.zone ? [spot.zone] : [];
+		const lvl = level || null;
 		const cols = Math.ceil(Math.sqrt(files.length));
-		let first: string | null = null;
-		let added = 0;
-		for (let i = 0; i < files.length; i++) {
-			const file = files[i];
-			const x = spot.x + (i % cols) * (size + CARD_GAP);
-			const y = spot.y + Math.floor(i / cols) * (size * 0.9 + CARD_GAP);
-			const label = files.length > 1 ? `Ανεβαίνει ${i + 1} από ${files.length}…` : 'Ανεβαίνει η εικόνα…';
-			const busy = toast({ text: label, tone: 'busy' }, 0);
+		const queue: { id: string; file: File }[] = [];
+		const now = new Date().toISOString();
+		files.forEach((file, i) => {
 			try {
 				checkImage(file);
-				const { id } = await createInspiration(data.pb, userId, file, {
-					project_id: projectId,
-					tags,
-					level: level || null
-				});
-				const now = new Date().toISOString();
-				const row = await fetchRow(id, {
-					id,
-					project_id: projectId,
-					image_path: '',
-					source_url: null,
-					source_title: null,
-					note: '',
-					tags,
-					level: level || null,
-					regions: [],
-					created_at: now,
-					updated_at: now
-				});
-				localUrls = { ...localUrls, [id]: URL.createObjectURL(file) };
-				board?.place(id, x, y);
-				items = [row, ...items.filter((i) => i.id !== id)];
-				first ??= id;
-				added++;
 			} catch (err) {
 				const name = file.name && file.name !== 'image.png' ? `${file.name}: ` : '';
 				toast({ text: name + errText(err, 'Η εικόνα δεν αποθηκεύτηκε'), tone: 'error' }, 8000);
-			} finally {
-				dismiss(busy);
+				return;
 			}
-		}
-		if (!first) return;
-		select(first, { focus: true });
+			const id = newId();
+			const x = spot.x + (i % cols) * (size + CARD_GAP);
+			const y = spot.y + Math.floor(i / cols) * (size * 0.9 + CARD_GAP);
+			localUrls = { ...localUrls, [id]: URL.createObjectURL(file) };
+			board?.place(id, x, y);
+			const row: Inspiration = {
+				id, project_id: projectId, image_path: '', source_url: null, source_title: null, image_url: null,
+				crop: null, note: '', tags, level: lvl, regions: [], created_at: now, updated_at: now
+			};
+			pendingRows.set(id, row);
+			items = [row, ...items];
+			queue.push({ id, file });
+		});
+		if (!queue.length) return;
+		uploading = new Set([...uploading, ...queue.map((q) => q.id)]);
+		const first = queue[0].id;
+		const busy = toast({ text: queue.length > 1 ? `Ανεβαίνουν ${queue.length} εικόνες…` : 'Ανεβαίνει η εικόνα…', tone: 'busy' }, 0);
+		let added = 0;
+
+		const upload = async ({ id, file }: { id: string; file: File }) => {
+			try {
+				const row = await createInspiration(data.pb, userId, file, { id, project_id: projectId, tags, level: lvl });
+				// Keep edits made meanwhile on the board (e.g. a retag); take the server's file name.
+				const cur = items.find((i) => i.id === id);
+				const merged = cur ? { ...row, tags: cur.tags, project_id: cur.project_id, level: cur.level } : row;
+				if (pendingRows.has(id)) pendingRows.set(id, merged);
+				setItem(merged);
+				added++;
+				if (id === first && selectedId === null) select(id, { focus: true });
+			} catch (err) {
+				pendingRows.delete(id);
+				items = items.filter((i) => i.id !== id);
+				board?.forget(id);
+				URL.revokeObjectURL(localUrls[id]);
+				const { [id]: _, ...rest } = localUrls;
+				localUrls = rest;
+				const name = file.name && file.name !== 'image.png' ? `${file.name}: ` : '';
+				toast({ text: name + errText(err, 'Η εικόνα δεν αποθηκεύτηκε'), tone: 'error' }, 8000);
+			} finally {
+				const next = new Set(uploading);
+				next.delete(id);
+				uploading = next;
+				// The row stays in pendingRows until a reload contains it (the effect at the top drops it): a reload
+				// that started before this upload ended must not drop the card.
+			}
+		};
+		const work = [...queue];
+		await Promise.all(
+			Array.from({ length: Math.min(UPLOADS_AT_ONCE, work.length) }, async () => {
+				for (let job = work.shift(); job; job = work.shift()) await upload(job);
+			})
+		);
+		dismiss(busy);
 		if (added > 1) toast(`Προστέθηκαν ${added} εικόνες`);
-		void invalidate('moodboard:data');
+		// Reload only when nothing else is uploading (pending rows survive a reload anyway).
+		if (added && !uploading.size) void invalidate('moodboard:data');
 	}
 
 	function onPaste(e: ClipboardEvent) {
@@ -324,6 +347,11 @@
 	type From = { x?: number; y?: number; fx?: number | null; fy?: number | null };
 
 	async function rezone(item: Inspiration, tag: string, from: From) {
+		if (uploading.has(item.id)) {
+			board?.restore(item.id, from);
+			toast('Η εικόνα ανεβαίνει ακόμα…');
+			return;
+		}
 		const prev = item.tags ?? [];
 		const next = [tag, ...prev.filter((t) => t !== tag)];
 		setItem({ ...item, tags: next });
@@ -376,11 +404,64 @@
 		toast('Η εικόνα διαγράφηκε');
 	}
 
+	/** Full-screen viewer of the selected image (Space, or the button on the panel image). */
+	let viewing = $state(false);
+
+	/** The card shows the new crop at once; if the server refuses, the old one comes back. */
+	/** Crop saves of one row run one after another, so the server ends with the last crop chosen. */
+	const cropQueue = new Map<string, Promise<void>>();
+	/** Newest crop chosen per row: only its answer (or failure) updates the card. */
+	const cropSeq = new Map<string, number>();
+	/** Last crop the server confirmed per row, for a rollback. */
+	const cropSaved = new Map<string, Crop | null>();
+
+	function saveCrop(item: Inspiration, crop: Crop | null): Promise<void> {
+		const seq = (cropSeq.get(item.id) ?? 0) + 1;
+		cropSeq.set(item.id, seq);
+		if (!cropSaved.has(item.id)) cropSaved.set(item.id, item.crop);
+		setItem({ ...item, crop });
+		const run = async () => {
+			if (cropSeq.get(item.id) !== seq) return; // a newer crop is queued: skip this one
+			try {
+				const row = await updateInspiration(data.pb, item.id, { crop });
+				cropSaved.set(item.id, row.crop);
+				if (cropSeq.get(item.id) !== seq) return;
+				const cur = items.find((i) => i.id === item.id);
+				// Keep the server's updated_at: an older live echo (e.g. an autosave) then cannot undo the crop.
+				if (cur) setItem({ ...cur, crop: row.crop, updated_at: row.updated_at });
+				toast(crop ? 'Η περικοπή αποθηκεύτηκε' : 'Η περικοπή αφαιρέθηκε');
+			} catch (err) {
+				if (cropSeq.get(item.id) !== seq) return;
+				const cur = items.find((i) => i.id === item.id);
+				if (cur) setItem({ ...cur, crop: cropSaved.get(item.id) ?? null });
+				toast({ text: errText(err, 'Η περικοπή δεν αποθηκεύτηκε'), tone: 'error' }, 6000);
+			}
+		};
+		const next = (cropQueue.get(item.id) ?? Promise.resolve()).then(run);
+		cropQueue.set(item.id, next);
+		return next;
+	}
+
+	/** An autosave of the panel: take only the fields the panel edits (a crop saved meanwhile stays). */
+	function onPanelSaved(row: Inspiration) {
+		const cur = items.find((i) => i.id === row.id);
+		if (!cur) return;
+		const { note, tags, level, regions, project_id, updated_at } = row;
+		setItem({ ...cur, note, tags, level, regions, project_id, updated_at });
+	}
+
+	/** The card goes at once; if the server refuses, it comes back. */
 	async function remove(id: string) {
+		const row = items.find((i) => i.id === id);
+		if (!row) return;
+		items = items.filter((i) => i.id !== id);
+		if (selectedId === id) select(null);
 		try {
 			await deleteInspiration(data.pb, id);
-			onDeleted(id);
+			board?.forget(id);
+			toast('Η εικόνα διαγράφηκε');
 		} catch (err) {
+			if (!items.some((i) => i.id === id)) items = [row, ...items];
 			toast({ text: errText(err, 'Η διαγραφή απέτυχε'), tone: 'error' }, 6000);
 		}
 	}
@@ -456,6 +537,7 @@
 	// -------------------------------------------------------------- Keyboard
 
 	function onKey(e: KeyboardEvent) {
+		if (viewing) return; // the full-screen viewer handles its own keys
 		if (e.key === 'Escape') {
 			// First Esc leaves the field (e.g. the note focused after adding); the next one closes.
 			if (isTyping(e.target)) {
@@ -478,6 +560,7 @@
 		if (e.code === 'KeyN') pickFiles(null);
 		else if (e.code === 'KeyF') board?.fit();
 		else if (e.code === 'KeyL') void board?.autoLayout();
+		else if (e.code === 'Space' && selected && !uploading.has(selected.id)) viewing = true;
 		else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && selected && t?.getAttribute('type') !== 'range') {
 			step(e.key === 'ArrowLeft' ? -1 : 1);
 		} else return;
@@ -612,7 +695,8 @@
 				seed={data.positions}
 				canSave={!!data.userId}
 				{rightInset}
-				onselect={(id) => select(id)}
+				{uploading}
+				onselect={(id) => (uploading.has(id) ? toast('Η εικόνα ανεβαίνει ακόμα…') : select(id))}
 				onbackground={() => {
 					if (selectedId) select(null);
 				}}
@@ -686,14 +770,28 @@
 					projects={data.projects}
 					suggestions={data.tags}
 					{focusNote}
-					onsaved={setItem}
+					onsaved={onPanelSaved}
 					oncopied={onCopied}
 					ondeleted={onDeleted}
 					onclose={() => select(null)}
 					onprev={selIndex > 0 ? () => step(-1) : undefined}
 					onnext={selIndex >= 0 && selIndex < filtered.length - 1 ? () => step(1) : undefined}
+					onexpand={() => (viewing = true)}
 				/>
 			</div>
+		{/if}
+
+		{#if viewing && selected}
+			<ImageViewer
+				src={urlOf(selected)}
+				alt={selected.note || 'Έμπνευση'}
+				sourceUrl={selected.source_url}
+				crop={selected.crop}
+				oncrop={(c) => void saveCrop(selected!, c)}
+				onclose={() => (viewing = false)}
+				onprev={selIndex > 0 ? () => step(-1) : undefined}
+				onnext={selIndex >= 0 && selIndex < filtered.length - 1 ? () => step(1) : undefined}
+			/>
 		{/if}
 	</div>
 </div>

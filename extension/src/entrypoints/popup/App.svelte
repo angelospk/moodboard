@@ -178,6 +178,8 @@
 		form.append('image', blob, `image.${MIME_EXT[mime]}`);
 		form.append('source_url', pending?.sourceUrl ?? '');
 		form.append('source_title', pending?.sourceTitle ?? '');
+		// The image's own address (not the page), so it can be found again later. Screenshots have none.
+		if (/^https?:\/\//.test(pending?.imageUrl ?? '')) form.append('image_url', pending!.imageUrl!);
 		form.append('note', note.trim());
 		form.append('tags', JSON.stringify(tags));
 		form.append('level', level);

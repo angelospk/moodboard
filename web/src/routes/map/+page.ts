@@ -1,5 +1,5 @@
 import type { PageLoad } from './$types.js';
-import { imageUrls, listInspirations, listProjects, loadPositions, userTags } from '#lib/inspirations.js';
+import { fileToken, imageUrls, listInspirations, listProjects, loadPositions, userTags } from '#lib/inspirations.js';
 
 export const load: PageLoad = async ({ parent, depends, url }) => {
 	depends('moodboard:data');
@@ -10,6 +10,13 @@ export const load: PageLoad = async ({ parent, depends, url }) => {
 	const param = url.searchParams.get('project');
 	const scope = param && param !== 'all' ? param : 'all';
 
+	// Everything that does not need the rows starts at once: one round trip instead of three.
+	void fileToken(pb).catch(() => null);
+	const extras = Promise.all([
+		userTags(pb).catch(() => []),
+		loadPositions(pb, scope).catch((): Record<string, { x: number; y: number }> => ({}))
+	]);
+
 	let error: string | null = null;
 	let projects: Awaited<ReturnType<typeof listProjects>> = [];
 	let inspirations: Awaited<ReturnType<typeof listInspirations>> = [];
@@ -19,14 +26,10 @@ export const load: PageLoad = async ({ parent, depends, url }) => {
 		error = e instanceof Error ? e.message : String(e);
 	}
 
-	// One file token for every image URL (valid for an hour). A failed token only drops the thumbnails:
-	// it must not hide the rows.
+	// Full-size URLs (the side panel); the board asks for thumbnails itself. A failed token only drops
+	// the images: it must not hide the rows.
 	const urls = await imageUrls(pb, inspirations).catch((): Record<string, string> => ({}));
-
-	const [tags, positions] = await Promise.all([
-		userTags(pb).catch(() => []),
-		loadPositions(pb, scope).catch((): Record<string, { x: number; y: number }> => ({}))
-	]);
+	const [tags, positions] = await extras;
 
 	return {
 		projects,

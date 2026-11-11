@@ -239,6 +239,7 @@
 	</a>
 	<div class="actions">
 		<a class="btn" href={selected === 'all' ? '/map' : `/map?project=${encodeURIComponent(selected)}`}>Χάρτης</a>
+		<a class="btn" href="/sources">Πηγές</a>
 		<a class="btn primary new-image" href="/new">+ Νέα εικόνα</a>
 		<button class="btn" type="button" disabled={loggingOut} onclick={logout}>
 			{loggingOut ? '…' : 'Αποσύνδεση'}

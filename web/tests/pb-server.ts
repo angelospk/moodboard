@@ -26,6 +26,17 @@ export async function setup(project: TestProject) {
 		}
 		await new Promise((r) => setTimeout(r, 100));
 	}
+	// Test files sign in many users (and the superuser) at once: turn rate limits off before any runs.
+	const auth = await fetch(`${url}/api/collections/_superusers/auth-with-password`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ identity: 'admin@test.local', password: 'admin-password-1' })
+	}).then((r) => r.json());
+	await fetch(`${url}/api/settings`, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json', Authorization: auth.token },
+		body: JSON.stringify({ rateLimits: { enabled: false } })
+	});
 	project.provide('pbUrl', url);
 }
 

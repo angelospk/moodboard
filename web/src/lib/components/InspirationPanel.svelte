@@ -31,6 +31,8 @@
 		/** Undefined hides the arrow. */
 		onprev?: () => void;
 		onnext?: () => void;
+		/** Open the image full screen (view and crop). Undefined hides the button. */
+		onexpand?: () => void;
 	}
 	let {
 		pb,
@@ -45,7 +47,8 @@
 		ondeleted,
 		onclose,
 		onprev,
-		onnext
+		onnext,
+		onexpand
 	}: Props = $props();
 
 	// Local editable copies. A change of `item` with the same id only refreshes fields the user has
@@ -226,6 +229,11 @@
 		{/if}
 
 		<div class="well">
+			{#if onexpand && imageUrl}
+				<button type="button" class="expand" aria-label="Πλήρης οθόνη" title="Πλήρης οθόνη και περικοπή (Space)" onclick={onexpand}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></svg>
+				</button>
+			{/if}
 			<RegionEditor
 				src={imageUrl}
 				alt={note || 'Έμπνευση'}
@@ -415,10 +423,42 @@
 	}
 
 	.well {
+		position: relative;
 		background: var(--sunk);
 		border-radius: var(--r-ctl);
 		padding: 12px;
 		--re-max-h: min(52vh, 440px);
+	}
+
+	/* Over the image's top-right corner; above the region drawing layer. */
+	.expand {
+		position: absolute;
+		top: 18px;
+		right: 18px;
+		z-index: 2;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border-radius: var(--r-ctl);
+		border: 1px solid var(--line);
+		background: color-mix(in srgb, var(--raised) 88%, transparent);
+		color: var(--text);
+		cursor: pointer;
+		opacity: 0.85;
+		transition: opacity 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.expand:hover {
+		opacity: 1;
+	}
+	.expand svg {
+		width: 16px;
+		height: 16px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 
 	.field {

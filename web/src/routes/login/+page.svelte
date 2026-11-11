@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { signUp } from '#lib/inspirations.js';
+	import { forgetFileToken, signUp } from '#lib/inspirations.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -43,6 +43,7 @@
 			return;
 		}
 		busy = false;
+		forgetFileToken(data.pb); // a password change since the last visit makes the cached one invalid
 		await invalidate('app:auth');
 		const next = page.url.searchParams.get('next');
 		goto(next?.startsWith('/') && !next.startsWith('//') ? next : '/');

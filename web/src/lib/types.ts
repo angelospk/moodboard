@@ -12,6 +12,14 @@ export interface Region {
 	rating?: number | null;
 }
 
+/** The part of an image that cards show. Fractions (0..1) of the image size; the file is not changed. */
+export interface Crop {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
 export interface Project {
 	id: string;
 	name: string;
@@ -25,6 +33,9 @@ export interface Inspiration {
 	image_path: string;
 	source_url: string | null;
 	source_title: string | null;
+	/** The image's own address on the web (from the extension); source_url is the page. */
+	image_url: string | null;
+	crop: Crop | null;
 	note: string;
 	tags: string[];
 	level: Level | null;

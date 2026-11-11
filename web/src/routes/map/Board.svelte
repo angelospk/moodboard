@@ -22,7 +22,7 @@
 	import { forceSimulation, type Simulation } from 'd3-force';
 	import type PocketBase from 'pocketbase';
 	import type { Inspiration } from '#lib/types.js';
-	import { deletePosition, savePositions } from '#lib/inspirations.js';
+	import { deletePosition, savePositions, thumbUrl } from '#lib/inspirations.js';
 	import {
 		anchorForce,
 		CARD_GAP,
@@ -45,6 +45,8 @@
 		size: number;
 		notesOn: boolean;
 		selectedId: string | null;
+		/** Cards whose image is still uploading. */
+		uploading?: Set<string>;
 		/** Tag whose cards stay bright; the rest fade. */
 		highlight: string | null;
 		/** Ids that match the search; null = no search. */
@@ -75,6 +77,7 @@
 		size,
 		notesOn,
 		selectedId,
+		uploading = new Set<string>(),
 		highlight,
 		matches,
 		scope,
@@ -395,9 +398,13 @@
 		};
 	}
 
-	/** Mark an image as loaded, so its placeholder shape goes away. */
+	/** Mark an image as loaded, so its placeholder shape goes away. The frame learns the image's
+	 *  aspect ratio, which a cropped card needs for its own shape. */
 	function imgReady(el: HTMLImageElement) {
-		const done = () => (el.dataset.loaded = '1');
+		const done = () => {
+			el.dataset.loaded = '1';
+			if (el.naturalWidth && el.naturalHeight) el.parentElement?.style.setProperty('--ar', String(el.naturalWidth / el.naturalHeight));
+		};
 		if (el.complete && el.naturalWidth) done();
 		el.addEventListener('load', done);
 		return () => el.removeEventListener('load', done);
@@ -914,8 +921,13 @@
 	// ---------------------------------------------------------------- Helpers
 
 	const pct = (v: number) => `${clamp(Number.isFinite(v) ? v : 0, 0, 1) * 100}%`;
-	const regionStyle = (r: { x: number; y: number; w: number; h: number }) =>
-		`left:${pct(r.x)};top:${pct(r.y)};width:${pct(r.w)};height:${pct(r.h)}`;
+	type Rect = { x: number; y: number; w: number; h: number };
+	/** A region box, in card coordinates: with a crop, moved into the cropped part (the frame clips the rest). */
+	const regionStyle = (r: Rect, c: Rect | null) => {
+		if (!c) return `left:${pct(r.x)};top:${pct(r.y)};width:${pct(r.w)};height:${pct(r.h)}`;
+		const p = (v: number) => `${(Number.isFinite(v) ? v : 0) * 100}%`;
+		return `left:${p((r.x - c.x) / c.w)};top:${p((r.y - c.y) / c.h)};width:${p(r.w / c.w)};height:${p(r.h / c.h)}`;
+	};
 	const faded = (i: Inspiration) =>
 		(matches !== null && !matches.has(i.id)) || (highlight !== null && !(i.tags ?? []).includes(highlight));
 	const alt = (i: Inspiration) => (i.note ? i.note.slice(0, 80) : 'Εικόνα χωρίς σημείωση');
@@ -975,13 +987,16 @@
 
 		{#each nodes as n (n.id)}
 			{@const item = n.item}
-			{@const url = urlOf(item)}
+			<!-- 480px thumbnails, except a narrow crop: it enlarges a small part, which needs the full file. -->
+			{@const url = item.crop && item.crop.w < 0.6 ? urlOf(item) : thumbUrl(urlOf(item))}
 			{@const regions = item.regions ?? []}
 			{@const marked = regions.map((r, ri) => ({ note: r.note, n: ri + 1 })).filter((r) => r.note?.trim())}
 			<div
 				class="node"
 				class:sel={selectedId === item.id}
 				class:fade={faded(item)}
+				class:uploading={uploading.has(item.id)}
+				aria-busy={uploading.has(item.id)}
 				data-id={n.id}
 				data-item={item.id}
 				{@attach registerCard(n.id)}
@@ -997,7 +1012,14 @@
 				aria-pressed={selectedId === item.id}
 			>
 				<div class="card">
-					<div class="shot">
+					<div
+						class="shot"
+						class:cropped={!!item.crop}
+						style:--cx={item.crop?.x}
+						style:--cy={item.crop?.y}
+						style:--cw={item.crop?.w}
+						style:--ch={item.crop?.h}
+					>
 						{#if url}
 							<img src={url} alt="" loading="lazy" decoding="async" draggable="false" {@attach imgReady} />
 						{:else}
@@ -1008,7 +1030,7 @@
 								class="region"
 								class:boxed={showBoxes}
 								class:hot={hot?.id === item.id && hot.r === ri}
-								style={regionStyle(r)}
+								style={regionStyle(r, item.crop)}
 							>
 								<span class="rtag">
 									<span class="rnum">{ri + 1}</span>
@@ -1180,6 +1202,27 @@
 	.node.fade {
 		opacity: 0.15;
 	}
+	/* Still uploading: the local preview shows at once, dimmed, with a thin moving bar. */
+	.node.uploading .shot img {
+		opacity: 0.55;
+	}
+	.node.uploading .shot::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		bottom: 0;
+		height: 3px;
+		width: 35%;
+		background: var(--accent, currentColor);
+		animation: upload-bar 1.1s ease-in-out infinite;
+	}
+	@keyframes upload-bar {
+		from { transform: translateX(-100%); }
+		to { transform: translateX(290%); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.node.uploading .shot::after { animation: none; width: 100%; opacity: 0.5; }
+	}
 	.node:global(.dragging) {
 		z-index: 5;
 		cursor: grabbing;
@@ -1237,6 +1280,19 @@
 	}
 	.shot img:not([data-loaded]) {
 		aspect-ratio: 4 / 3;
+	}
+	/* Cropped card: the frame takes the crop's shape and the whole image moves inside it. */
+	.shot.cropped {
+		aspect-ratio: calc(var(--ar, 1.333) * var(--cw) / var(--ch));
+	}
+	.shot.cropped img {
+		position: absolute;
+		max-width: none;
+		width: calc(100% / var(--cw));
+		height: calc(100% / var(--ch));
+		left: calc(-100% * var(--cx) / var(--cw));
+		top: calc(-100% * var(--cy) / var(--ch));
+		aspect-ratio: auto;
 	}
 	.missing {
 		display: block;

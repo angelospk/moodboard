@@ -2,7 +2,7 @@
 // the collection API rules and the server hooks limit every call to the user's own rows and files.
 import type PocketBase from 'pocketbase';
 import type { RecordModel } from 'pocketbase';
-import type { Inspiration, Project } from '#lib/types.js';
+import type { Crop, Inspiration, Project } from '#lib/types.js';
 
 export const IMAGE_EXT: Record<string, string> = {
 	'image/png': 'png',
@@ -14,7 +14,7 @@ export const IMAGE_EXT: Record<string, string> = {
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export type NewFields = Partial<
-	Pick<Inspiration, 'project_id' | 'note' | 'tags' | 'level' | 'regions' | 'source_url' | 'source_title'>
+	Pick<Inspiration, 'project_id' | 'note' | 'tags' | 'level' | 'regions' | 'source_url' | 'source_title' | 'image_url' | 'crop'>
 >;
 
 /** Trim, lowercase and dedupe tags; keep at most 30. */
@@ -46,6 +46,8 @@ export function toInspiration(r: RecordModel): Inspiration {
 		image_path: r.image ?? '',
 		source_url: r.source_url || null,
 		source_title: r.source_title || null,
+		image_url: r.image_url || null,
+		crop: toCrop(r.crop),
 		note: r.note ?? '',
 		tags: Array.isArray(r.tags) ? r.tags : [],
 		level: r.level || null,
@@ -53,6 +55,13 @@ export function toInspiration(r: RecordModel): Inspiration {
 		created_at: r.created_at,
 		updated_at: r.updated_at
 	};
+}
+
+function toCrop(v: unknown): Crop | null {
+	const c = v as Partial<Crop> | null;
+	return c && typeof c === 'object' && [c.x, c.y, c.w, c.h].every((n) => typeof n === 'number')
+		? { x: c.x!, y: c.y!, w: c.w!, h: c.h! }
+		: null;
 }
 
 export function toProject(r: RecordModel): Project {
@@ -90,15 +99,103 @@ export async function getInspiration(pb: PocketBase, id: string): Promise<Inspir
 	}
 }
 
-/** Image URL per `image_path`, with one file token (valid 1 hour) for all of them. */
+// File tokens last 7 days (server setting). One token per user and server, reused until a day
+// before it ends: image URLs then stay the same across visits, and the browser serves them from
+// its cache (PocketBase sends max-age=30 days). Kept in localStorage (shared by all tabs, so a
+// sign-in in one tab renews it for all); in memory only when storage is unavailable.
+const DAY = 24 * 3600_000;
+const tokens = new Map<string, { token: string; exp: number }>();
+const pending = new Map<string, Promise<string>>();
+
+function tokenKey(pb: PocketBase): string {
+	return `mb_file_token:${pb.baseURL}:${pb.authStore.record?.id ?? ''}`;
+}
+
+function jwtExp(token: string): number {
+	try {
+		const body = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+		return Number(JSON.parse(atob(body)).exp) * 1000 || 0;
+	} catch {
+		return 0;
+	}
+}
+
+function storage(): Storage | null {
+	try {
+		return typeof localStorage === 'undefined' ? null : localStorage;
+	} catch {
+		return null;
+	}
+}
+
+/** A file token for the signed-in user, from the cache when it still has more than a day left. */
+export async function fileToken(pb: PocketBase): Promise<string> {
+	const key = tokenKey(pb);
+	const fresh = (v: { token: string; exp: number } | null | undefined) => !!v && v.exp - Date.now() > DAY;
+	// localStorage first: it is shared by all tabs, so a token renewed in one (e.g. after a new
+	// sign-in) reaches the others. Memory only when storage is unavailable.
+	const store = storage();
+	let hit: { token: string; exp: number } | undefined;
+	if (store) {
+		try {
+			hit = JSON.parse(store.getItem(key) ?? 'null') ?? undefined;
+		} catch {
+			hit = undefined;
+		}
+	} else hit = tokens.get(key);
+	if (fresh(hit)) {
+		tokens.set(key, hit!);
+		return hit!.token;
+	}
+	let p = pending.get(key);
+	if (!p) {
+		p = pb.files
+			.getToken()
+			.then((token) => {
+				const v = { token, exp: jwtExp(token) };
+				tokens.set(key, v);
+				try {
+					storage()?.setItem(key, JSON.stringify(v));
+				} catch {
+					/* private mode: memory only */
+				}
+				return token;
+			})
+			.finally(() => pending.delete(key));
+		pending.set(key, p);
+	}
+	return p;
+}
+
+/** Drop the cached file token of the signed-in user (after a sign-in: the old one may be invalid). */
+export function forgetFileToken(pb: PocketBase) {
+	const key = tokenKey(pb);
+	tokens.delete(key);
+	try {
+		storage()?.removeItem(key);
+	} catch {
+		/* ignore */
+	}
+}
+
+/** Image URL per `image_path`, all with the same cached file token. */
 export async function imageUrls(pb: PocketBase, rows: Inspiration[]): Promise<Record<string, string>> {
 	if (!rows.length) return {};
-	const token = await pb.files.getToken();
+	const token = await fileToken(pb);
 	const out: Record<string, string> = {};
 	for (const r of rows) {
 		if (r.image_path) out[r.image_path] = imageUrl(pb, r, token);
 	}
 	return out;
+}
+
+/** The 480px-wide thumbnail of a server image URL; other URLs (local blob: previews) stay as they are. */
+export function thumbUrl(url: string | null | undefined): string | null {
+	if (!url) return null;
+	if (!/^https?:/.test(url)) return url;
+	const u = new URL(url);
+	u.searchParams.set('thumb', '480x0');
+	return u.toString();
 }
 
 export function imageUrl(pb: PocketBase, r: Pick<Inspiration, 'id' | 'image_path'>, token: string): string {
@@ -115,19 +212,27 @@ function form(fields: Record<string, unknown>, file?: Blob): FormData {
 	return fd;
 }
 
-/** Upload the image and create the row in one request. */
+/** A new record id, made in the browser (PocketBase's format: 15 chars a-z0-9). With it a card can
+ *  show before its upload ends, under the id it will keep. */
+export function newId(): string {
+	const abc = 'abcdefghijklmnopqrstuvwxyz0123456789';
+	const bytes = crypto.getRandomValues(new Uint8Array(15));
+	return Array.from(bytes, (b) => abc[b % abc.length]).join('');
+}
+
+/** Upload the image and create the row in one request; returns the stored row. */
 export async function createInspiration(
 	pb: PocketBase,
 	userId: string,
 	file: Blob,
-	fields: NewFields
-): Promise<{ id: string }> {
+	fields: NewFields & { id?: string }
+): Promise<Inspiration> {
 	checkImage(file);
 	try {
 		const rec = await pb.collection('inspirations').create(
 			form({ ...fields, user_id: userId, note: (fields.note ?? '').trim(), tags: cleanTags(fields.tags), regions: fields.regions ?? [] }, file)
 		);
-		return { id: rec.id };
+		return toInspiration(rec);
 	} catch (e) {
 		throw new Error(`Αποτυχία αποθήκευσης: ${msg(e)}`);
 	}
@@ -192,7 +297,7 @@ export async function loadPositions(pb: PocketBase, scope: string): Promise<Reco
 	return out;
 }
 
-export type EditableFields = Partial<Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id'>>;
+export type EditableFields = Partial<Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id' | 'crop'>>;
 
 /** Save edits to one inspiration and return the updated row. Throws when it is not the caller's. */
 export async function updateInspiration(pb: PocketBase, id: string, fields: EditableFields): Promise<Inspiration> {

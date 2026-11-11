@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -23,6 +24,9 @@ func Register(app core.App) {
 	})
 	app.OnRecordValidate("inspirations").BindFunc(func(e *core.RecordEvent) error {
 		e.Record.Set("tags", CleanTags(stringList(e.Record.Get("tags"))))
+		if !validCrop(e.Record.GetString("crop")) {
+			return validation.Errors{"crop": validation.NewError("invalid_crop", "crop must be null or {x, y, w, h} inside 0..1.")}
+		}
 		return e.Next()
 	})
 
@@ -141,6 +145,19 @@ func stringList(v any) []string {
 }
 
 var errNotFound = errors.New("not found")
+
+// validCrop accepts no crop, or a rectangle of fractions inside the image, at least 2% each way.
+func validCrop(raw string) bool {
+	if raw == "" || raw == "null" {
+		return true
+	}
+	var c struct{ X, Y, W, H *float64 }
+	if jsonUnmarshal([]byte(raw), &c) != nil || c.X == nil || c.Y == nil || c.W == nil || c.H == nil {
+		return false
+	}
+	const eps = 1e-6
+	return *c.X >= 0 && *c.Y >= 0 && *c.W >= 0.02 && *c.H >= 0.02 && *c.X+*c.W <= 1+eps && *c.Y+*c.H <= 1+eps
+}
 
 func notFound(e *core.RequestEvent) error {
 	return e.Error(http.StatusNotFound, "Η εικόνα δεν βρέθηκε.", nil)
