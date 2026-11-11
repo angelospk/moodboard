@@ -16,8 +16,6 @@ export interface Project {
 	created_at: string;
 }
 
-export const BUCKET = 'inspirations';
-
 export const MIME_EXT: Record<string, string> = {
 	'image/png': 'png',
 	'image/jpeg': 'jpg',

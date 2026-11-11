@@ -1,6 +1,6 @@
 {
   "name": "moodboard-extension",
-  "description": "Chrome MV3 extension: save inspiration images to a Supabase-backed moodboard.",
+  "description": "Chrome MV3 extension: save inspiration images to a PocketBase-backed moodboard.",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -26,6 +26,6 @@
     "wxt": "^0.21.3"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.0"
+    "pocketbase": "^0.28.2"
   }
 }

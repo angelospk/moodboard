@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { Session } from '@supabase/supabase-js';
-	import { supabase } from '@/lib/supabase';
+	import type { AuthRecord } from 'pocketbase';
+	import { msg, pb, ready } from '@/lib/pb';
 	import { clearPending, getPending, type CaptureResult, type PendingCapture } from '@/lib/pending';
 	import TagInput from '@/lib/TagInput.svelte';
 	import {
-		BUCKET,
 		LEVELS,
 		LEVEL_LABELS,
 		MIME_EXT,
@@ -16,11 +15,13 @@
 
 	const WEB_URL = import.meta.env.WXT_WEB_URL;
 
-	let session = $state<Session | null>(null);
+	let user = $state<AuthRecord | null>(null);
 	let booting = $state(true);
+	let updateAvailable = $state(false);
 
 	let email = $state('');
 	let password = $state('');
+	let invite = $state('');
 	let authBusy = $state(false);
 	let authError = $state('');
 
@@ -38,17 +39,44 @@
 	let savedId = $state('');
 
 	onMount(() => {
-		supabase.auth.getSession().then(({ data }) => {
-			session = data.session;
+		let unsubscribe = () => {};
+		void (async () => {
+			await ready();
+			// A saved token expires after a while: renew it on open, or drop it and show the login form.
+			if (pb.authStore.record && !pb.authStore.isValid) {
+				try {
+					await pb.collection('users').authRefresh();
+				} catch {
+					pb.authStore.clear();
+				}
+			}
+			user = pb.authStore.record;
 			booting = false;
-			if (session) void refresh();
-		});
-		const { data } = supabase.auth.onAuthStateChange((_event, next) => {
-			session = next;
-			if (next) void refresh();
-		});
-		return () => data.subscription.unsubscribe();
+			unsubscribe = pb.authStore.onChange(() => {
+				user = pb.authStore.record;
+				if (user) void refresh();
+			});
+			if (user) void refresh();
+		})();
+		void checkVersion();
+		return () => unsubscribe();
 	});
+
+	/** The files on disk change after an update, but the running manifest keeps the old version. */
+	async function checkVersion() {
+		try {
+			const response = await fetch(browser.runtime.getURL('/version.json'), { cache: 'no-store' });
+			if (!response.ok) return;
+			const data = (await response.json()) as { version?: string };
+			updateAvailable = !!data.version && data.version !== browser.runtime.getManifest().version;
+		} catch {
+			updateAvailable = false;
+		}
+	}
+
+	function restart() {
+		browser.runtime.reload();
+	}
 
 	async function refresh() {
 		pending = await getPending();
@@ -57,64 +85,82 @@
 	}
 
 	async function loadUserTags() {
-		const { data, error } = await supabase.rpc('user_tags');
-		if (error) {
+		try {
+			const rows = await pb.send<string[]>('/api/mb/tags', { method: 'GET' });
+			tagSuggestions = Array.isArray(rows) ? rows : [];
+		} catch {
 			tagSuggestions = [];
-			return;
 		}
-		tagSuggestions = ((data ?? []) as { tag: string }[]).map((row) => row.tag);
 	}
 
 	async function loadProjects() {
-		const result = await supabase
-			.from('projects')
-			.select('id, name, description, created_at')
-			.order('name');
-		if (result.error) {
-			errorMessage = result.error.message;
-			return;
+		try {
+			const rows = await pb.collection('projects').getFullList({ sort: 'name' });
+			projects = rows.map((row) => ({
+				id: row.id,
+				name: row.name ?? '',
+				description: row.description ?? '',
+				created_at: row.created_at,
+			}));
+		} catch (error) {
+			errorMessage = msg(error);
 		}
-		projects = (result.data ?? []) as Project[];
 	}
 
 	async function signIn() {
 		authBusy = true;
 		authError = '';
-		const { error } = await supabase.auth.signInWithPassword({ email, password });
-		if (error) authError = error.message;
-		authBusy = false;
+		try {
+			await pb.collection('users').authWithPassword(email, password);
+		} catch (error) {
+			authError = msg(error);
+		} finally {
+			authBusy = false;
+		}
 	}
 
 	async function signUp() {
 		authBusy = true;
 		authError = '';
-		const { error } = await supabase.auth.signUp({ email, password });
-		if (error) authError = error.message;
-		authBusy = false;
+		try {
+			await pb
+				.collection('users')
+				.create({ email, password, passwordConfirm: password, invite: invite.trim() });
+			await pb.collection('users').authWithPassword(email, password);
+		} catch (error) {
+			authError = msg(error);
+		} finally {
+			authBusy = false;
+		}
 	}
 
 	async function signOut() {
-		await supabase.auth.signOut();
-		session = null;
+		pb.authStore.clear();
+		user = null;
 	}
 
 	async function createProject() {
 		const name = newProjectName.trim();
 		if (!name) return;
-		const { data, error } = await supabase
-			.from('projects')
-			.insert({ name })
-			.select('id, name, description, created_at')
-			.single();
-		if (error) {
-			errorMessage = error.message;
-			return;
+		const userId = pb.authStore.record?.id;
+		if (!userId) return;
+		try {
+			const row = await pb
+				.collection('projects')
+				.create({ user_id: userId, name, description: '' });
+			const created: Project = {
+				id: row.id,
+				name: row.name ?? name,
+				description: row.description ?? '',
+				created_at: row.created_at,
+			};
+			projects = [...projects, created].sort((a, b) => a.name.localeCompare(b.name));
+			projectId = created.id;
+			creatingProject = false;
+			newProjectName = '';
+		} catch (error) {
+			errorMessage = msg(error);
 		}
-		const created = data as Project;
-		projects = [...projects, created].sort((a, b) => a.name.localeCompare(b.name));
-		projectId = created.id;
-		creatingProject = false;
-		newProjectName = '';
 	}
 
 	async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
@@ -122,58 +168,43 @@
 		return response.blob();
 	}
 
+	/** One multipart request uploads the image file and creates the row. */
+	function inspirationForm(blob: Blob, mime: string): FormData {
+		const form = new FormData();
+		form.append('user_id', pb.authStore.record!.id);
+		form.append('project_id', projectId);
+		form.append('image', blob, `image.${MIME_EXT[mime]}`);
+		form.append('source_url', pending?.sourceUrl ?? '');
+		form.append('source_title', pending?.sourceTitle ?? '');
+		form.append('note', note.trim());
+		form.append('tags', JSON.stringify(tags));
+		form.append('level', level);
+		form.append('regions', '[]');
+		return form;
+	}
+
 	async function save() {
-		if (!session || !pending?.dataUrl) return;
+		if (!user || !pending?.dataUrl) return;
 		errorMessage = '';
 		savedId = '';
 
 		const mime = normalizeMime(pending.mime).startsWith('image/')
 			? normalizeMime(pending.mime)
 			: normalizeMime((await dataUrlToBlob(pending.dataUrl)).type);
-		const ext = MIME_EXT[mime];
-		if (!ext) {
+		if (!MIME_EXT[mime]) {
 			errorMessage = 'Ο τύπος εικόνας δεν υποστηρίζεται.';
 			return;
 		}
 
 		saving = true;
-		const userId = session.user.id;
-		const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-
 		try {
 			const blob = await dataUrlToBlob(pending.dataUrl);
-			const upload = await supabase.storage.from(BUCKET).upload(path, blob, {
-				contentType: mime,
-				upsert: false,
-			});
-			if (upload.error) {
-				errorMessage = upload.error.message;
-				return;
-			}
-
-			const insert = await supabase
-				.from('inspirations')
-				.insert({
-					image_path: path,
-					project_id: projectId || null,
-					note: note.trim(),
-					tags,
-					level: level || null,
-					source_url: pending.sourceUrl,
-					source_title: pending.sourceTitle,
-				})
-				.select('id')
-				.single();
-
-			if (insert.error || !insert.data) {
-				await supabase.storage.from(BUCKET).remove([path]);
-				errorMessage = insert.error?.message ?? 'Η αποθήκευση απέτυχε.';
-				return;
-			}
-
-			savedId = (insert.data as { id: string }).id;
+			const record = await pb.collection('inspirations').create(inspirationForm(blob, mime));
+			savedId = record.id;
 			await clearPending();
 			pending = null;
+		} catch (error) {
+			errorMessage = msg(error);
 		} finally {
 			saving = false;
 		}
@@ -204,18 +235,28 @@
 	}
 </script>
 
+{#if updateAvailable}
+	<div class="banner">
+		<span>Νέα έκδοση διαθέσιμη</span>
+		<button type="button" class="banner-button" onclick={restart}>Επανεκκίνηση</button>
+	</div>
+{/if}
+
 <main>
 	<h1>Moodboard</h1>
 
 	{#if booting}
 		<p class="muted">Φόρτωση…</p>
-	{:else if !session}
+	{:else if !user}
 		<form class="stack" onsubmit={(event) => { event.preventDefault(); void signIn(); }}>
 			<label>Email
 				<input type="email" bind:value={email} autocomplete="username" required />
 			</label>
 			<label>Κωδικός
 				<input type="password" bind:value={password} autocomplete="current-password" required />
+			</label>
+			<label>Κωδικός πρόσκλησης
+				<input type="text" bind:value={invite} autocomplete="off" />
 			</label>
 			<div class="row">
 				<button type="submit" disabled={authBusy}>Σύνδεση</button>
@@ -230,7 +271,7 @@
 		</form>
 	{:else}
 		<div class="row between user">
-			<span class="muted ellipsis">{session.user.email}</span>
+			<span class="muted ellipsis">{user.email}</span>
 			<button type="button" class="link" onclick={() => void signOut()}>Αποσύνδεση</button>
 		</div>
 
@@ -311,6 +352,26 @@
 </main>
 
 <style>
+	.banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 6px 14px;
+		background: #eef4f4;
+		border-bottom: 1px solid #cfdedf;
+		font-size: 0.8rem;
+		color: #1b5e64;
+	}
+	.banner-button {
+		font: inherit;
+		padding: 4px 10px;
+		border-radius: 6px;
+		border: 1px solid #1b5e64;
+		background: #1b5e64;
+		color: #fff;
+		cursor: pointer;
+	}
 	main {
 		width: 360px;
 		padding: 14px;
