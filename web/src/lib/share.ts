@@ -33,14 +33,15 @@ export async function getShare(pb: PocketBase, projectId: string): Promise<Share
 	};
 }
 
-export async function saveShare(pb: PocketBase, projectId: string, s: ShareSettings): Promise<void> {
-	await pb.collection('projects').update(projectId, {
-		public: s.public,
-		share_hide_notes: !s.notes,
-		share_hide_regions: !s.regions,
-		share_hide_tags: !s.tags,
-		share_show_sources: s.sources
-	});
+/** Save only the given settings, so two quick changes cannot overwrite each other. */
+export async function saveShare(pb: PocketBase, projectId: string, s: Partial<ShareSettings>): Promise<void> {
+	const body: Record<string, boolean> = {};
+	if (s.public !== undefined) body.public = s.public;
+	if (s.notes !== undefined) body.share_hide_notes = !s.notes;
+	if (s.regions !== undefined) body.share_hide_regions = !s.regions;
+	if (s.tags !== undefined) body.share_hide_tags = !s.tags;
+	if (s.sources !== undefined) body.share_show_sources = s.sources;
+	await pb.collection('projects').update(projectId, body);
 }
 
 export function publicLink(projectId: string, origin = location.origin): string {

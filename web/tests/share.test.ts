@@ -46,7 +46,11 @@ describe('public boards', () => {
 		board = await loadPublic(project, URL_);
 		expect(board.inspirations[0]).toMatchObject({ note: '', tags: [], source_url: 'https://site.example/a' });
 
-		await saveShare(pb, project, { ...SHARE_DEFAULTS, public: false });
+		// Partial saves touch only their own field.
+		await saveShare(pb, project, { sources: false });
+		expect(await getShare(pb, project)).toEqual({ public: true, notes: false, regions: true, tags: false, sources: false });
+
+		await saveShare(pb, project, { public: false });
 		await expect(loadPublic(project, URL_)).rejects.toThrow(/δεν είναι δημόσιο/);
 		expect((await fetch(publicImageUrl(project, ins, URL_))).status).toBe(404);
 	});

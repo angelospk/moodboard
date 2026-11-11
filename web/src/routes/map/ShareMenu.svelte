@@ -38,16 +38,19 @@
 	}
 
 	async function change(key: keyof ShareSettings, value: boolean) {
-		if (!s) return;
+		if (!s || busy) return;
 		const before = s;
 		s = { ...s, [key]: value };
 		msg = '';
+		busy = true;
 		try {
-			await saveShare(pb, projectId, s);
+			await saveShare(pb, projectId, { [key]: value });
 			if (key === 'public' && value) await copy();
 		} catch (e) {
 			s = before;
 			msg = e instanceof Error ? e.message : String(e);
+		} finally {
+			busy = false;
 		}
 	}
 
@@ -76,7 +79,7 @@
 				{/if}
 			{:else}
 				<label class="switch">
-					<input type="checkbox" checked={s.public} onchange={(e) => change('public', e.currentTarget.checked)} />
+					<input type="checkbox" checked={s.public} disabled={busy} onchange={(e) => change('public', e.currentTarget.checked)} />
 					<span>
 						<b>Δημόσιο board</b>
 						<small>Όποιος έχει τον σύνδεσμο το βλέπει, χωρίς λογαριασμό. Δεν αλλάζει τίποτα.</small>
@@ -92,7 +95,7 @@
 					<legend>Τι φαίνεται</legend>
 					{#each OPTIONS as o (o.key)}
 						<label class="opt">
-							<input type="checkbox" checked={s[o.key]} onchange={(e) => change(o.key, e.currentTarget.checked)} />
+							<input type="checkbox" checked={s[o.key]} disabled={busy} onchange={(e) => change(o.key, e.currentTarget.checked)} />
 							{o.label}
 						</label>
 					{/each}
