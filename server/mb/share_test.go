@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// shareFixture: alice owns boards A and B (one image each); bob is another user.
+// shareFixture: alice owns boards A and B (one image each, plus one in no project); bob is another user.
 type shareFixture struct {
 	e                *env
 	aTok, bTok       string
 	projA, projB     string
-	insA, insB, insX string // insX: alice's image in no project
+	insA, insB, insX string
 }
 
 func newShareFixture(t *testing.T) *shareFixture {
@@ -31,74 +31,95 @@ func newShareFixture(t *testing.T) *shareFixture {
 		return r.Id
 	}
 	f := &shareFixture{e: e, aTok: aTok, bTok: bTok, projA: pa.Id, projB: pb.Id}
-	f.insA = id(map[string]string{"user_id": alice.Id, "project_id": pa.Id, "note": "φως Α", "tags": `["ξύλο"]`,
-		"source_url": "https://private.example/a", "regions": `[{"x":0.1,"y":0.1,"w":0.2,"h":0.2,"note":"γωνία"}]`})
+	f.insA = id(map[string]string{"user_id": alice.Id, "project_id": pa.Id, "note": "φως Α", "tags": `["ξύλο"]`, "level": "detail",
+		"source_url": "https://site.example/a", "source_title": "Σελίδα Α", "regions": `[{"x":0.1,"y":0.1,"w":0.2,"h":0.2,"note":"γωνία"}]`})
 	f.insB = id(map[string]string{"user_id": alice.Id, "project_id": pb.Id, "note": "κρυφό Β"})
 	f.insX = id(map[string]string{"user_id": alice.Id, "note": "χωρίς project"})
 	return f
 }
 
-func (f *shareFixture) create(tok, project string) (int, string) {
-	return f.e.json("POST", "/api/mb/projects/"+project+"/share", tok, map[string]any{})
-}
-
-func (f *shareFixture) token(t *testing.T, project string) string {
+// set changes board A's share settings through the normal projects API, as the owner.
+func (f *shareFixture) set(t *testing.T, fields map[string]any) {
 	t.Helper()
-	code, out := f.create(f.aTok, project)
-	if code != 200 {
-		t.Fatalf("create share: %d %s", code, out)
+	if code, out := f.e.json("PATCH", "/api/collections/projects/records/"+f.projA, f.aTok, fields); code != 200 {
+		t.Fatalf("patch project: %d %s", code, out)
 	}
-	var r struct{ Token string }
-	_ = json.Unmarshal([]byte(out), &r)
-	if len(r.Token) < 43 { // 32 random bytes, base64url
-		t.Fatalf("token too short: %q", r.Token)
-	}
-	return r.Token
 }
 
-func TestShareReadOnlyView(t *testing.T) {
+func (f *shareFixture) view(t *testing.T, want int) string {
+	t.Helper()
+	code, out := f.e.req("GET", "/api/mb/public/"+f.projA, "", nil, "")
+	if code != want {
+		t.Fatalf("public view: want %d, got %d %s", want, code, out)
+	}
+	return out
+}
+
+func mustHave(t *testing.T, out string, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Fatalf("missing %q: %s", w, out)
+		}
+	}
+}
+
+func mustLack(t *testing.T, out string, leak ...string) {
+	t.Helper()
+	for _, l := range leak {
+		if strings.Contains(out, l) {
+			t.Fatalf("leaks %q: %s", l, out)
+		}
+	}
+}
+
+func TestPublicBoardOffByDefault(t *testing.T) {
+	f := newShareFixture(t)
+	f.view(t, 404)
+	if code, _ := f.e.req("GET", "/api/mb/public/"+f.projA+"/files/"+f.insA, "", nil, ""); code != 404 {
+		t.Fatalf("image of a private board: want 404, got %d", code)
+	}
+	// The generic API stays owner-only.
+	if code, _ := f.e.req("GET", "/api/collections/projects/records/"+f.projA, "", nil, ""); code != 404 {
+		t.Fatalf("anonymous project read: %d", code)
+	}
+}
+
+func TestPublicBoardDefaults(t *testing.T) {
 	f := newShareFixture(t)
 	e := f.e
-	// Alice saved a layout for board A (and one for B, which must not leak).
-	if code, out := e.json("POST", "/api/mb/positions", f.aTok, map[string]any{"scope": f.projA, "positions": []map[string]any{{"key": "i:" + f.insA, "x": 10, "y": 20}}}); code != 204 {
+	if code, out := e.json("POST", "/api/mb/positions", f.aTok, map[string]any{"scope": f.projA, "positions": []map[string]any{
+		{"key": "i:" + f.insA, "x": 10, "y": 20}, {"key": "i:" + f.insX, "x": 3, "y": 4}, {"key": "t:παλιό-μυστικό", "x": 5, "y": 6}, {"key": "t:ξύλο", "x": 7, "y": 8}}}); code != 204 {
 		t.Fatalf("save positions: %d %s", code, out)
 	}
-	_, _ = e.json("POST", "/api/mb/positions", f.aTok, map[string]any{"scope": f.projB, "positions": []map[string]any{{"key": "i:" + f.insB, "x": 1, "y": 2}}})
-	// Stale keys in board A's layout: a card that moved to B, a tag no longer on the board.
-	_, _ = e.json("POST", "/api/mb/positions", f.aTok, map[string]any{"scope": f.projA, "positions": []map[string]any{
-		{"key": "i:" + f.insX, "x": 3, "y": 4}, {"key": "t:παλιό-μυστικό", "x": 5, "y": 6}, {"key": "t:ξύλο", "x": 7, "y": 8}}})
+	f.set(t, map[string]any{"public": true})
+	out := f.view(t, 200)
+	// Defaults: notes, region notes, tags and level shown; sources hidden.
+	mustHave(t, out, "Σπίτι Α", "περιγραφή", "φως Α", "γωνία", "ξύλο", "detail", f.insA, `"x":10`, `"t:ξύλο"`)
+	mustLack(t, out, "site.example", "Σελίδα Α", "Μυστικό Β", "κρυφό Β", f.insB, f.insX, "χωρίς project", "παλιό-μυστικό",
+		"alice@x.gr", "user_id", f.projB)
 
-	tok := f.token(t, f.projA)
-	code, out := e.req("GET", "/api/mb/shared/"+tok, "", nil, "")
-	if code != 200 {
-		t.Fatalf("anonymous view: %d %s", code, out)
-	}
-	for _, want := range []string{"Σπίτι Α", "φως Α", "ξύλο", "γωνία", f.insA, `"x":10`, `"t:ξύλο"`} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("shared view lacks %q: %s", want, out)
-		}
-	}
-	for _, leak := range []string{"Μυστικό Β", "κρυφό Β", f.insB, f.insX, "χωρίς project", "alice@x.gr", "user_id", "private.example", f.projB, "παλιό-μυστικό"} {
-		if strings.Contains(out, leak) {
-			t.Fatalf("shared view leaks %q: %s", leak, out)
-		}
-	}
-
-	// Images: only board A's, through the token; thumbnails work.
-	for _, u := range []string{"/api/mb/shared/" + tok + "/files/" + f.insA, "/api/mb/shared/" + tok + "/files/" + f.insA + "?thumb=480x0"} {
+	// Images of this board only; thumbnails work; browsers must revalidate.
+	for _, u := range []string{"/api/mb/public/" + f.projA + "/files/" + f.insA, "/api/mb/public/" + f.projA + "/files/" + f.insA + "?thumb=480x0"} {
 		w := e.raw("GET", u)
 		if w.Code != 200 || !strings.HasPrefix(w.Body.String(), "\x89PNG") {
-			t.Fatalf("%s: want png, got %d %.60q", u, w.Code, w.Body.String())
+			t.Fatalf("%s: want png, got %d", u, w.Code)
 		}
-		// Every reuse revalidates, so a revoked link stops serving at once.
-		if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-cache") && !strings.Contains(cc, "no-store") {
+		if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-cache") {
 			t.Fatalf("image Cache-Control %q", cc)
 		}
 	}
 	for _, other := range []string{f.insB, f.insX, "nonexistent123"} {
-		if code, _ := e.req("GET", "/api/mb/shared/"+tok+"/files/"+other, "", nil, ""); code != 404 {
-			t.Fatalf("token of A reads image %s: want 404, got %d", other, code)
+		if code, _ := e.req("GET", "/api/mb/public/"+f.projA+"/files/"+other, "", nil, ""); code != 404 {
+			t.Fatalf("board A serves image %s: want 404, got %d", other, code)
 		}
+	}
+	// Board B stays private; its image is not reachable through board A or B.
+	if code, _ := e.req("GET", "/api/mb/public/"+f.projB, "", nil, ""); code != 404 {
+		t.Fatalf("private board B: %d", code)
+	}
+	if code, _ := e.req("GET", "/api/mb/public/"+f.projB+"/files/"+f.insB, "", nil, ""); code != 404 {
+		t.Fatalf("image of private board B: %d", code)
 	}
 	// The protected file stays protected through the normal file route.
 	rec, _ := e.app.FindRecordById("inspirations", f.insA)
@@ -107,42 +128,35 @@ func TestShareReadOnlyView(t *testing.T) {
 	}
 }
 
-func TestShareTokenIsStoredHashedAndScoped(t *testing.T) {
+func TestPublicBoardOptions(t *testing.T) {
 	f := newShareFixture(t)
-	e := f.e
-	tok := f.token(t, f.projA)
-	rs, err := e.app.FindAllRecords("shares")
-	if err != nil || len(rs) != 1 {
-		t.Fatalf("shares: %v %d", err, len(rs))
-	}
-	raw, _ := json.Marshal(rs[0])
-	if strings.Contains(string(raw), tok) {
-		t.Fatalf("raw token stored: %s", raw)
-	}
-	// Collection is not reachable through the generic API, with or without a session.
-	for _, auth := range []string{"", f.aTok, f.bTok} {
-		code, out := e.req("GET", "/api/collections/shares/records", auth, nil, "")
-		if code == 200 && !strings.Contains(out, `"totalItems":0`) {
-			t.Fatalf("shares listed via API: %d %s", code, out)
-		}
-		if code, _ := e.json("POST", "/api/collections/shares/records", auth, map[string]any{"project_id": f.projB, "token_hash": "x"}); code < 400 {
-			t.Fatalf("shares created via API: %d", code)
-		}
-	}
-	// The share token is not an auth token.
-	if code, out := e.req("GET", "/api/collections/inspirations/records", tok, nil, ""); code == 200 && !strings.Contains(out, `"totalItems":0`) {
-		t.Fatalf("share token used as auth: %s", out)
-	}
-	if code, _ := e.req("GET", "/api/mb/tags", "Bearer "+tok, nil, ""); code != 401 {
-		t.Fatalf("share token used as auth on /api/mb: %d", code)
+	_, _ = f.e.json("POST", "/api/mb/positions", f.aTok, map[string]any{"scope": f.projA, "positions": []map[string]any{{"key": "t:ξύλο", "x": 7, "y": 8}}})
+	f.set(t, map[string]any{"public": true, "share_hide_notes": true, "share_hide_regions": true, "share_hide_tags": true, "share_show_sources": true})
+	out := f.view(t, 200)
+	mustHave(t, out, "Σπίτι Α", f.insA, "https://site.example/a", "Σελίδα Α")
+	mustLack(t, out, "φως Α", "γωνία", "ξύλο", "detail")
+	// Turning it off stops the view and the images at once.
+	f.set(t, map[string]any{"public": false})
+	f.view(t, 404)
+	if code, _ := f.e.req("GET", "/api/mb/public/"+f.projA+"/files/"+f.insA, "", nil, ""); code != 404 {
+		t.Fatalf("image after turning public off: %d", code)
 	}
 }
 
-func TestShareNoWritePath(t *testing.T) {
+func TestPublicBoardOwnershipAndNoWrite(t *testing.T) {
 	f := newShareFixture(t)
 	e := f.e
-	tok := f.token(t, f.projA)
-	base := "/api/mb/shared/" + tok
+	// Only the owner can make a board public.
+	if code, _ := e.json("PATCH", "/api/collections/projects/records/"+f.projA, f.bTok, map[string]any{"public": true}); code != 404 {
+		t.Fatalf("bob makes alice's board public: want 404, got %d", code)
+	}
+	if code, _ := e.json("PATCH", "/api/collections/projects/records/"+f.projA, "", map[string]any{"public": true}); code < 400 {
+		t.Fatalf("anonymous makes a board public: %d", code)
+	}
+	f.view(t, 404)
+
+	f.set(t, map[string]any{"public": true})
+	base := "/api/mb/public/" + f.projA
 	for _, m := range []string{"POST", "PUT", "PATCH", "DELETE"} {
 		for _, u := range []string{base, base + "/files/" + f.insA} {
 			if code, _ := e.json(m, u, "", map[string]any{"note": "x"}); code != 404 && code != 405 {
@@ -150,79 +164,21 @@ func TestShareNoWritePath(t *testing.T) {
 			}
 		}
 	}
+	// A public board does not open its rows to the generic API.
+	if code, out := e.req("GET", "/api/collections/inspirations/records", "", nil, ""); code == 200 && !strings.Contains(out, `"totalItems":0`) {
+		t.Fatalf("anonymous list: %s", out)
+	}
+	if code, _ := e.json("PATCH", "/api/collections/inspirations/records/"+f.insA, "", map[string]any{"note": "x"}); code < 400 {
+		t.Fatalf("anonymous write: %d", code)
+	}
 	rec, _ := e.app.FindRecordById("inspirations", f.insA)
 	if rec.GetString("note") != "φως Α" {
 		t.Fatal("note changed")
 	}
-}
-
-func TestShareOwnershipAndRevoke(t *testing.T) {
-	f := newShareFixture(t)
-	e := f.e
-	// Only the owner manages a board's link.
-	if code, _ := f.create("", f.projA); code != 401 {
-		t.Fatalf("anonymous create: want 401, got %d", code)
-	}
-	if code, _ := f.create(f.bTok, f.projA); code != 404 {
-		t.Fatalf("bob creates link for alice's board: want 404, got %d", code)
-	}
-	if code, _ := f.create(f.aTok, "nonexistent123"); code != 404 {
-		t.Fatalf("link for missing board: want 404, got %d", code)
-	}
-	if code, _ := e.req("GET", "/api/mb/projects/"+f.projA+"/share", f.aTok, nil, ""); code != 200 {
-		t.Fatalf("status before create: %d", code)
-	}
-
-	tok := f.token(t, f.projA)
-	if code, out := e.req("GET", "/api/mb/projects/"+f.projA+"/share", f.aTok, nil, ""); code != 200 || !strings.Contains(out, `"active":true`) || strings.Contains(out, tok) {
-		t.Fatalf("status: %d %s", code, out)
-	}
-	if code, _ := e.req("GET", "/api/mb/projects/"+f.projA+"/share", f.bTok, nil, ""); code != 404 {
-		t.Fatalf("bob reads status: want 404, got %d", code)
-	}
-	if code, _ := e.req("DELETE", "/api/mb/projects/"+f.projA+"/share", f.bTok, nil, ""); code != 404 {
-		t.Fatalf("bob revokes: want 404, got %d", code)
-	}
-	if code, _ := e.req("GET", "/api/mb/shared/"+tok, "", nil, ""); code != 200 {
-		t.Fatalf("link died after bob's attempts: %d", code)
-	}
-
-	// A new link replaces the old one.
-	tok2 := f.token(t, f.projA)
-	if tok2 == tok {
-		t.Fatal("same token twice")
-	}
-	if code, _ := e.req("GET", "/api/mb/shared/"+tok, "", nil, ""); code != 404 {
-		t.Fatalf("old token after rotate: want 404, got %d", code)
-	}
-
-	// Revoke: view and images are gone.
-	if code, _ := e.req("DELETE", "/api/mb/projects/"+f.projA+"/share", f.aTok, nil, ""); code != 204 {
-		t.Fatalf("revoke: %d", code)
-	}
-	for _, u := range []string{"/api/mb/shared/" + tok2, "/api/mb/shared/" + tok2 + "/files/" + f.insA} {
-		if code, _ := e.req("GET", u, "", nil, ""); code != 404 {
-			t.Fatalf("%s after revoke: want 404, got %d", u, code)
-		}
-	}
-	if code, out := e.req("GET", "/api/mb/projects/"+f.projA+"/share", f.aTok, nil, ""); code != 200 || !strings.Contains(out, `"active":false`) {
-		t.Fatalf("status after revoke: %d %s", code, out)
-	}
-
-	// Anonymous without a valid token sees nothing.
-	for _, u := range []string{"/api/mb/shared/", "/api/mb/shared/x", "/api/mb/shared/" + strings.Repeat("A", 43), "/api/mb/shared/" + strings.Repeat("A", 43) + "/files/" + f.insA} {
+	for _, u := range []string{"/api/mb/public/", "/api/mb/public/nonexistent123", "/api/mb/public/nonexistent123/files/" + f.insA} {
 		if code, _ := e.req("GET", u, "", nil, ""); code != 404 {
 			t.Fatalf("%s: want 404, got %d", u, code)
 		}
-	}
-
-	// Deleting the board deletes its link.
-	tok3 := f.token(t, f.projA)
-	if code, _ := e.req("DELETE", "/api/collections/projects/records/"+f.projA, f.aTok, nil, ""); code != 204 {
-		t.Fatalf("delete project: %d", code)
-	}
-	if code, _ := e.req("GET", "/api/mb/shared/"+tok3, "", nil, ""); code != 404 {
-		t.Fatalf("link of deleted board: want 404, got %d", code)
 	}
 }
 

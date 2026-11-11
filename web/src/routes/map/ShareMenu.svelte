@@ -1,23 +1,30 @@
 <script lang="ts">
-	// «Κοινοποίηση»: make, copy or revoke the read-only link of one board. The server keeps only a hash
-	// of the token, so the link can be copied right after it is made; later, «Νέος σύνδεσμος» replaces it.
+	// «Κοινοποίηση»: make a board public at /s/<project id> and pick what visitors see. Every change
+	// saves at once; on an error the switch goes back.
 	import type PocketBase from 'pocketbase';
-	import { createShare, revokeShare, shareLink, shareStatus, type ShareStatus } from '#lib/share.js';
+	import { getShare, publicLink, saveShare, type ShareSettings } from '#lib/share.js';
 	import Icon from './Icon.svelte';
 
 	let { pb, projectId }: { pb: PocketBase; projectId: string } = $props();
 
+	const OPTIONS: { key: Exclude<keyof ShareSettings, 'public'>; label: string }[] = [
+		{ key: 'notes', label: 'Σημειώσεις εικόνων' },
+		{ key: 'regions', label: 'Σημειώσεις περιοχών' },
+		{ key: 'tags', label: 'Tags και επίπεδο' },
+		{ key: 'sources', label: 'Πηγές' }
+	];
+
 	let open = $state(false);
-	let status = $state<ShareStatus | null>(null);
-	let link = $state<string | null>(null);
+	let s = $state<ShareSettings | null>(null);
 	let busy = $state(false);
 	let msg = $state('');
+	const link = $derived(publicLink(projectId));
 
-	async function run(fn: () => Promise<void>) {
+	async function load() {
 		busy = true;
 		msg = '';
 		try {
-			await fn();
+			s = await getShare(pb, projectId);
 		} catch (e) {
 			msg = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -25,33 +32,29 @@
 		}
 	}
 
-	const load = () => run(async () => void (status = await shareStatus(pb, projectId)));
-
 	function toggle() {
 		open = !open;
-		if (open && !status) void load();
+		if (open && !s) void load();
 	}
 
-	const make = () =>
-		run(async () => {
-			link = shareLink(await createShare(pb, projectId));
-			status = { active: true };
-			await copy();
-		});
-
-	const revoke = () =>
-		run(async () => {
-			await revokeShare(pb, projectId);
-			link = null;
-			status = { active: false };
-			msg = 'Ο σύνδεσμος ανακλήθηκε.';
-		});
+	async function change(key: keyof ShareSettings, value: boolean) {
+		if (!s) return;
+		const before = s;
+		s = { ...s, [key]: value };
+		msg = '';
+		try {
+			await saveShare(pb, projectId, s);
+			if (key === 'public' && value) await copy();
+		} catch (e) {
+			s = before;
+			msg = e instanceof Error ? e.message : String(e);
+		}
+	}
 
 	async function copy() {
-		if (!link) return;
 		try {
 			await navigator.clipboard.writeText(link);
-			msg = 'Αντιγράφηκε ✓';
+			msg = 'Ο σύνδεσμος αντιγράφηκε ✓';
 		} catch {
 			msg = 'Αντέγραψε τον σύνδεσμο από το πεδίο.';
 		}
@@ -59,36 +62,42 @@
 </script>
 
 <div class="share">
-	<button type="button" class="btn ghost" aria-haspopup="dialog" aria-expanded={open} onclick={toggle} title="Κοινοποίηση">
-		<Icon name="open" size={15} /> <span class="lbl">Κοινοποίηση</span>
+	<button type="button" class="btn ghost" class:on={s?.public} aria-haspopup="dialog" aria-expanded={open} onclick={toggle} title="Κοινοποίηση">
+		<Icon name="open" size={15} /> <span class="lbl">{s?.public ? 'Δημόσιο' : 'Κοινοποίηση'}</span>
 	</button>
 	{#if open}
 		<div class="scrim" role="presentation" onpointerdown={() => (open = false)}></div>
 		<div class="pop" role="dialog" aria-label="Κοινοποίηση">
-			<p class="head">Σύνδεσμος μόνο για προβολή</p>
-			<p class="hint">Όποιος έχει τον σύνδεσμο βλέπει αυτό το board χωρίς λογαριασμό. Δεν μπορεί να αλλάξει τίποτα.</p>
-			{#if link}
-				<div class="row">
-					<input readonly value={link} aria-label="Σύνδεσμος" onfocus={(e) => e.currentTarget.select()} />
-					<button type="button" class="btn" onclick={copy}><Icon name="copy" size={14} /> Αντιγραφή</button>
-				</div>
-			{:else if status?.active}
-				<p class="hint">Υπάρχει ενεργός σύνδεσμος. Για να τον αντιγράψεις ξανά, φτιάξε νέο (ο παλιός σταματά).</p>
-			{/if}
-			<div class="row">
-				{#if status === null && !busy}
-					<button type="button" class="btn" onclick={load}>Δοκίμασε ξανά</button>
-				{:else if status === null}
-					<span class="hint">Φόρτωση…</span>
+			{#if !s}
+				{#if busy}
+					<p class="hint">Φόρτωση…</p>
 				{:else}
-					<button type="button" class="btn primary" disabled={busy} onclick={make}>
-						{status.active ? 'Νέος σύνδεσμος' : 'Δημιουργία συνδέσμου'}
-					</button>
-					{#if status.active}
-						<button type="button" class="btn ghost danger" disabled={busy} onclick={revoke}>Ανάκληση</button>
-					{/if}
+					<button type="button" class="btn" onclick={load}>Δοκίμασε ξανά</button>
 				{/if}
-			</div>
+			{:else}
+				<label class="switch">
+					<input type="checkbox" checked={s.public} onchange={(e) => change('public', e.currentTarget.checked)} />
+					<span>
+						<b>Δημόσιο board</b>
+						<small>Όποιος έχει τον σύνδεσμο το βλέπει, χωρίς λογαριασμό. Δεν αλλάζει τίποτα.</small>
+					</span>
+				</label>
+				{#if s.public}
+					<div class="row">
+						<input class="url" readonly value={link} aria-label="Σύνδεσμος" onfocus={(e) => e.currentTarget.select()} />
+						<button type="button" class="btn" onclick={copy}><Icon name="copy" size={14} /> Αντιγραφή</button>
+					</div>
+				{/if}
+				<fieldset>
+					<legend>Τι φαίνεται</legend>
+					{#each OPTIONS as o (o.key)}
+						<label class="opt">
+							<input type="checkbox" checked={s[o.key]} onchange={(e) => change(o.key, e.currentTarget.checked)} />
+							{o.label}
+						</label>
+					{/each}
+				</fieldset>
+			{/if}
 			{#if msg}<p class="msg" role="status">{msg}</p>{/if}
 		</div>
 	{/if}
@@ -97,6 +106,9 @@
 <style>
 	.share {
 		position: relative;
+	}
+	.on {
+		color: var(--accent);
 	}
 	.scrim {
 		position: fixed;
@@ -115,14 +127,23 @@
 		box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.3), 0 0 0 1px var(--line);
 		display: flex;
 		flex-direction: column;
+		gap: 12px;
+	}
+	.switch {
+		display: flex;
 		gap: 10px;
+		align-items: flex-start;
+		cursor: pointer;
 	}
-	.head {
-		margin: 0;
-		font-size: 12.5px;
+	.switch span {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.switch b {
 		font-weight: 600;
-		color: var(--muted);
 	}
+	small,
 	.hint,
 	.msg {
 		margin: 0;
@@ -132,12 +153,18 @@
 	.msg {
 		color: var(--text);
 	}
+	input[type='checkbox'] {
+		accent-color: var(--accent);
+		width: 16px;
+		height: 16px;
+		margin: 2px 0 0;
+	}
 	.row {
 		display: flex;
 		gap: 8px;
 		align-items: center;
 	}
-	input {
+	.url {
 		flex: 1;
 		min-width: 0;
 		font: inherit;
@@ -148,8 +175,26 @@
 		background: var(--surface);
 		color: var(--text);
 	}
-	.danger {
-		color: var(--accent);
+	fieldset {
+		border: 0;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	legend {
+		font-size: 12.5px;
+		font-weight: 600;
+		color: var(--muted);
+		padding: 0 0 4px;
+	}
+	.opt {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		min-height: 32px;
+		cursor: pointer;
 	}
 	@media (max-width: 900px) {
 		.lbl {

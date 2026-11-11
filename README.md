@@ -54,12 +54,13 @@ lasts one hour.
 | `POST /api/mb/inspirations/{id}/copy` | duplicate an inspiration and its file into a project |
 | `POST /api/mb/positions` | upsert node positions of one map |
 | `POST /api/mb/positions/delete` | forget positions (one scope or all) |
-| `GET/POST/DELETE /api/mb/projects/{id}/share` | owner: link status, new link (replaces the old), revoke |
 
-**Share links** (`server/mb/share.go`, no account): `GET /api/mb/shared/{token}` returns one board
-(name, description, images with note/tags/level/regions/crop, saved layout) and
-`GET /api/mb/shared/{token}/files/{id}` serves its images. The token is 32 random bytes; only its
-SHA-256 is stored, and the request log shows `(token)` instead. The web view is `/s/{token}`.
+**Public boards** (`server/mb/share.go`, no account): when a project has `public` on, anyone with
+`/s/<project id>` sees it. `GET /api/mb/public/{project}` returns the board (name, description,
+images, saved layout) and `GET /api/mb/public/{project}/files/{id}` serves its images; both answer
+404 for a private board. The owner picks what shows in «Κοινοποίηση» (fields `share_hide_notes`,
+`share_hide_regions`, `share_hide_tags`, `share_show_sources` on `projects`; default: notes, region
+notes, tags and level shown, sources hidden).
 
 **Live map.** The map page subscribes to `inspirations` and `projects` over PocketBase realtime
 (SSE). A change from another tab or device shows at once; an update replaces the shown row only

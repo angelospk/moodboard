@@ -1,13 +1,14 @@
 <script lang="ts">
-	// Read-only view of a shared board: the owner's layout, images, notes and region notes. Nothing here
-	// writes: the board gets canSave=false and no-op callbacks, and the server has no write route.
+	// Read-only view of a public board: the owner's layout, images and what the owner chose to show.
+	// Nothing here writes: the board gets canSave=false and no-op callbacks, and the server has no write route.
 	import Board from '../../map/Board.svelte';
 	import TagChips from '../../map/TagChips.svelte';
 	import Icon from '../../map/Icon.svelte';
 	import { zoneColors } from '../../map/board.js';
 	import PocketBase, { BaseAuthStore } from 'pocketbase';
 	import { PB_URL } from '#lib/pb.js';
-	import { sharedImageUrl } from '#lib/share.js';
+	import { publicImageUrl } from '#lib/share.js';
+	import { hostOf } from '#lib/sources.js';
 	import type { Inspiration } from '#lib/types.js';
 	import type { PageProps } from './$types';
 
@@ -27,12 +28,16 @@
 		return [...count].map(([tag, n]) => ({ tag, count: n })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 	});
 	const colors = $derived(zoneColors(tagStats.map((t) => t.tag)));
-	const urlOf = (i: Inspiration) => sharedImageUrl(data.token, i.id);
+	const urlOf = (i: Inspiration) => publicImageUrl(data.id, i.id);
+	const hasNotes = $derived(items.some((i) => i.note || i.regions.length));
+	const selected = $derived(items.find((i) => i.id === selectedId) ?? null);
+	/** Only http(s) sources become links (a javascript: URL would run here). */
+	const sourceHost = $derived(hostOf(selected?.source_url));
 	const noop = () => {};
 </script>
 
 <svelte:head>
-	<title>{data.board?.project.name ?? 'Κοινοποιημένο board'} · Moodboard</title>
+	<title>{data.board?.project.name ?? 'Δημόσιο board'} · Moodboard</title>
 	<meta name="referrer" content="no-referrer" />
 	<meta name="robots" content="noindex" />
 </svelte:head>
@@ -46,9 +51,9 @@
 		<span class="ro">Μόνο προβολή</span>
 		{#if data.board}
 			<div class="actions">
-				<button type="button" class="btn ghost" aria-pressed={notesOn} onclick={() => (notesOn = !notesOn)} title="Σημειώσεις">
+				{#if hasNotes}<button type="button" class="btn ghost" aria-pressed={notesOn} onclick={() => (notesOn = !notesOn)} title="Σημειώσεις">
 					<Icon name="notes" size={15} /> Σημειώσεις
-				</button>
+				</button>{/if}
 				<button type="button" class="btn ghost" onclick={() => board?.fit()} title="Κεντράρισμα">
 					<Icon name="fit" size={15} />
 				</button>
@@ -95,6 +100,11 @@
 				onzoneadd={noop}
 				ontoast={noop}
 			/>
+		{/if}
+		{#if selected?.source_url && sourceHost}
+			<a class="source" href={selected.source_url} target="_blank" rel="noopener noreferrer">
+				<Icon name="open" size={14} /> {selected.source_title || sourceHost}
+			</a>
 		{/if}
 	</div>
 </div>
@@ -186,6 +196,27 @@
 		color: var(--muted);
 		padding: 32px 20px;
 		margin: 0;
+	}
+	.source {
+		position: absolute;
+		left: 50%;
+		bottom: 24px;
+		transform: translateX(-50%);
+		z-index: 20;
+		display: inline-flex;
+		gap: 6px;
+		align-items: center;
+		max-width: calc(100% - 32px);
+		padding: 8px 14px;
+		border-radius: var(--r-pill);
+		background: var(--raised);
+		color: var(--text);
+		font-size: 14px;
+		text-decoration: none;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.3), 0 0 0 1px var(--line);
 	}
 	@media (max-width: 640px) {
 		.brand {

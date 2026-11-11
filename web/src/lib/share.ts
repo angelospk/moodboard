@@ -1,49 +1,60 @@
-// Read-only share links of a board (server: server/mb/share.go). The owner makes one link per project
-// (a new one replaces the old) and can revoke it; anyone with the link reads that board, no account.
+// Public boards (server: server/mb/share.go). A public board opens at /s/<project id> for anyone with
+// the link, no account. The owner picks what shows; the flags live on the project row.
 import type PocketBase from 'pocketbase';
 import { PB_URL } from './pb.js';
 import { toInspiration } from './inspirations.js';
 import type { Inspiration } from './types.js';
 
-export interface ShareStatus {
-	active: boolean;
-	created_at?: string;
+export interface ShareSettings {
+	public: boolean;
+	notes: boolean;
+	regions: boolean;
+	/** Tags (zones, chips) and level. */
+	tags: boolean;
+	sources: boolean;
 }
 
-export interface SharedBoard {
+export const SHARE_DEFAULTS: ShareSettings = { public: false, notes: true, regions: true, tags: true, sources: false };
+
+export interface PublicBoard {
 	project: { name: string; description: string };
 	inspirations: Inspiration[];
 	positions: Record<string, { x: number; y: number }>;
 }
 
-const path = (projectId: string) => `/api/mb/projects/${encodeURIComponent(projectId)}/share`;
-
-export function shareStatus(pb: PocketBase, projectId: string): Promise<ShareStatus> {
-	return pb.send(path(projectId), { method: 'GET' });
+export async function getShare(pb: PocketBase, projectId: string): Promise<ShareSettings> {
+	const r = await pb.collection('projects').getOne(projectId);
+	return {
+		public: !!r.public,
+		notes: !r.share_hide_notes,
+		regions: !r.share_hide_regions,
+		tags: !r.share_hide_tags,
+		sources: !!r.share_show_sources
+	};
 }
 
-/** Make a new link (the old one stops working) and return its token. The server keeps only a hash. */
-export async function createShare(pb: PocketBase, projectId: string): Promise<string> {
-	const res: { token: string } = await pb.send(path(projectId), { method: 'POST' });
-	return res.token;
+export async function saveShare(pb: PocketBase, projectId: string, s: ShareSettings): Promise<void> {
+	await pb.collection('projects').update(projectId, {
+		public: s.public,
+		share_hide_notes: !s.notes,
+		share_hide_regions: !s.regions,
+		share_hide_tags: !s.tags,
+		share_show_sources: s.sources
+	});
 }
 
-export async function revokeShare(pb: PocketBase, projectId: string): Promise<void> {
-	await pb.send(path(projectId), { method: 'DELETE' });
+export function publicLink(projectId: string, origin = location.origin): string {
+	return `${origin}/s/${projectId}`;
 }
 
-export function shareLink(token: string, origin = location.origin): string {
-	return `${origin}/s/${token}`;
+export function publicImageUrl(projectId: string, id: string, base = PB_URL): string {
+	return `${base}/api/mb/public/${encodeURIComponent(projectId)}/files/${encodeURIComponent(id)}`;
 }
 
-export function sharedImageUrl(token: string, id: string, base = PB_URL): string {
-	return `${base}/api/mb/shared/${encodeURIComponent(token)}/files/${encodeURIComponent(id)}`;
-}
-
-/** Read a shared board without a session. Throws «Ο σύνδεσμος δεν ισχύει.» for an unknown or revoked link. */
-export async function loadShared(token: string, base = PB_URL): Promise<SharedBoard> {
-	const res = await fetch(`${base}/api/mb/shared/${encodeURIComponent(token)}`, { credentials: 'omit' });
-	if (res.status === 404) throw new Error('Ο σύνδεσμος δεν ισχύει.');
+/** Read a public board without a session. Throws «Το board δεν είναι δημόσιο.» when it is not. */
+export async function loadPublic(projectId: string, base = PB_URL): Promise<PublicBoard> {
+	const res = await fetch(`${base}/api/mb/public/${encodeURIComponent(projectId)}`, { credentials: 'omit' });
+	if (res.status === 404) throw new Error('Το board δεν είναι δημόσιο.');
 	if (!res.ok) throw new Error(`Σφάλμα φόρτωσης (${res.status}).`);
 	const body = await res.json();
 	return {
