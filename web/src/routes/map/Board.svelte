@@ -20,9 +20,9 @@
 	// The simulation writes positions straight to the DOM on each tick; Svelte only renders the lists.
 	import { onMount, tick, untrack } from 'svelte';
 	import { forceSimulation, type Simulation } from 'd3-force';
-	import type { SupabaseClient } from '@supabase/supabase-js';
+	import type PocketBase from 'pocketbase';
 	import type { Inspiration } from '#lib/types.js';
-	import { savePositions } from '#lib/inspirations.js';
+	import { deletePosition, savePositions } from '#lib/inspirations.js';
 	import {
 		anchorForce,
 		CARD_GAP,
@@ -37,7 +37,7 @@
 	} from './board.js';
 
 	interface Props {
-		supabase: SupabaseClient;
+		pb: PocketBase;
 		/** The cards in view (already filtered by project and level). */
 		items: Inspiration[];
 		urlOf: (i: Inspiration) => string | null;
@@ -68,7 +68,7 @@
 	}
 
 	let {
-		supabase,
+		pb,
 		items,
 		urlOf,
 		colors,
@@ -832,7 +832,7 @@
 		return serial(
 			async () => {
 				// Wait for every scope before the chain moves on, so a later delete never races a write.
-				const res = await Promise.allSettled([...byScope].map(([sc, list]) => savePositions(supabase, sc, list)));
+				const res = await Promise.allSettled([...byScope].map(([sc, list]) => savePositions(pb, sc, list)));
 				const bad = res.find((r) => r.status === 'rejected');
 				if (bad) throw bad.reason;
 			},
@@ -861,10 +861,7 @@
 		else if (canSave && seededScope) {
 			pendingSaves.delete(`${seededScope}|${key}`);
 			const sc = seededScope;
-			void serial(async () => {
-				const { error } = await supabase.from('map_positions').delete().eq('scope', sc).eq('node_key', key);
-				if (error) throw error;
-			}, 'Η θέση δεν αποθηκεύτηκε');
+			void serial(() => deletePosition(pb, sc, key), 'Η θέση δεν αποθηκεύτηκε');
 		}
 		reheat(0.3);
 	}
@@ -874,7 +871,7 @@
 		const key = `i:${itemId}`;
 		mem.delete(key);
 		for (const k of pendingSaves.keys()) if (k.endsWith(`|${key}`)) pendingSaves.delete(k);
-		if (canSave) void serial(() => supabase.from('map_positions').delete().eq('node_key', key), 'Η θέση δεν σβήστηκε');
+		if (canSave) void serial(() => deletePosition(pb, null, key), 'Η θέση δεν σβήστηκε');
 	}
 
 	/** Unpin every card in view, forget their saved spots and lay the board out again. */
@@ -892,16 +889,7 @@
 		reheat(0.9);
 		if (!canSave || !seededScope) return;
 		const sc = seededScope;
-		await serial(async () => {
-			for (let i = 0; i < keys.length; i += 200) {
-				const { error } = await supabase
-					.from('map_positions')
-					.delete()
-					.eq('scope', sc)
-					.in('node_key', keys.slice(i, i + 200));
-				if (error) throw error;
-			}
-		}, 'Η νέα διάταξη δεν αποθηκεύτηκε');
+		await serial(() => deletePosition(pb, sc, keys), 'Η νέα διάταξη δεν αποθηκεύτηκε');
 	}
 
 	// ------------------------------------------------------------- Lifecycle

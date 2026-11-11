@@ -8,10 +8,15 @@
 	let { children, data }: LayoutProps = $props();
 
 	onMount(() => {
-		const { data: sub } = data.supabase.auth.onAuthStateChange((_event, s) => {
-			if (s?.expires_at !== data.session?.expires_at) invalidate('supabase:auth');
+		// Signing in or out must re-run the page loads. A token-only refresh (the layout load's own
+		// authRefresh) keeps the same record, so it must not invalidate: that would loop forever.
+		let uid = data.pb.authStore.record?.id ?? null;
+		return data.pb.authStore.onChange((_token, record) => {
+			const next = record?.id ?? null;
+			if (next === uid) return;
+			uid = next;
+			void invalidate('app:auth');
 		});
-		return () => sub.subscription.unsubscribe();
 	});
 </script>
 

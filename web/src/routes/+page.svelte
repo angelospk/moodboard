@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { goto, invalidate, invalidateAll } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { LEVELS, type Inspiration, type Level } from '#lib/types.js';
 	import { LEVEL_LABELS } from '#lib/tags.js';
+	import { createProject as createProjectRow } from '#lib/inspirations.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -191,19 +192,19 @@
 		if (!name || creating) return;
 		creating = true;
 		projectError = '';
-		const { data: row, error } = await data.supabase
-			.from('projects')
-			.insert({ name })
-			.select('id')
-			.single();
-		creating = false;
-		if (error || !row) {
-			projectError = error?.code === '23505' ? 'Υπάρχει ήδη project με αυτό το όνομα.' : error?.message ?? 'Αποτυχία.';
-			return;
+		try {
+			const row = await createProjectRow(data.pb, data.user!.id, name);
+			newProject = '';
+			await invalidate('moodboard:data');
+			selectProject(row.id);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Αποτυχία.';
+			projectError = /unique|υπάρχει|already/i.test(message)
+				? 'Υπάρχει ήδη project με αυτό το όνομα.'
+				: message;
+		} finally {
+			creating = false;
 		}
-		newProject = '';
-		await invalidate('moodboard:data');
-		selectProject(row.id as string);
 	}
 
 	function selectProject(id: string) {
@@ -222,8 +223,7 @@
 
 	async function logout() {
 		loggingOut = true;
-		await data.supabase.auth.signOut();
-		await invalidateAll();
+		data.pb.authStore.clear();
 		await goto('/login');
 	}
 </script>

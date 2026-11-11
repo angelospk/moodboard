@@ -1,20 +1,31 @@
-import { createBrowserClient, createServerClient, isBrowser } from '@supabase/ssr';
-import { PUBLIC_SUPABASE_KEY, PUBLIC_SUPABASE_URL } from '$app/env/public';
+import { redirect } from '@sveltejs/kit';
+import { pb } from '#lib/pb.js';
 import type { LayoutLoad } from './$types';
 
-export const load: LayoutLoad = async ({ data, depends, fetch }) => {
-	depends('supabase:auth');
-	const supabase = isBrowser()
-		? createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_KEY, { global: { fetch } })
-		: createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_KEY, {
-				global: { fetch },
-				cookies: { getAll: () => data.cookies }
-			});
-	// In the browser, read the live client session: after a client-side login the server data is
-	// stale (user null) until a full reload. The server keeps its verified getUser() result.
-	if (isBrowser()) {
-		const { data: s } = await supabase.auth.getSession();
-		return { supabase, session: s.session, user: s.session?.user ?? null };
+// A static SPA: every load runs in the browser, where the PocketBase client and its auth store live.
+export const ssr = false;
+export const prerender = false;
+
+export const load: LayoutLoad = async ({ url, depends }) => {
+	depends('app:auth');
+	let user = pb.authStore.record;
+
+	if (user) {
+		// Verify the stored token once per page load; an expired or revoked one signs the user out.
+		try {
+			await pb.collection('users').authRefresh();
+			user = pb.authStore.record;
+		} catch (e) {
+			if ((e as { status?: number }).status === 401) {
+				pb.authStore.clear();
+				user = null;
+			}
+		}
 	}
-	return { supabase, session: data.session, user: data.user };
+
+	if (!user && url.pathname !== '/login') {
+		redirect(307, '/login?next=' + encodeURIComponent(url.pathname + url.search));
+	}
+
+	return { pb, user };
 };

@@ -41,7 +41,7 @@
 	let leaving = false;
 
 	const saver = new Autosaver<EditableFields>(
-		(id, f) => updateInspiration(data.supabase, id, f),
+		(id, f) => updateInspiration(data.pb, id, f),
 		700,
 		(s, e) => {
 			status = s;
@@ -86,7 +86,7 @@
 		deleting = true;
 		try {
 			await saver.flush();
-			await deleteInspiration(data.supabase, item.id);
+			await deleteInspiration(data.pb, item.id);
 			saver.discard(item.id);
 			await goto(project ? `/map?project=${encodeURIComponent(project.id)}` : '/');
 		} catch (err) {

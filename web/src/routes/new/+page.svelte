@@ -75,7 +75,7 @@
 		busy = true;
 		error = '';
 		try {
-			const { id } = await createInspiration(data.supabase, data.user.id, file, {
+			const { id } = await createInspiration(data.pb, data.user.id, file, {
 				project_id: projectId || null,
 				note,
 				tags,

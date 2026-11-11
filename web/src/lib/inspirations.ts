@@ -1,7 +1,8 @@
-// Client-safe data helpers (browser and tests). The Supabase client acts as the signed-in user, so RLS
-// and the storage policies limit every call to the user's own rows and folder.
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { BUCKET, type Inspiration } from '#lib/types.js';
+// Client-side data helpers (browser and tests). The PocketBase client acts as the signed-in user, so
+// the collection API rules and the server hooks limit every call to the user's own rows and files.
+import type PocketBase from 'pocketbase';
+import type { RecordModel } from 'pocketbase';
+import type { Inspiration, Project } from '#lib/types.js';
 
 export const IMAGE_EXT: Record<string, string> = {
 	'image/png': 'png',
@@ -29,70 +30,129 @@ export function checkImage(file: Blob): string {
 	return ext;
 }
 
-/** Upload the image and insert the row. Removes the file again when the insert fails. */
+function msg(e: unknown): string {
+	const r = e as { response?: { message?: string; data?: Record<string, { message?: string }> }; message?: string };
+	const field = r.response?.data && Object.entries(r.response.data)[0];
+	if (field) return `${field[0]}: ${field[1]?.message ?? ''}`.trim();
+	return r.response?.message || r.message || 'άγνωστο σφάλμα';
+}
+
+/** A PocketBase inspirations record in the app's shape. `image_path` is the stored file name: it is
+ *  unique per image, so it keys image URLs (see imageUrls). Empty relation/select values become null. */
+export function toInspiration(r: RecordModel): Inspiration {
+	return {
+		id: r.id,
+		project_id: r.project_id || null,
+		image_path: r.image ?? '',
+		source_url: r.source_url || null,
+		source_title: r.source_title || null,
+		note: r.note ?? '',
+		tags: Array.isArray(r.tags) ? r.tags : [],
+		level: r.level || null,
+		regions: Array.isArray(r.regions) ? r.regions : [],
+		created_at: r.created_at,
+		updated_at: r.updated_at
+	};
+}
+
+export function toProject(r: RecordModel): Project {
+	return { id: r.id, name: r.name, description: r.description ?? '', created_at: r.created_at };
+}
+
+/** The user's projects, by name. */
+export async function listProjects(pb: PocketBase): Promise<Project[]> {
+	const rows = await pb.collection('projects').getFullList({ sort: 'name,id' });
+	return rows.map(toProject);
+}
+
+/** Create a project for the signed-in user. */
+export async function createProject(pb: PocketBase, userId: string, name: string, description = ''): Promise<Project> {
+	try {
+		return toProject(await pb.collection('projects').create({ user_id: userId, name: name.trim(), description }));
+	} catch (e) {
+		throw new Error(`Αποτυχία δημιουργίας project: ${msg(e)}`);
+	}
+}
+
+/** All of the user's inspirations, newest first. */
+export async function listInspirations(pb: PocketBase): Promise<Inspiration[]> {
+	const rows = await pb.collection('inspirations').getFullList({ sort: '-created_at,id' });
+	return rows.map(toInspiration);
+}
+
+/** One inspiration, or null when it does not exist or is not the user's. */
+export async function getInspiration(pb: PocketBase, id: string): Promise<Inspiration | null> {
+	try {
+		return toInspiration(await pb.collection('inspirations').getOne(id));
+	} catch (e) {
+		if ((e as { status?: number }).status === 404) return null;
+		throw new Error(msg(e));
+	}
+}
+
+/** Image URL per `image_path`, with one file token (valid 1 hour) for all of them. */
+export async function imageUrls(pb: PocketBase, rows: Inspiration[]): Promise<Record<string, string>> {
+	if (!rows.length) return {};
+	const token = await pb.files.getToken();
+	const out: Record<string, string> = {};
+	for (const r of rows) {
+		if (r.image_path) out[r.image_path] = imageUrl(pb, r, token);
+	}
+	return out;
+}
+
+export function imageUrl(pb: PocketBase, r: Pick<Inspiration, 'id' | 'image_path'>, token: string): string {
+	return pb.files.getURL({ id: r.id, collectionName: 'inspirations' }, r.image_path, { token });
+}
+
+function form(fields: Record<string, unknown>, file?: Blob): FormData {
+	const fd = new FormData();
+	for (const [k, v] of Object.entries(fields)) {
+		if (v === undefined) continue;
+		fd.append(k, v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+	}
+	if (file) fd.append('image', file, `image.${IMAGE_EXT[file.type]}`);
+	return fd;
+}
+
+/** Upload the image and create the row in one request. */
 export async function createInspiration(
-	sb: SupabaseClient,
+	pb: PocketBase,
 	userId: string,
 	file: Blob,
 	fields: NewFields
 ): Promise<{ id: string }> {
-	const ext = checkImage(file);
-	const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-	const up = await sb.storage.from(BUCKET).upload(path, file, { contentType: file.type });
-	if (up.error) throw new Error(`Αποτυχία ανεβάσματος: ${up.error.message}`);
-	const { data, error } = await sb
-		.from('inspirations')
-		.insert({ ...fields, note: (fields.note ?? '').trim(), tags: cleanTags(fields.tags), image_path: path })
-		.select('id')
-		.single();
-	if (error || !data) {
-		await sb.storage.from(BUCKET).remove([path]);
-		throw new Error(`Αποτυχία αποθήκευσης: ${error?.message ?? 'άγνωστο σφάλμα'}`);
+	checkImage(file);
+	try {
+		const rec = await pb.collection('inspirations').create(
+			form({ ...fields, user_id: userId, note: (fields.note ?? '').trim(), tags: cleanTags(fields.tags), regions: fields.regions ?? [] }, file)
+		);
+		return { id: rec.id };
+	} catch (e) {
+		throw new Error(`Αποτυχία αποθήκευσης: ${msg(e)}`);
 	}
-	return data;
 }
 
 /** Duplicate an inspiration (image file too) into `projectId`. The original stays as it is. */
 export async function copyInspiration(
-	sb: SupabaseClient,
-	userId: string,
+	pb: PocketBase,
+	_userId: string,
 	id: string,
 	projectId: string | null
 ): Promise<{ id: string }> {
-	const { data: src, error } = await sb.from('inspirations').select('*').eq('id', id).maybeSingle();
-	if (error) throw new Error(error.message);
-	if (!src) throw new Error('Η εικόνα δεν βρέθηκε.');
-	const row = src as Inspiration;
-	const ext = row.image_path.split('.').pop() ?? 'png';
-	const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-	const cp = await sb.storage.from(BUCKET).copy(row.image_path, path);
-	if (cp.error) throw new Error(`Αποτυχία αντιγραφής εικόνας: ${cp.error.message}`);
-	const { data, error: insErr } = await sb
-		.from('inspirations')
-		.insert({
-			project_id: projectId,
-			image_path: path,
-			note: row.note,
-			tags: row.tags,
-			level: row.level,
-			regions: row.regions,
-			source_url: row.source_url,
-			source_title: row.source_title
-		})
-		.select('id')
-		.single();
-	if (insErr || !data) {
-		await sb.storage.from(BUCKET).remove([path]);
-		throw new Error(`Αποτυχία αντιγραφής: ${insErr?.message ?? 'άγνωστο σφάλμα'}`);
+	try {
+		return await pb.send<{ id: string }>(`/api/mb/inspirations/${encodeURIComponent(id)}/copy`, {
+			method: 'POST',
+			body: { project_id: projectId }
+		});
+	} catch (e) {
+		throw new Error(`Αποτυχία αντιγραφής: ${msg(e)}`);
 	}
-	return data;
 }
 
 /** The user's past tags, most used first (for one-click chips). */
-export async function userTags(sb: SupabaseClient): Promise<string[]> {
-	const { data, error } = await sb.rpc('user_tags');
-	if (error) throw new Error(error.message);
-	return (data as { tag: string }[]).map((r) => r.tag);
+export async function userTags(pb: PocketBase): Promise<string[]> {
+	return pb.send<string[]>('/api/mb/tags', { method: 'GET' });
 }
 
 export interface NodePosition {
@@ -103,52 +163,79 @@ export interface NodePosition {
 }
 
 /** Store where the user placed nodes on one map. scope = project id, 'all' or 'none'. */
-export async function savePositions(sb: SupabaseClient, scope: string, positions: NodePosition[]) {
-	const rows = positions
-		.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
-		.map((p) => ({ scope, node_key: p.key, x: p.x, y: p.y, updated_at: new Date().toISOString() }));
+export async function savePositions(pb: PocketBase, scope: string, positions: NodePosition[]) {
+	const rows = positions.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
 	if (!rows.length) return;
-	const { error } = await sb.from('map_positions').upsert(rows, { onConflict: 'user_id,scope,node_key' });
-	if (error) throw new Error(error.message);
+	try {
+		await pb.send('/api/mb/positions', { method: 'POST', body: { scope, positions: rows } });
+	} catch (e) {
+		throw new Error(msg(e));
+	}
+}
+
+/** Forget nodes' saved positions: in one scope, or in every scope when scope is null. */
+export async function deletePosition(pb: PocketBase, scope: string | null, key: string | string[]) {
+	const keys = Array.isArray(key) ? key : [key];
+	if (!keys.length) return;
+	try {
+		await pb.send('/api/mb/positions/delete', { method: 'POST', body: { scope: scope ?? '', keys } });
+	} catch (e) {
+		throw new Error(msg(e));
+	}
 }
 
 /** Saved node positions of one map, by node key. */
-export async function loadPositions(
-	sb: SupabaseClient,
-	scope: string
-): Promise<Record<string, { x: number; y: number }>> {
+export async function loadPositions(pb: PocketBase, scope: string): Promise<Record<string, { x: number; y: number }>> {
+	const rows = await pb.collection('map_positions').getFullList({ filter: pb.filter('scope = {:s}', { s: scope }) });
 	const out: Record<string, { x: number; y: number }> = {};
-	for (let from = 0; ; from += 1000) {
-		const { data, error } = await sb
-			.from('map_positions')
-			.select('node_key, x, y')
-			.eq('scope', scope)
-			.order('node_key')
-			.range(from, from + 999);
-		if (error) throw new Error(error.message);
-		for (const r of data) out[r.node_key] = { x: r.x, y: r.y };
-		if (data.length < 1000) return out;
-	}
+	for (const r of rows) out[r.node_key] = { x: r.x, y: r.y };
+	return out;
 }
 
 export type EditableFields = Partial<Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id'>>;
 
 /** Save edits to one inspiration and return the updated row. Throws when it is not the caller's. */
-export async function updateInspiration(sb: SupabaseClient, id: string, fields: EditableFields): Promise<Inspiration> {
-	const patch: EditableFields = { ...fields };
-	if (patch.note !== undefined) patch.note = patch.note.trim();
-	if (patch.tags !== undefined) patch.tags = cleanTags(patch.tags);
-	const { data, error } = await sb.from('inspirations').update(patch).eq('id', id).select('*');
-	if (error) throw new Error(`Αποτυχία αποθήκευσης: ${error.message}`);
-	if (!data?.length) throw new Error('Η εικόνα δεν βρέθηκε.');
-	return data[0] as Inspiration;
+export async function updateInspiration(pb: PocketBase, id: string, fields: EditableFields): Promise<Inspiration> {
+	const patch: Record<string, unknown> = { ...fields };
+	if (fields.note !== undefined) patch.note = fields.note.trim();
+	if (fields.tags !== undefined) patch.tags = cleanTags(fields.tags);
+	if (fields.project_id !== undefined) patch.project_id = fields.project_id ?? '';
+	if (fields.level !== undefined) patch.level = fields.level ?? '';
+	try {
+		return toInspiration(await pb.collection('inspirations').update(id, patch));
+	} catch (e) {
+		if ((e as { status?: number }).status === 404) throw new Error('Η εικόνα δεν βρέθηκε.');
+		throw new Error(`Αποτυχία αποθήκευσης: ${msg(e)}`);
+	}
 }
 
-/** Delete the row, then its image file. Throws when it is not the caller's. */
-export async function deleteInspiration(sb: SupabaseClient, id: string): Promise<void> {
-	const { data, error } = await sb.from('inspirations').delete().eq('id', id).select('image_path');
-	if (error) throw new Error(`Αποτυχία διαγραφής: ${error.message}`);
-	if (!data?.length) throw new Error('Η εικόνα δεν βρέθηκε.');
-	// The row is gone; a leftover file is only wasted space, so a storage error is not fatal.
-	await sb.storage.from(BUCKET).remove([data[0].image_path]);
+/** Delete the row; PocketBase removes its image file. Throws when it is not the caller's. */
+export async function deleteInspiration(pb: PocketBase, id: string): Promise<void> {
+	try {
+		await pb.collection('inspirations').delete(id);
+	} catch (e) {
+		if ((e as { status?: number }).status === 404) throw new Error('Η εικόνα δεν βρέθηκε.');
+		throw new Error(`Αποτυχία διαγραφής: ${msg(e)}`);
+	}
+}
+
+/** Append text to an inspiration's note on the server (atomic). */
+export async function appendNote(pb: PocketBase, id: string, text: string): Promise<{ id: string; note: string }> {
+	return pb.send(`/api/mb/inspirations/${encodeURIComponent(id)}/note`, { method: 'POST', body: { text } });
+}
+
+/** Sign up with an invite code, then sign in. */
+export async function signUp(pb: PocketBase, email: string, password: string, invite: string) {
+	try {
+		await pb.collection('users').create({ email, password, passwordConfirm: password, invite: invite.trim() });
+	} catch (e) {
+		throw new Error(msg(e));
+	}
+	await pb.collection('users').authWithPassword(email, password);
+}
+
+/** Should a realtime row replace the shown one? Only when it is strictly newer, so a late echo of
+ *  an older save never overwrites a newer local state. */
+export function isNewer(incoming: Pick<Inspiration, 'updated_at'>, shown: Pick<Inspiration, 'updated_at'> | undefined) {
+	return !shown || incoming.updated_at > shown.updated_at;
 }

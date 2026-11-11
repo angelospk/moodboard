@@ -1,15 +1,11 @@
-import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
+import type PocketBase from 'pocketbase';
+import type { RecordModel } from 'pocketbase';
 
 declare global {
 	namespace App {
-		interface Locals {
-			supabase: SupabaseClient;
-			safeGetSession: () => Promise<{ session: Session | null; user: User | null }>;
-		}
 		interface PageData {
-			session: Session | null;
-			supabase: SupabaseClient;
-			user: User | null;
+			pb: PocketBase;
+			user: RecordModel | null;
 		}
 	}
 }

@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import type { SupabaseClient } from '@supabase/supabase-js';
+	import type PocketBase from 'pocketbase';
 	import { LEVELS, type Level, type Project } from '#lib/types.js';
 	import { LEVEL_LABELS } from '#lib/tags.js';
 	import { checkImage, cleanTags, createInspiration } from '#lib/inspirations.js';
 	import TagInput from './TagInput.svelte';
 
 	interface Props {
-		supabase: SupabaseClient;
+		pb: PocketBase;
 		userId: string;
 		projects: Project[];
 		/** Image to preload (e.g. pasted on the map). */
@@ -23,7 +23,7 @@
 		onsaved: (id: string) => void;
 	}
 	let {
-		supabase,
+		pb,
 		userId,
 		projects,
 		file = null,
@@ -132,7 +132,7 @@
 		busy = true;
 		error = '';
 		try {
-			const { id } = await createInspiration(supabase, userId, f, {
+			const { id } = await createInspiration(pb, userId, f, {
 				project_id: projectId || null,
 				note,
 				tags,

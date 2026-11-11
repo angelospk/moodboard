@@ -11,8 +11,13 @@
 		copyInspiration,
 		createInspiration,
 		deleteInspiration,
-		updateInspiration
+		getInspiration,
+		updateInspiration,
+		imageUrls,
+		toInspiration
 	} from '#lib/inspirations.js';
+	import { applyEvent, subscribeLive } from '#lib/realtime.js';
+	import type { RecordModel, RecordSubscription } from 'pocketbase';
 	import InspirationPanel from '#lib/components/InspirationPanel.svelte';
 	import Board, { type BoardContext, type Spot } from './Board.svelte';
 	import BoardHeader from './BoardHeader.svelte';
@@ -32,7 +37,6 @@
 	const PANEL_W = 400;
 	const MOBILE = 640;
 	const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/avif';
-	const ROW_FIELDS = 'id, project_id, tags, level, note, image_path, regions, source_url, source_title, created_at';
 
 	const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -45,10 +49,13 @@
 	/** Signed URL per image path, kept stable across reloads so images do not re-download. */
 	const urlCache = new Map<string, { url: string; at: number }>();
 
+	/** Image URLs of rows that arrived live (added on another device), by image path. */
+	let liveUrls = $state.raw<Record<string, string>>({});
+
 	function urlOf(i: Inspiration): string | null {
 		const local = localUrls[i.id];
 		if (local) return local;
-		const fresh = data.urls[i.image_path];
+		const fresh = data.urls[i.image_path] ?? liveUrls[i.image_path];
 		const hit = urlCache.get(i.image_path);
 		// Signed URLs live an hour; take the newer one after 50 minutes.
 		if (hit && Date.now() - hit.at < 50 * 60_000) return hit.url;
@@ -214,8 +221,7 @@
 	}
 
 	async function fetchRow(id: string, fallback: Inspiration): Promise<Inspiration> {
-		const { data: row } = await data.supabase.from('inspirations').select(ROW_FIELDS).eq('id', id).maybeSingle();
-		return row ? ({ ...fallback, ...(row as Partial<Inspiration>) } as Inspiration) : fallback;
+		return (await getInspiration(data.pb, id)) ?? fallback;
 	}
 
 	/** Save each image at once, pinned where it was added, then open the first in the panel. */
@@ -241,7 +247,7 @@
 			const busy = toast({ text: label, tone: 'busy' }, 0);
 			try {
 				checkImage(file);
-				const { id } = await createInspiration(data.supabase, userId, file, {
+				const { id } = await createInspiration(data.pb, userId, file, {
 					project_id: projectId,
 					tags,
 					level: level || null
@@ -262,7 +268,7 @@
 				});
 				localUrls = { ...localUrls, [id]: URL.createObjectURL(file) };
 				board?.place(id, x, y);
-				items = [row, ...items];
+				items = [row, ...items.filter((i) => i.id !== id)];
 				first ??= id;
 				added++;
 			} catch (err) {
@@ -322,7 +328,7 @@
 		const next = [tag, ...prev.filter((t) => t !== tag)];
 		setItem({ ...item, tags: next });
 		try {
-			setItem(await updateInspiration(data.supabase, item.id, { tags: next }));
+			setItem(await updateInspiration(data.pb, item.id, { tags: next }));
 			toast({ text: `+ #${tag}`, action: { label: 'Αναίρεση', run: () => void undoRezone(item.id, tag, prev, from) } }, 5000);
 		} catch (err) {
 			setItem(item);
@@ -340,7 +346,7 @@
 		setItem({ ...cur, tags });
 		board?.restore(id, from);
 		try {
-			setItem(await updateInspiration(data.supabase, id, { tags }));
+			setItem(await updateInspiration(data.pb, id, { tags }));
 		} catch (err) {
 			setItem(cur);
 			toast({ text: errText(err, 'Η αναίρεση απέτυχε'), tone: 'error' }, 6000);
@@ -351,7 +357,7 @@
 		const userId = data.userId;
 		if (!userId) return;
 		try {
-			await copyInspiration(data.supabase, userId, id, projectId);
+			await copyInspiration(data.pb, userId, id, projectId);
 			onCopied(projectId ? (data.projects.find((p) => p.id === projectId)?.name ?? null) : null);
 		} catch (err) {
 			toast({ text: errText(err, 'Η αντιγραφή απέτυχε'), tone: 'error' }, 6000);
@@ -372,7 +378,7 @@
 
 	async function remove(id: string) {
 		try {
-			await deleteInspiration(data.supabase, id);
+			await deleteInspiration(data.pb, id);
 			onDeleted(id);
 		} catch (err) {
 			toast({ text: errText(err, 'Η διαγραφή απέτυχε'), tone: 'error' }, 6000);
@@ -478,6 +484,51 @@
 		e.preventDefault();
 	}
 
+	// ------------------------------------------------------------ Live (SSE)
+
+	/** Fold a change made elsewhere (another tab or device) into the board. Own saves come back too;
+	 *  applyEvent ignores those unless they are newer than what is shown. */
+	async function onLive(e: RecordSubscription<RecordModel>) {
+		const next = applyEvent(items, e);
+		if (next === items) return;
+		if (e.action === 'create' && !data.urls[e.record.image] && !liveUrls[e.record.image]) {
+			try {
+				const urls = await imageUrls(data.pb, [toInspiration(e.record)]);
+				liveUrls = { ...liveUrls, ...urls };
+			} catch {
+				/* no thumbnail until the next reload */
+			}
+		}
+		items = applyEvent(items, e); // again: items may have changed while the URL loaded
+		if (e.action === 'delete' && selectedId === e.record.id) select(null);
+	}
+
+	let projectsTimer: ReturnType<typeof setTimeout> | undefined;
+	onMount(() => {
+		let off: (() => Promise<void>) | null = null;
+		let gone = false;
+		subscribeLive(data.pb, {
+			inspiration: (e) => void onLive(e),
+			// Projects change rarely: reload the data (names, counts) once a burst settles.
+			project: () => {
+				clearTimeout(projectsTimer);
+				projectsTimer = setTimeout(() => void invalidate('moodboard:data'), 300);
+			}
+		})
+			.then((u) => {
+				if (gone) void u();
+				else off = u;
+			})
+			.catch(() => {
+				/* live updates are a bonus: the board works without them */
+			});
+		return () => {
+			gone = true;
+			clearTimeout(projectsTimer);
+			void off?.();
+		};
+	});
+
 	// ------------------------------------------------------------- Lifecycle
 
 	onMount(() => {
@@ -547,7 +598,7 @@
 		{:else}
 			<Board
 				bind:this={board}
-				supabase={data.supabase}
+				pb={data.pb}
 				items={filtered}
 				{urlOf}
 				{colors}
@@ -627,7 +678,7 @@
 			<div class="panelwrap">
 				<InspirationPanel
 					bind:this={panel}
-					supabase={data.supabase}
+					pb={data.pb}
 					userId={data.userId}
 					item={selected}
 					imageUrl={urlOf(selected)}

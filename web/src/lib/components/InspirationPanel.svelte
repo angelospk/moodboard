@@ -1,6 +1,6 @@
 <script lang="ts">
 	// CONTRACT (fixed). Inline editor for one inspiration with autosave (see DESIGN.md "Inspiration panel").
-	import type { SupabaseClient } from '@supabase/supabase-js';
+	import type PocketBase from 'pocketbase';
 	import type { Inspiration, Project } from '#lib/types.js';
 	import { LEVELS, type Level, type Region } from '#lib/types.js';
 	import { LEVEL_LABELS } from '#lib/tags.js';
@@ -12,7 +12,7 @@
 	import { goto } from '$app/navigation';
 	import { Autosaver, type SaveState } from '#lib/autosave.js';
 	interface Props {
-		supabase: SupabaseClient;
+		pb: PocketBase;
 		userId: string;
 		item: Inspiration;
 		imageUrl: string | null;
@@ -33,7 +33,7 @@
 		onnext?: () => void;
 	}
 	let {
-		supabase,
+		pb,
 		userId,
 		item,
 		imageUrl,
@@ -66,7 +66,7 @@
 
 	// One saver for the panel's lifetime: it keeps unsaved edits per item id across item switches.
 	const saver = new Autosaver<EditableFields>(
-		(target, f) => updateInspiration(supabase, target, f).then((row) => onsaved(row)),
+		(target, f) => updateInspiration(pb, target, f).then((row) => onsaved(row)),
 		700,
 		(s, e) => {
 			status = s;
@@ -141,7 +141,7 @@
 		try {
 			// The copy reads the stored row, so store the latest edits first.
 			if (!(await saver.flush())) throw new Error('Οι αλλαγές δεν αποθηκεύτηκαν ακόμα. Πάτα «Ξανά».');
-			await copyInspiration(supabase, userId, target, projectId);
+			await copyInspiration(pb, userId, target, projectId);
 			oncopied(projectId ? (projects.find((p) => p.id === projectId)?.name ?? null) : null);
 		} catch (err) {
 			actionError = err instanceof Error ? err.message : String(err);
@@ -157,7 +157,7 @@
 		actionError = '';
 		try {
 			await saver.flush();
-			await deleteInspiration(supabase, target);
+			await deleteInspiration(pb, target);
 			saver.discard(target);
 			ondeleted(target);
 		} catch (err) {
