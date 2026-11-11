@@ -496,7 +496,8 @@
 		if (e.action === 'delete' && selectedId === e.record.id) select(null);
 		if (e.action === 'create' && !data.urls[e.record.image] && !liveUrls[e.record.image]) {
 			try {
-				liveUrls = { ...liveUrls, ...(await imageUrls(data.pb, [toInspiration(e.record)])) };
+				const urls = await imageUrls(data.pb, [toInspiration(e.record)]);
+				liveUrls = { ...liveUrls, ...urls }; // read liveUrls after the await: parallel creates
 			} catch {
 				/* no thumbnail until the next reload */
 			}
