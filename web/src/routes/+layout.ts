@@ -8,6 +8,8 @@ export const prerender = false;
 
 export const load: LayoutLoad = async ({ url, depends }) => {
 	depends('app:auth');
+	// /s/<token>: a read-only shared board. It never uses the visitor's session, so do not touch it.
+	if (url.pathname.startsWith('/s/')) return { pb, user: null };
 	let user = pb.authStore.record;
 
 	if (user) {
@@ -23,8 +25,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		}
 	}
 
-	// /s/<token>: a read-only shared board, open without an account.
-	if (!user && url.pathname !== '/login' && !url.pathname.startsWith('/s/')) {
+	if (!user && url.pathname !== '/login') {
 		redirect(307, '/login?next=' + encodeURIComponent(url.pathname + url.search));
 	}
 

@@ -2,6 +2,7 @@ package mb_test
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -63,18 +64,21 @@ func TestShareReadOnlyView(t *testing.T) {
 		t.Fatalf("save positions: %d %s", code, out)
 	}
 	_, _ = e.json("POST", "/api/mb/positions", f.aTok, map[string]any{"scope": f.projB, "positions": []map[string]any{{"key": "i:" + f.insB, "x": 1, "y": 2}}})
+	// Stale keys in board A's layout: a card that moved to B, a tag no longer on the board.
+	_, _ = e.json("POST", "/api/mb/positions", f.aTok, map[string]any{"scope": f.projA, "positions": []map[string]any{
+		{"key": "i:" + f.insX, "x": 3, "y": 4}, {"key": "t:παλιό-μυστικό", "x": 5, "y": 6}, {"key": "t:ξύλο", "x": 7, "y": 8}}})
 
 	tok := f.token(t, f.projA)
 	code, out := e.req("GET", "/api/mb/shared/"+tok, "", nil, "")
 	if code != 200 {
 		t.Fatalf("anonymous view: %d %s", code, out)
 	}
-	for _, want := range []string{"Σπίτι Α", "φως Α", "ξύλο", "γωνία", f.insA, `"x":10`} {
+	for _, want := range []string{"Σπίτι Α", "φως Α", "ξύλο", "γωνία", f.insA, `"x":10`, `"t:ξύλο"`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("shared view lacks %q: %s", want, out)
 		}
 	}
-	for _, leak := range []string{"Μυστικό Β", "κρυφό Β", f.insB, f.insX, "χωρίς project", "alice@x.gr", "user_id", "private.example", f.projB} {
+	for _, leak := range []string{"Μυστικό Β", "κρυφό Β", f.insB, f.insX, "χωρίς project", "alice@x.gr", "user_id", "private.example", f.projB, "παλιό-μυστικό"} {
 		if strings.Contains(out, leak) {
 			t.Fatalf("shared view leaks %q: %s", leak, out)
 		}
@@ -82,8 +86,13 @@ func TestShareReadOnlyView(t *testing.T) {
 
 	// Images: only board A's, through the token; thumbnails work.
 	for _, u := range []string{"/api/mb/shared/" + tok + "/files/" + f.insA, "/api/mb/shared/" + tok + "/files/" + f.insA + "?thumb=480x0"} {
-		if code, body := e.req("GET", u, "", nil, ""); code != 200 || !strings.HasPrefix(body, "\x89PNG") {
-			t.Fatalf("%s: want png, got %d %.60q", u, code, body)
+		w := e.raw("GET", u)
+		if w.Code != 200 || !strings.HasPrefix(w.Body.String(), "\x89PNG") {
+			t.Fatalf("%s: want png, got %d %.60q", u, w.Code, w.Body.String())
+		}
+		// Every reuse revalidates, so a revoked link stops serving at once.
+		if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-cache") && !strings.Contains(cc, "no-store") {
+			t.Fatalf("image Cache-Control %q", cc)
 		}
 	}
 	for _, other := range []string{f.insB, f.insX, "nonexistent123"} {
@@ -215,4 +224,10 @@ func TestShareOwnershipAndRevoke(t *testing.T) {
 	if code, _ := e.req("GET", "/api/mb/shared/"+tok3, "", nil, ""); code != 404 {
 		t.Fatalf("link of deleted board: want 404, got %d", code)
 	}
+}
+
+func (e *env) raw(method, url string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	e.mux.ServeHTTP(w, httptest.NewRequest(method, url, nil))
+	return w
 }

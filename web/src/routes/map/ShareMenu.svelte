@@ -25,9 +25,11 @@
 		}
 	}
 
+	const load = () => run(async () => void (status = await shareStatus(pb, projectId)));
+
 	function toggle() {
 		open = !open;
-		if (open && !status) void run(async () => void (status = await shareStatus(pb, projectId)));
+		if (open && !status) void load();
 	}
 
 	const make = () =>
@@ -74,7 +76,9 @@
 				<p class="hint">Υπάρχει ενεργός σύνδεσμος. Για να τον αντιγράψεις ξανά, φτιάξε νέο (ο παλιός σταματά).</p>
 			{/if}
 			<div class="row">
-				{#if status === null}
+				{#if status === null && !busy}
+					<button type="button" class="btn" onclick={load}>Δοκίμασε ξανά</button>
+				{:else if status === null}
 					<span class="hint">Φόρτωση…</span>
 				{:else}
 					<button type="button" class="btn primary" disabled={busy} onclick={make}>
@@ -150,6 +154,15 @@
 	@media (max-width: 900px) {
 		.lbl {
 			display: none;
+		}
+	}
+	@media (max-width: 640px) {
+		.pop {
+			position: fixed;
+			top: 64px;
+			left: 16px;
+			right: 16px;
+			width: auto;
 		}
 	}
 </style>

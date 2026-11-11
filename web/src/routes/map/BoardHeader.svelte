@@ -107,8 +107,8 @@
 		</div>
 	</nav>
 
+	{@render actions?.()}
 	<div class="right">
-		{@render actions?.()}
 		{@render searchField('board-search')}
 		<div class="wide">{@render levelSeg()}</div>
 		<select class="narrow" bind:value={level} aria-label="Επίπεδο">

@@ -30,8 +30,23 @@ func bindShare(se *core.ServeEvent) {
 	own.POST("", handleShareCreate)
 	own.DELETE("", handleShareRevoke)
 
-	se.Router.GET("/api/mb/shared/{token}", handleSharedBoard)
-	se.Router.GET("/api/mb/shared/{token}/files/{id}", handleSharedFile)
+	shared := se.Router.Group("/api/mb/shared/{token}")
+	shared.BindFunc(redactShareToken)
+	shared.GET("", handleSharedBoard)
+	shared.GET("/files/{id}", handleSharedFile)
+}
+
+// redactShareToken hides the raw token from the request log, which reads the URL after the handler.
+func redactShareToken(e *core.RequestEvent) error {
+	err := e.Next()
+	u := *e.Request.URL
+	u.Path = "/api/mb/shared/(token)"
+	if id := e.Request.PathValue("id"); id != "" {
+		u.Path += "/files/" + id
+	}
+	u.RawPath = ""
+	e.Request.URL = &u
+	return err
 }
 
 func hashShareToken(tok string) string {
@@ -153,7 +168,12 @@ func handleSharedBoard(e *core.RequestEvent) error {
 		return e.InternalServerError("", err)
 	}
 	items := make([]map[string]any, 0, len(rows))
+	nodes := map[string]bool{} // position keys of what is on this board now
 	for _, r := range rows {
+		nodes["i:"+r.Id] = true
+		for _, t := range stringList(r.Get("tags")) {
+			nodes["t:"+t] = true
+		}
 		items = append(items, map[string]any{
 			"id":         r.Id,
 			"image":      r.GetString("image"),
@@ -173,6 +193,9 @@ func handleSharedBoard(e *core.RequestEvent) error {
 	}
 	positions := make(map[string]map[string]float64, len(pos))
 	for _, r := range pos {
+		if !nodes[r.GetString("node_key")] {
+			continue // a card that moved away or an old tag: not part of this board
+		}
 		positions[r.GetString("node_key")] = map[string]float64{"x": r.GetFloat("x"), "y": r.GetFloat("y")}
 	}
 	e.Response.Header().Set("Cache-Control", "no-store")
@@ -206,8 +229,8 @@ func handleSharedFile(e *core.RequestEvent) error {
 			key, name = thumb, shareThumb+"_"+name
 		}
 	}
-	// Short private cache: a revoked link stops working in shared caches at once and in browsers soon.
-	e.Response.Header().Set("Cache-Control", "private, max-age=3600")
+	// Browsers may keep the file but must ask again on each use (a cheap 304), so a revoked link stops at once.
+	e.Response.Header().Set("Cache-Control", "private, no-cache")
 	e.Response.Header().Del("X-Frame-Options")
 	if err := fsys.Serve(e.Response, e.Request, key, name); err != nil {
 		return sharedNotFound(e)
