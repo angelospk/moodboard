@@ -8,6 +8,8 @@ export const prerender = false;
 
 export const load: LayoutLoad = async ({ url, depends }) => {
 	depends('app:auth');
+	// /s/<project id>: a public, read-only board. It never uses the visitor's session, so do not touch it.
+	if (url.pathname.startsWith('/s/')) return { pb, user: null };
 	let user = pb.authStore.record;
 
 	if (user) {

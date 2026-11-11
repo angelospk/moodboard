@@ -38,6 +38,7 @@ func Register(app core.App) {
 		g.POST("/inspirations/{id}/copy", handleCopy)
 		g.POST("/positions", handleSavePositions)
 		g.POST("/positions/delete", handleDeletePositions)
+		bindShare(se)
 		bindMCP(se)
 		bindOAuth(se)
 		return se.Next()

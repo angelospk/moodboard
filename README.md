@@ -55,6 +55,13 @@ lasts one hour.
 | `POST /api/mb/positions` | upsert node positions of one map |
 | `POST /api/mb/positions/delete` | forget positions (one scope or all) |
 
+**Public boards** (`server/mb/share.go`, no account): when a project has `public` on, anyone with
+`/s/<project id>` sees it. `GET /api/mb/public/{project}` returns the board (name, description,
+images, saved layout) and `GET /api/mb/public/{project}/files/{id}` serves its images; both answer
+404 for a private board. The owner picks what shows in «Κοινοποίηση» (fields `share_hide_notes`,
+`share_hide_regions`, `share_hide_tags`, `share_show_sources` on `projects`; default: notes, region
+notes, tags and level shown, sources hidden).
+
 **Live map.** The map page subscribes to `inspirations` and `projects` over PocketBase realtime
 (SSE). A change from another tab or device shows at once; an update replaces the shown row only
 when its `updated_at` is newer, so a late echo of an older save cannot undo a newer one
