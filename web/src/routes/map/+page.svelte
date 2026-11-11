@@ -256,7 +256,7 @@
 			board?.place(id, x, y);
 			const row: Inspiration = {
 				id, project_id: projectId, image_path: '', source_url: null, source_title: null, image_url: null,
-				crop: null, note: '', tags, level: lvl, regions: [], created_at: now, updated_at: now
+				crop: null, note: '', tags, level: lvl, regions: [], suggestion: null, created_at: now, updated_at: now
 			};
 			pendingRows.set(id, row);
 			items = [row, ...items];

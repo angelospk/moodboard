@@ -2,7 +2,7 @@
 // the collection API rules and the server hooks limit every call to the user's own rows and files.
 import type PocketBase from 'pocketbase';
 import type { RecordModel } from 'pocketbase';
-import type { Crop, Inspiration, Project } from '#lib/types.js';
+import { LEVELS, type Crop, type Inspiration, type Project, type Suggestion } from '#lib/types.js';
 
 export const IMAGE_EXT: Record<string, string> = {
 	'image/png': 'png',
@@ -52,9 +52,22 @@ export function toInspiration(r: RecordModel): Inspiration {
 		tags: Array.isArray(r.tags) ? r.tags : [],
 		level: r.level || null,
 		regions: Array.isArray(r.regions) ? r.regions : [],
+		suggestion: toSuggestion(r.suggestion),
 		created_at: r.created_at,
 		updated_at: r.updated_at
 	};
+}
+
+function toSuggestion(v: unknown): Suggestion | null {
+	const s = v as Partial<Suggestion> | null;
+	if (!s || typeof s !== 'object' || (s.level != null && !LEVELS.includes(s.level))) return null;
+	const tags = Array.isArray(s.tags) ? s.tags.filter((t): t is string => typeof t === 'string') : [];
+	return s.level || tags.length ? { level: s.level || null, tags } : null;
+}
+
+/** The level and tags after accepting a suggestion: its level (if any) and the union of the tags. */
+export function acceptSuggestion(cur: Pick<Inspiration, 'level' | 'tags'>, s: Suggestion): Pick<Inspiration, 'level' | 'tags'> {
+	return { level: s.level ?? cur.level, tags: cleanTags([...cur.tags, ...s.tags]) };
 }
 
 function toCrop(v: unknown): Crop | null {
@@ -297,7 +310,7 @@ export async function loadPositions(pb: PocketBase, scope: string): Promise<Reco
 	return out;
 }
 
-export type EditableFields = Partial<Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id' | 'crop'>>;
+export type EditableFields = Partial<Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id' | 'crop' | 'suggestion'>>;
 
 /** Save edits to one inspiration and return the updated row. Throws when it is not the caller's. */
 export async function updateInspiration(pb: PocketBase, id: string, fields: EditableFields): Promise<Inspiration> {

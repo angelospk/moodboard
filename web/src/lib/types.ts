@@ -20,6 +20,12 @@ export interface Crop {
 	h: number;
 }
 
+/** Level and tags the user's own AI proposed (MCP tool suggest_labels); applied only on accept. */
+export interface Suggestion {
+	level: Level | null;
+	tags: string[];
+}
+
 export interface Project {
 	id: string;
 	name: string;
@@ -40,6 +46,8 @@ export interface Inspiration {
 	tags: string[];
 	level: Level | null;
 	regions: Region[];
+	/** Pending AI suggestion, or null. */
+	suggestion: Suggestion | null;
 	created_at: string;
 	updated_at: string;
 }
