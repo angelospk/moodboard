@@ -1038,6 +1038,9 @@
 								</span>
 							</div>
 						{/each}
+						{#if item.suggestion}
+							<span class="sugg" title="Πρόταση AI για επίπεδο και tags · άνοιξε την εικόνα για αποδοχή">✦</span>
+						{/if}
 						{#if regions.length && !showBoxes}
 							<span class="rcount" title={`${regions.length} σημεία · πέρασε το ποντίκι για να τα δεις`}>
 								{regions.length}
@@ -1361,6 +1364,21 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		overflow-wrap: anywhere;
+	}
+	.sugg {
+		position: absolute;
+		top: 6px;
+		left: 6px;
+		width: 18px;
+		height: 18px;
+		display: grid;
+		place-items: center;
+		background: var(--raised);
+		color: var(--accent);
+		font-size: 11px;
+		line-height: 1;
+		border-radius: 999px;
+		box-shadow: 0 0 0 1px var(--line);
 	}
 	.rcount {
 		position: absolute;

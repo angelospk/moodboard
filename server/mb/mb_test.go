@@ -380,3 +380,54 @@ func TestImportKeepsIdsAndPassword(t *testing.T) {
 		t.Fatalf("imported row not readable by its owner: %d %s", code, out)
 	}
 }
+
+func TestMCPSuggestLabels(t *testing.T) {
+	e := newEnv(t)
+	alice, aTok := e.user("alice@x.gr")
+	_, bTok := e.user("bob@x.gr")
+	id := func(out string) string {
+		var r struct{ Id string }
+		_ = json.Unmarshal([]byte(out), &r)
+		return r.Id
+	}
+	_, out := e.upload(aTok, map[string]string{"user_id": alice.Id, "note": "bare"})
+	bare := id(out)
+	_, out = e.upload(aTok, map[string]string{"user_id": alice.Id, "tags": `["wood"]`, "level": "detail", "note": "done"})
+	done := id(out)
+
+	call := func(tok, name string, args map[string]any) string {
+		_, out := mcpCall(e, tok, "tools/call", map[string]any{"name": name, "arguments": args})
+		return out
+	}
+	out = call(aTok, "search_inspirations", map[string]any{"unlabeled": true})
+	if !strings.Contains(out, bare) || strings.Contains(out, done) {
+		t.Fatalf("unlabeled filter: %s", out)
+	}
+	if out = call(aTok, "suggest_labels", map[string]any{"id": bare, "level": "huge"}); !strings.Contains(out, `"isError":true`) {
+		t.Fatalf("invalid level accepted: %s", out)
+	}
+	if out = call(aTok, "suggest_labels", map[string]any{"id": bare}); !strings.Contains(out, `"isError":true`) {
+		t.Fatalf("empty suggestion accepted: %s", out)
+	}
+	if out = call(bTok, "suggest_labels", map[string]any{"id": bare, "tags": []string{"x"}}); !strings.Contains(out, `"isError":true`) {
+		t.Fatalf("bob can suggest on alice's row: %s", out)
+	}
+	if out = call(aTok, "suggest_labels", map[string]any{"id": bare, "level": "building", "tags": []string{" Ξύλο ", "ξύλο", "φως"}}); strings.Contains(out, `"isError":true`) {
+		t.Fatalf("suggest_labels: %s", out)
+	}
+	r, _ := e.app.FindRecordById("inspirations", bare)
+	if r.GetString("level") != "" || len(r.GetStringSlice("tags")) != 0 {
+		t.Fatalf("suggestion must not change level/tags: %q %v", r.GetString("level"), r.Get("tags"))
+	}
+	var s struct {
+		Level string   `json:"level"`
+		Tags  []string `json:"tags"`
+	}
+	if err := r.UnmarshalJSONField("suggestion", &s); err != nil || s.Level != "building" || strings.Join(s.Tags, ",") != "ξύλο,φως" {
+		t.Fatalf("stored suggestion: %+v %v", s, err)
+	}
+	// A pending suggestion takes the row off the unlabeled list, so the AI does not redo it.
+	if out = call(aTok, "search_inspirations", map[string]any{"unlabeled": true}); strings.Contains(out, bare) {
+		t.Fatalf("pending row still unlabeled: %s", out)
+	}
+}

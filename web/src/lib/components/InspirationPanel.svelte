@@ -2,9 +2,9 @@
 	// CONTRACT (fixed). Inline editor for one inspiration with autosave (see DESIGN.md "Inspiration panel").
 	import type PocketBase from 'pocketbase';
 	import type { Inspiration, Project } from '#lib/types.js';
-	import { LEVELS, type Level, type Region } from '#lib/types.js';
+	import { LEVELS, type Level, type Region, type Suggestion } from '#lib/types.js';
 	import { LEVEL_LABELS } from '#lib/tags.js';
-	import { copyInspiration, deleteInspiration, updateInspiration, type EditableFields } from '#lib/inspirations.js';
+	import { acceptSuggestion, copyInspiration, deleteInspiration, updateInspiration, type EditableFields } from '#lib/inspirations.js';
 	import TagInput from '#lib/components/TagInput.svelte';
 	import RegionEditor from '#lib/components/RegionEditor.svelte';
 	import RegionList from '#lib/components/RegionList.svelte';
@@ -59,6 +59,7 @@
 	let tags = $state<string[]>([]);
 	let level = $state<Level | null>(null);
 	let regions = $state<Region[]>([]);
+	let suggestion = $state<Suggestion | null>(null);
 	let active = $state<number | null>(null);
 
 	let status = $state<SaveState>('idle');
@@ -83,6 +84,7 @@
 		note = d.note !== undefined ? (d.note ?? '') : (it.note ?? '');
 		tags = [...((d.tags !== undefined ? d.tags : it.tags) ?? [])];
 		level = d.level !== undefined ? d.level : (it.level ?? null);
+		suggestion = d.suggestion !== undefined ? d.suggestion : (it.suggestion ?? null);
 		regions = ((d.regions !== undefined ? d.regions : it.regions) ?? []).map((r) => ({ ...r }));
 	}
 
@@ -130,6 +132,23 @@
 	function setLevel(l: Level) {
 		level = level === l ? null : l;
 		change('level', level);
+	}
+
+	/** Apply the AI suggestion (its level, plus its tags) and clear it, in one autosave. */
+	function accept() {
+		if (!suggestion) return;
+		const next = acceptSuggestion({ level, tags }, suggestion);
+		level = next.level;
+		tags = next.tags;
+		suggestion = null;
+		change('level', level);
+		change('tags', tags);
+		change('suggestion', null);
+	}
+
+	function dismiss() {
+		suggestion = null;
+		change('suggestion', null);
 	}
 
 	async function copyTo(e: Event & { currentTarget: HTMLSelectElement }) {
@@ -252,6 +271,20 @@
 				placeholder="Τι σου αρέσει εδώ;"
 			></textarea>
 		</label>
+
+		{#if suggestion}
+			<div class="suggest" role="group" aria-labelledby="panel-suggest">
+				<span class="lbl" id="panel-suggest">Πρόταση AI</span>
+				<p class="chips">
+					{#if suggestion.level}<span class="chip on">{LEVEL_LABELS[suggestion.level]}</span>{/if}
+					{#each suggestion.tags as t (t)}<span class={['chip', tags.includes(t) && 'have']}>#{t}</span>{/each}
+				</p>
+				<div class="sbtns">
+					<button type="button" class="btn primary" onclick={accept}>Αποδοχή</button>
+					<button type="button" class="btn ghost" onclick={dismiss}>Απόρριψη</button>
+				</div>
+			</div>
+		{/if}
 
 		<div class="field">
 			<label class="lbl" for="panel-tags">Tags</label>
@@ -465,6 +498,27 @@
 		display: grid;
 		gap: 6px;
 		min-width: 0;
+	}
+	.suggest {
+		display: grid;
+		gap: 8px;
+		padding: 10px 12px;
+		background: var(--sunk);
+		border: 1px solid var(--line);
+		border-radius: var(--r-ctl);
+	}
+	.suggest .chips {
+		margin: 0;
+	}
+	.suggest .chip {
+		cursor: default;
+	}
+	.suggest .chip.have {
+		color: var(--faint);
+	}
+	.sbtns {
+		display: flex;
+		gap: 8px;
 	}
 	.lbl {
 		font-size: 12.5px;

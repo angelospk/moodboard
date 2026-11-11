@@ -55,11 +55,12 @@ func jsonResult(v any) (*mcp.CallToolResult, any, error) {
 type (
 	noArgs     struct{}
 	searchArgs struct {
-		Query   string   `json:"query,omitempty" jsonschema:"Words to find in the note or source title"`
-		Project string   `json:"project,omitempty" jsonschema:"Project name or id"`
-		Tags    []string `json:"tags,omitempty" jsonschema:"All of these tags must be present"`
-		Level   string   `json:"level,omitempty" jsonschema:"Scale: urban, building, interior, detail or material"`
-		Limit   int      `json:"limit,omitempty" jsonschema:"1..100, default 20"`
+		Query     string   `json:"query,omitempty" jsonschema:"Words to find in the note or source title"`
+		Project   string   `json:"project,omitempty" jsonschema:"Project name or id"`
+		Tags      []string `json:"tags,omitempty" jsonschema:"All of these tags must be present"`
+		Level     string   `json:"level,omitempty" jsonschema:"Scale: urban, building, interior, detail or material"`
+		Limit     int      `json:"limit,omitempty" jsonschema:"1..100, default 20"`
+		Unlabeled bool     `json:"unlabeled,omitempty" jsonschema:"Only inspirations with no level or no tags and no pending suggestion"`
 	}
 	idArgs struct {
 		ID string `json:"id" jsonschema:"Inspiration id"`
@@ -72,6 +73,11 @@ type (
 		Level       string   `json:"level,omitempty" jsonschema:"urban, building, interior, detail or material"`
 		SourceURL   string   `json:"source_url,omitempty"`
 		SourceTitle string   `json:"source_title,omitempty"`
+	}
+	suggestArgs struct {
+		ID    string   `json:"id" jsonschema:"Inspiration id"`
+		Level string   `json:"level,omitempty" jsonschema:"urban, building, interior, detail or material"`
+		Tags  []string `json:"tags,omitempty" jsonschema:"Short lowercase tags in the user's language, at most 10"`
 	}
 	noteArgs struct {
 		ID   string `json:"id" jsonschema:"Inspiration id"`
@@ -120,6 +126,20 @@ func NewMCPServer(app core.App, user *core.Record) *mcp.Server {
 			return jsonResult(publicRow(r, ""))
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "suggest_labels", Title: "Suggest level and tags",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), IdempotentHint: true, OpenWorldHint: ptr(false)},
+		Description: "Propose a level and tags for an inspiration after looking at its image (get_inspiration). " +
+			"They are stored as a suggestion the user accepts or dismisses in the web app; the current level and tags do not change. " +
+			"A new suggestion replaces an older one. Find work with search_inspirations {unlabeled: true}. " +
+			"Reuse the user's existing tags where they fit."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a suggestArgs) (*mcp.CallToolResult, any, error) {
+			r, err := suggestLabels(app, uid, a)
+			if err != nil {
+				return nil, nil, err
+			}
+			return jsonResult(publicRow(r, ""))
+		})
+
 	mcp.AddTool(s, &mcp.Tool{Name: "add_note", Title: "Add note",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), OpenWorldHint: ptr(false)},
 		Description: "Append a thought to an inspiration's note. Existing text is kept."},
@@ -142,6 +162,9 @@ func publicRow(r *core.Record, project string) map[string]any {
 		"tags": stringList(r.Get("tags")), "level": nilIfEmpty(r.GetString("level")), "regions": r.Get("regions"),
 		"source_url": nilIfEmpty(r.GetString("source_url")), "source_title": nilIfEmpty(r.GetString("source_title")),
 		"created_at": r.GetString("created_at"),
+	}
+	if sg := r.Get("suggestion"); hasSuggestion(r) {
+		row["suggestion"] = sg
 	}
 	if project != "" {
 		row["project"] = project
@@ -240,7 +263,7 @@ func searchInspirations(app core.App, uid string, a searchArgs) ([]map[string]an
 	out := []map[string]any{}
 	for _, r := range rs {
 		have := stringList(r.Get("tags"))
-		if !containsAll(have, want) {
+		if !containsAll(have, want) || a.Unlabeled && (hasSuggestion(r) || r.GetString("level") != "" && len(have) > 0) {
 			continue
 		}
 		pid := r.GetString("project_id")
@@ -345,5 +368,35 @@ func saveInspiration(ctx context.Context, app core.App, uid string, a saveArgs, 
 	r.Set("regions", []any{})
 	r.Set("source_url", src)
 	r.Set("source_title", a.SourceTitle)
+	return r, app.Save(r)
+}
+
+// hasSuggestion reports a pending suggestion (the field is null or {} when there is none).
+func hasSuggestion(r *core.Record) bool {
+	var s struct {
+		Level string   `json:"level"`
+		Tags  []string `json:"tags"`
+	}
+	return r.UnmarshalJSONField("suggestion", &s) == nil && (s.Level != "" || len(s.Tags) > 0)
+}
+
+func suggestLabels(app core.App, uid string, a suggestArgs) (*core.Record, error) {
+	if a.Level != "" && !slices.Contains(migrations.Levels, a.Level) {
+		return nil, fmt.Errorf("invalid level: %s", a.Level)
+	}
+	tags := CleanTags(a.Tags)
+	if len(tags) > 10 {
+		tags = tags[:10]
+	}
+	if a.Level == "" && len(tags) == 0 {
+		return nil, errors.New("give a level or at least one tag")
+	}
+	r, err := app.FindRecordById("inspirations", a.ID)
+	if err != nil || r.GetString("user_id") != uid {
+		return nil, fmt.Errorf("inspiration not found: %s", a.ID)
+	}
+	r.Set("suggestion", map[string]any{"level": nilIfEmpty(a.Level), "tags": tags})
+	// Write only this field, so an autosave from the web app between the read and the save is kept.
+	r.IgnoreUnchangedFields(true)
 	return r, app.Save(r)
 }

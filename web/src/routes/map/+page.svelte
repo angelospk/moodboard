@@ -256,7 +256,7 @@
 			board?.place(id, x, y);
 			const row: Inspiration = {
 				id, project_id: projectId, image_path: '', source_url: null, source_title: null, image_url: null,
-				crop: null, note: '', tags, level: lvl, regions: [], created_at: now, updated_at: now
+				crop: null, note: '', tags, level: lvl, regions: [], suggestion: null, created_at: now, updated_at: now
 			};
 			pendingRows.set(id, row);
 			items = [row, ...items];
@@ -446,8 +446,8 @@
 	function onPanelSaved(row: Inspiration) {
 		const cur = items.find((i) => i.id === row.id);
 		if (!cur) return;
-		const { note, tags, level, regions, project_id, updated_at } = row;
-		setItem({ ...cur, note, tags, level, regions, project_id, updated_at });
+		const { note, tags, level, regions, project_id, suggestion, updated_at } = row;
+		setItem({ ...cur, note, tags, level, regions, project_id, suggestion, updated_at });
 	}
 
 	/** The card goes at once; if the server refuses, it comes back. */
