@@ -446,8 +446,8 @@
 	function onPanelSaved(row: Inspiration) {
 		const cur = items.find((i) => i.id === row.id);
 		if (!cur) return;
-		const { note, tags, level, regions, project_id, updated_at } = row;
-		setItem({ ...cur, note, tags, level, regions, project_id, updated_at });
+		const { note, tags, level, regions, project_id, suggestion, updated_at } = row;
+		setItem({ ...cur, note, tags, level, regions, project_id, suggestion, updated_at });
 	}
 
 	/** The card goes at once; if the server refuses, it comes back. */

@@ -396,5 +396,7 @@ func suggestLabels(app core.App, uid string, a suggestArgs) (*core.Record, error
 		return nil, fmt.Errorf("inspiration not found: %s", a.ID)
 	}
 	r.Set("suggestion", map[string]any{"level": nilIfEmpty(a.Level), "tags": tags})
+	// Write only this field, so an autosave from the web app between the read and the save is kept.
+	r.IgnoreUnchangedFields(true)
 	return r, app.Save(r)
 }
