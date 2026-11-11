@@ -71,12 +71,7 @@ if (Test-Path $app) {
 	try {
 		Move-Item -Path $app -Destination $old -ErrorAction Stop
 	} catch {
-		# The folder is locked (e.g. Chrome holds a file): copy the new files over it instead, so the
-		# update still lands. Stale files may stay, but nothing in the manifest points at them.
-		try {
-			Copy-Item -Path (Join-Path $appNew '*') -Destination $app -Recurse -Force -ErrorAction Stop
-			Set-Content -Path $shaFile -Value $sha -Encoding ASCII
-		} catch {}
+		# Locked folder: keep the working version; the next hourly run tries again.
 		Remove-Item $appNew -Recurse -Force -ErrorAction SilentlyContinue
 		Remove-Item $zip -Force -ErrorAction SilentlyContinue
 		exit 0

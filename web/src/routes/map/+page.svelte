@@ -489,18 +489,18 @@
 	/** Fold a change made elsewhere (another tab or device) into the board. Own saves come back too;
 	 *  applyEvent ignores those unless they are newer than what is shown. */
 	async function onLive(e: RecordSubscription<RecordModel>) {
+		// Apply first, then fetch a thumbnail: a delete that arrives meanwhile must not be undone.
 		const next = applyEvent(items, e);
 		if (next === items) return;
+		items = next;
+		if (e.action === 'delete' && selectedId === e.record.id) select(null);
 		if (e.action === 'create' && !data.urls[e.record.image] && !liveUrls[e.record.image]) {
 			try {
-				const urls = await imageUrls(data.pb, [toInspiration(e.record)]);
-				liveUrls = { ...liveUrls, ...urls };
+				liveUrls = { ...liveUrls, ...(await imageUrls(data.pb, [toInspiration(e.record)])) };
 			} catch {
 				/* no thumbnail until the next reload */
 			}
 		}
-		items = applyEvent(items, e); // again: items may have changed while the URL loaded
-		if (e.action === 'delete' && selectedId === e.record.id) select(null);
 	}
 
 	let projectsTimer: ReturnType<typeof setTimeout> | undefined;
