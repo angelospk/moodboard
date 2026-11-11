@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
@@ -30,22 +32,30 @@ func bindShare(se *core.ServeEvent) {
 	own.POST("", handleShareCreate)
 	own.DELETE("", handleShareRevoke)
 
-	shared := se.Router.Group("/api/mb/shared/{token}")
-	shared.BindFunc(redactShareToken)
-	shared.GET("", handleSharedBoard)
-	shared.GET("/files/{id}", handleSharedFile)
+	se.Router.GET(sharedPrefix+"{token}", handleSharedBoard)
+	se.Router.GET(sharedPrefix+"{token}/files/{id}", handleSharedFile)
+	// Just inside the activity logger, so every outcome (429, 404, 405) is logged without the token.
+	se.Router.Bind(&hook.Handler[*core.RequestEvent]{
+		Id:       "mbRedactShareToken",
+		Priority: apis.DefaultActivityLoggerMiddlewarePriority + 1,
+		Func:     redactShareToken,
+	})
 }
+
+const sharedPrefix = "/api/mb/shared/"
 
 // redactShareToken hides the raw token from the request log, which reads the URL after the handler.
 func redactShareToken(e *core.RequestEvent) error {
 	err := e.Next()
-	u := *e.Request.URL
-	u.Path = "/api/mb/shared/(token)"
-	if id := e.Request.PathValue("id"); id != "" {
-		u.Path += "/files/" + id
+	if rest, ok := strings.CutPrefix(e.Request.URL.Path, sharedPrefix); ok {
+		u := *e.Request.URL
+		u.Path = sharedPrefix + "(token)"
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			u.Path += rest[i:]
+		}
+		u.RawPath = ""
+		e.Request.URL = &u
 	}
-	u.RawPath = ""
-	e.Request.URL = &u
 	return err
 }
 
