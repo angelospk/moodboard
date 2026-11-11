@@ -14,7 +14,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
@@ -42,7 +41,7 @@ func bindMCP(se *core.ServeEvent) {
 		ctx := context.WithValue(e.Request.Context(), ctxKey{}, e.Auth)
 		h.ServeHTTP(e.Response, e.Request.WithContext(ctx))
 		return nil
-	}).Bind(apis.RequireAuth("users"))
+	}).BindFunc(mcpChallenge)
 }
 
 func jsonResult(v any) (*mcp.CallToolResult, any, error) {

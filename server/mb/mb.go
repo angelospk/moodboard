@@ -35,8 +35,11 @@ func Register(app core.App) {
 		g.POST("/positions", handleSavePositions)
 		g.POST("/positions/delete", handleDeletePositions)
 		bindMCP(se)
+		bindOAuth(se)
 		return se.Next()
 	})
+
+	app.Cron().MustAdd("mbOAuthCleanup", "17 * * * *", func() { cleanupOAuth(app) })
 }
 
 // checkInvite lets a user sign up only with a valid invite code ("invite" in the body).

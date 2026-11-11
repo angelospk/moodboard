@@ -62,8 +62,15 @@ when its `updated_at` is newer, so a late echo of an older save cannot undo a ne
 
 **MCP.** `POST https://moodboard-api.haroldpoi.dev/mcp` (streamable HTTP, stateless) with
 `Authorization: Bearer <token>`. Tools: `list_projects`, `search_inspirations`,
-`get_inspiration`, `save_inspiration`, `add_note`. Make a token on the server:
-`/opt/moodboard/moodboard mcp-token <email> [days] --dir /opt/moodboard/pb_data`.
+`get_inspiration`, `save_inspiration`, `add_note`.
+
+- **claude.ai:** Settings → Connectors → «Add custom connector» → URL
+  `https://moodboard-api.haroldpoi.dev/mcp`. Claude opens our sign-in page; use your Moodboard
+  email and password. This is OAuth 2.1 (`server/mb/oauth.go`): dynamic client registration,
+  PKCE S256, 1-hour access tokens, 30-day refresh tokens that rotate on every use.
+- **Other clients:** make a long-lived token on the server:
+  `/opt/moodboard/moodboard mcp-token <email> [days] --dir /opt/moodboard/pb_data`.
+
 `save_inspiration` downloads only public https images and checks the address it actually
 connects to (no private hosts, no redirects).
 
@@ -107,7 +114,9 @@ cd extension && npm run check
 | Extension | push to `main` under `extension/` → `.github/workflows/extension.yml` → release `ext-v1.0.N` with the zip and the Windows installer |
 | Backend | `server/deploy.sh` (tests, build, copy to the VPS, restart the systemd unit `moodboard`) |
 
-PocketBase backs up its data every night (`pb_data/backups`, last 7 kept).
+PocketBase backs up its data every night at 03:30 UTC (`pb_data/backups`, last 7 kept). On the
+mini PC, the systemd user timer `moodboard-backup.timer` (05:15) runs `server/backup-pull.sh`,
+which copies those zips to `~/backups/moodboard`.
 
 `web/scripts/export-supabase.mjs` and `moodboard import <dir>` moved the data from the earlier
 Supabase version; they are kept for reference.
