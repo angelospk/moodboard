@@ -27,6 +27,7 @@
 	import ContextMenu, { type MenuItem } from './ContextMenu.svelte';
 	import Toasts, { type Toast } from './Toasts.svelte';
 	import Icon from './Icon.svelte';
+	import ShareMenu from './ShareMenu.svelte';
 	import { CARD_GAP, isTyping, searchText, zoneColors } from './board.js';
 	import type { PageProps } from './$types';
 
@@ -668,7 +669,13 @@
 		{colors}
 		{highlight}
 		ontoggletag={toggleTag}
-	/>
+	>
+		{#snippet actions()}
+			{#if project !== 'all' && project !== 'none'}
+				{#key project}<ShareMenu pb={data.pb} projectId={project} />{/key}
+			{/if}
+		{/snippet}
+	</BoardHeader>
 
 	{#if tagStats.length}
 		<div class="tagrow">

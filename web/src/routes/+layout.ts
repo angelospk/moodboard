@@ -23,7 +23,8 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		}
 	}
 
-	if (!user && url.pathname !== '/login') {
+	// /s/<token>: a read-only shared board, open without an account.
+	if (!user && url.pathname !== '/login' && !url.pathname.startsWith('/s/')) {
 		redirect(307, '/login?next=' + encodeURIComponent(url.pathname + url.search));
 	}
 

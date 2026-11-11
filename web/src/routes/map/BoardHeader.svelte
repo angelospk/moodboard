@@ -4,6 +4,7 @@
 	import Icon from './Icon.svelte';
 	import TagChips from './TagChips.svelte';
 	import type { ZoneColor } from './board.js';
+	import type { Snippet } from 'svelte';
 
 	interface Props {
 		/** 'all', 'none' or a project id. */
@@ -19,6 +20,8 @@
 		colors: Map<string, ZoneColor>;
 		highlight: string | null;
 		ontoggletag: (tag: string) => void;
+		/** Extra buttons at the start of the right side (the share menu). */
+		actions?: Snippet;
 	}
 	let {
 		current,
@@ -32,7 +35,8 @@
 		tags,
 		colors,
 		highlight,
-		ontoggletag
+		ontoggletag,
+		actions
 	}: Props = $props();
 
 	const active = $derived((search.trim() ? 1 : 0) + (level ? 1 : 0) + (highlight ? 1 : 0));
@@ -104,6 +108,7 @@
 	</nav>
 
 	<div class="right">
+		{@render actions?.()}
 		{@render searchField('board-search')}
 		<div class="wide">{@render levelSeg()}</div>
 		<select class="narrow" bind:value={level} aria-label="Επίπεδο">
