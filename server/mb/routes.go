@@ -173,20 +173,22 @@ func handleSavePositions(e *core.RequestEvent) error {
 	return e.NoContent(http.StatusNoContent)
 }
 
-// DeletePositions removes one node's position, in one scope or (scope "") in every scope.
-func DeletePositions(app core.App, userId, scope, key string) error {
+// DeletePositions removes node positions, in one scope or (scope "") in every scope.
+func DeletePositions(app core.App, userId, scope string, keys []string) error {
 	filter := "user_id = {:u} && node_key = {:k}"
 	if scope != "" {
 		filter += " && scope = {:s}"
 	}
 	return app.RunInTransaction(func(tx core.App) error {
-		rs, err := tx.FindRecordsByFilter("map_positions", filter, "", 0, 0, dbx.Params{"u": userId, "k": key, "s": scope})
-		if err != nil {
-			return err
-		}
-		for _, r := range rs {
-			if err := tx.Delete(r); err != nil {
+		for _, key := range keys {
+			rs, err := tx.FindRecordsByFilter("map_positions", filter, "", 0, 0, dbx.Params{"u": userId, "k": key, "s": scope})
+			if err != nil {
 				return err
+			}
+			for _, r := range rs {
+				if err := tx.Delete(r); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -195,13 +197,21 @@ func DeletePositions(app core.App, userId, scope, key string) error {
 
 func handleDeletePositions(e *core.RequestEvent) error {
 	var body struct {
-		Scope string `json:"scope"`
-		Key   string `json:"key"`
+		Scope string   `json:"scope"`
+		Key   string   `json:"key"`
+		Keys  []string `json:"keys"`
 	}
-	if err := e.BindBody(&body); err != nil || body.Key == "" {
+	if err := e.BindBody(&body); err != nil {
+		return e.BadRequestError("", err)
+	}
+	keys := body.Keys
+	if body.Key != "" {
+		keys = append(keys, body.Key)
+	}
+	if len(keys) == 0 || len(keys) > 5000 {
 		return e.BadRequestError("Λείπει το key.", nil)
 	}
-	if err := DeletePositions(e.App, e.Auth.Id, body.Scope, body.Key); err != nil {
+	if err := DeletePositions(e.App, e.Auth.Id, body.Scope, keys); err != nil {
 		return e.BadRequestError("Η θέση δεν σβήστηκε.", err)
 	}
 	return e.NoContent(http.StatusNoContent)

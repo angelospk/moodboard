@@ -1,0 +1,57 @@
+name: Extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'extension/**'
+      - '.github/workflows/extension.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Install
+        working-directory: extension
+        run: npm ci
+
+      - name: Build
+        working-directory: extension
+        env:
+          EXT_VERSION: 1.0.${{ github.run_number }}
+          WXT_PB_URL: https://pb.haroldpoi.dev
+          WXT_WEB_URL: https://moodboard.haroldpoi.dev
+        run: npm run build
+
+      # Zip the contents of chrome-mv3, not the folder itself: Chrome and the updater expect
+      # manifest.json at the root of the archive.
+      - name: Zip extension
+        run: |
+          cd extension/.output/chrome-mv3
+          zip -r "$GITHUB_WORKSPACE/moodboard-extension.zip" .
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="1.0.${{ github.run_number }}"
+          assets=(moodboard-extension.zip)
+          for f in extension/updater/install.cmd extension/updater/install.ps1 extension/updater/update.ps1; do
+            if [ -f "$f" ]; then assets+=("$f"); fi
+          done
+          gh release create "ext-v${version}" "${assets[@]}" \
+            --title "Extension ${version}" \
+            --notes "Automatic build" \
+            --latest

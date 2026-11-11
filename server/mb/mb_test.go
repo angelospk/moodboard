@@ -276,6 +276,10 @@ func TestCustomRoutes(t *testing.T) {
 	if rs, _ := e.app.FindAllRecords("map_positions"); len(rs) != 1 {
 		t.Fatalf("all-scope delete: want 1 left, got %d", len(rs))
 	}
+	_, _ = e.json("POST", "/api/mb/positions/delete", aTok, map[string]any{"scope": "all", "keys": []string{"i:" + a.Id, "t:none"}})
+	if rs, _ := e.app.FindAllRecords("map_positions"); len(rs) != 0 {
+		t.Fatalf("bulk delete: want 0 left, got %d", len(rs))
+	}
 }
 
 func mcpCall(e *env, tok, method string, params any) (int, string) {

@@ -30,7 +30,12 @@ func bindMCP(se *core.ServeEvent) {
 	h := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		user, _ := r.Context().Value(ctxKey{}).(*core.Record)
 		return NewMCPServer(se.App, user)
-	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: true, JSONResponse: true,
+		// The server listens on loopback behind cloudflared, so every request looks local; the SDK's
+		// localhost (DNS rebinding) check would reject the public Host. /mcp needs a bearer token anyway.
+		DisableLocalhostProtection: true,
+	})
 
 	se.Router.Any("/mcp", func(e *core.RequestEvent) error {
 		ctx := context.WithValue(e.Request.Context(), ctxKey{}, e.Auth)
