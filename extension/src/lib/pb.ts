@@ -22,7 +22,7 @@ const store = new AsyncAuthStore({
 });
 
 export const pb = new PocketBase(
-	import.meta.env.WXT_PB_URL || 'https://pb.haroldpoi.dev',
+	import.meta.env.WXT_PB_URL || 'https://moodboard-api.haroldpoi.dev',
 	store,
 );
 

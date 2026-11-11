@@ -356,9 +356,9 @@ func TestImportKeepsIdsAndPassword(t *testing.T) {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("secret-pass"), 10)
 	uid, pid, iid := "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "33333333-3333-3333-3333-333333333333"
 	ex := map[string]any{
-		"users":        []map[string]any{{"id": uid, "email": "h@x.gr", "password_hash": string(hash)}},
-		"projects":     []map[string]any{{"id": pid, "user_id": uid, "name": "P", "description": "", "created_at": "2026-11-01T10:00:00.123+00:00"}},
-		"inspirations": []map[string]any{{"id": iid, "user_id": uid, "project_id": pid, "file": "files/x.png", "note": "n", "tags": []string{"wood"}, "level": "detail", "regions": []any{map[string]any{"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2, "note": "r"}}, "created_at": "2026-11-02T10:00:00+00:00"}},
+		"users":         []map[string]any{{"id": uid, "email": "h@x.gr", "password_hash": string(hash)}},
+		"projects":      []map[string]any{{"id": pid, "user_id": uid, "name": "P", "description": "", "created_at": "2026-11-01T10:00:00.123+00:00"}},
+		"inspirations":  []map[string]any{{"id": iid, "user_id": uid, "project_id": pid, "file": "files/x.png", "note": "n", "tags": []string{"wood"}, "level": "detail", "regions": []any{map[string]any{"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2, "note": "r"}}, "created_at": "2026-11-02T10:00:00+00:00"}},
 		"map_positions": []map[string]any{{"user_id": uid, "scope": pid, "node_key": "i:" + iid, "x": 1.5, "y": 2}},
 	}
 	b, _ := json.Marshal(ex)

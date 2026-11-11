@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pocketbase/dbx"
@@ -61,7 +62,9 @@ type (
 		Level   string   `json:"level,omitempty" jsonschema:"Scale: urban, building, interior, detail or material"`
 		Limit   int      `json:"limit,omitempty" jsonschema:"1..100, default 20"`
 	}
-	idArgs   struct{ ID string `json:"id" jsonschema:"Inspiration id"` }
+	idArgs struct {
+		ID string `json:"id" jsonschema:"Inspiration id"`
+	}
 	saveArgs struct {
 		ImageURL    string   `json:"image_url" jsonschema:"Public https image URL"`
 		Project     string   `json:"project,omitempty" jsonschema:"Project name or id (created if missing)"`
@@ -122,7 +125,7 @@ func NewMCPServer(app core.App, user *core.Record) *mcp.Server {
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), OpenWorldHint: ptr(false)},
 		Description: "Append a thought to an inspiration's note. Existing text is kept."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a noteArgs) (*mcp.CallToolResult, any, error) {
-			if strings.TrimSpace(a.Text) == "" || len(a.Text) > 5000 {
+			if strings.TrimSpace(a.Text) == "" || utf8.RuneCountInString(a.Text) > 5000 {
 				return nil, nil, errors.New("text must be 1..5000 characters")
 			}
 			r, err := AppendNote(app, uid, a.ID, a.Text)
@@ -300,11 +303,16 @@ func saveInspiration(ctx context.Context, app core.App, uid string, a saveArgs, 
 	if a.Level != "" && !slices.Contains(migrations.Levels, a.Level) {
 		return nil, fmt.Errorf("invalid level: %s", a.Level)
 	}
-	if len(a.Note) > 5000 || len(a.SourceTitle) > 300 || len(a.Tags) > 30 {
+	if utf8.RuneCountInString(a.Note) > 5000 || utf8.RuneCountInString(a.SourceTitle) > 300 || len(a.Tags) > 30 {
 		return nil, errors.New("note, source_title or tags too long")
 	}
 	if a.SourceURL != "" && !strings.HasPrefix(a.SourceURL, "http://") && !strings.HasPrefix(a.SourceURL, "https://") {
 		return nil, errors.New("source_url must be an http(s) URL")
+	}
+	// Fetch first: a failed download must not leave a newly created, empty project behind.
+	data, typ, err := fetch(ctx, a.ImageURL)
+	if err != nil {
+		return nil, err
 	}
 	var project *core.Record
 	if a.Project != "" {
@@ -313,10 +321,6 @@ func saveInspiration(ctx context.Context, app core.App, uid string, a saveArgs, 
 			return nil, err
 		}
 		project = p
-	}
-	data, typ, err := fetch(ctx, a.ImageURL)
-	if err != nil {
-		return nil, err
 	}
 	f, err := filesystem.NewFileFromBytes(data, "image."+imageExt[typ])
 	if err != nil {

@@ -31,7 +31,7 @@ jobs:
         working-directory: extension
         env:
           EXT_VERSION: 1.0.${{ github.run_number }}
-          WXT_PB_URL: https://pb.haroldpoi.dev
+          WXT_PB_URL: https://moodboard-api.haroldpoi.dev
           WXT_WEB_URL: https://moodboard.haroldpoi.dev
         run: npm run build
 

@@ -2,7 +2,7 @@
 
 Chrome MV3 extension (WXT + Svelte 5 + TypeScript) that saves inspiration images
 from any web page into the Moodboard app (PocketBase at
-`https://pb.haroldpoi.dev`).
+`https://moodboard-api.haroldpoi.dev`).
 
 ## Setup
 

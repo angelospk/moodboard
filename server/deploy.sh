@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the Moodboard backend and install it on the Oracle VPS (ssh alias oracle-vm).
-# Served at https://pb.haroldpoi.dev through the existing cloudflared tunnel -> 127.0.0.1:8190.
+# Served at https://moodboard-api.haroldpoi.dev through the existing cloudflared tunnel -> 127.0.0.1:8190.
 set -euo pipefail
 cd "$(dirname "$0")"
 go test ./...
@@ -12,7 +12,7 @@ install -m 755 /tmp/moodboard-server /opt/moodboard/moodboard.new
 mv /opt/moodboard/moodboard.new /opt/moodboard/moodboard
 sudo tee /etc/systemd/system/moodboard.service >/dev/null <<UNIT
 [Unit]
-Description=Moodboard backend (PocketBase + MCP, Go) for pb.haroldpoi.dev
+Description=Moodboard backend (PocketBase + MCP, Go) for moodboard-api.haroldpoi.dev
 After=network-online.target
 
 [Service]

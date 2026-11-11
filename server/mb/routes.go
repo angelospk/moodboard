@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -61,7 +62,7 @@ func handleAppendNote(e *core.RequestEvent) error {
 	var body struct {
 		Text string `json:"text"`
 	}
-	if err := e.BindBody(&body); err != nil || strings.TrimSpace(body.Text) == "" || len(body.Text) > 5000 {
+	if err := e.BindBody(&body); err != nil || strings.TrimSpace(body.Text) == "" || utf8.RuneCountInString(body.Text) > 5000 {
 		return e.BadRequestError("Το κείμενο λείπει ή είναι πολύ μεγάλο.", nil)
 	}
 	r, err := AppendNote(e.App, e.Auth.Id, e.Request.PathValue("id"), body.Text)

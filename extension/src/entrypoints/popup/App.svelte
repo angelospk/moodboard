@@ -42,12 +42,14 @@
 		let unsubscribe = () => {};
 		void (async () => {
 			await ready();
-			// A saved token expires after a while: renew it on open, or drop it and show the login form.
-			if (pb.authStore.record && !pb.authStore.isValid) {
+			// Renew a still-valid token on open (an expired one cannot be refreshed), so a login lasts
+			// as long as the popup is used now and then. Only a 401 signs out; offline keeps the login.
+			if (pb.authStore.record && !pb.authStore.isValid) pb.authStore.clear();
+			else if (pb.authStore.record) {
 				try {
 					await pb.collection('users').authRefresh();
-				} catch {
-					pb.authStore.clear();
+				} catch (error) {
+					if ((error as { status?: number }).status === 401) pb.authStore.clear();
 				}
 			}
 			user = pb.authStore.record;

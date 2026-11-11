@@ -34,7 +34,7 @@ func init() {
 			return err
 		}
 		users.AuthToken.Duration = 30 * 24 * 3600 // remembered for a month; the SDK refreshes it on use
-		users.FileToken.Duration = 3600            // like the old 1h signed image URLs
+		users.FileToken.Duration = 3600           // like the old 1h signed image URLs
 		users.OAuth2.Enabled = false
 		if err := app.Save(users); err != nil {
 			return err

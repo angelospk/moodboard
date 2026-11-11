@@ -40,7 +40,7 @@ jobs:
       - name: Build
         working-directory: web
         env:
-          VITE_PB_URL: https://pb.haroldpoi.dev
+          VITE_PB_URL: https://moodboard-api.haroldpoi.dev
         run: npm run build
 
       - uses: actions/upload-pages-artifact@v3
