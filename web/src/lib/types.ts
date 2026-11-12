@@ -1,5 +1,5 @@
-export const LEVELS = ['urban', 'building', 'interior', 'detail', 'material'] as const;
-export type Level = (typeof LEVELS)[number];
+/** The id of one of the user's levels (see levels.ts). */
+export type Level = string;
 
 /** A marked detail on an image. Coordinates are fractions (0..1) of the image size. */
 export interface Region {

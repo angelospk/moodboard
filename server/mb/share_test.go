@@ -31,7 +31,7 @@ func newShareFixture(t *testing.T) *shareFixture {
 		return r.Id
 	}
 	f := &shareFixture{e: e, aTok: aTok, bTok: bTok, projA: pa.Id, projB: pb.Id}
-	f.insA = id(map[string]string{"user_id": alice.Id, "project_id": pa.Id, "note": "φως Α", "tags": `["ξύλο"]`, "level": "detail",
+	f.insA = id(map[string]string{"user_id": alice.Id, "project_id": pa.Id, "note": "φως Α", "tags": `["ξύλο"]`, "level": e.levelID(alice.Id, "Λεπτομέρεια"),
 		"source_url": "https://site.example/a", "source_title": "Σελίδα Α", "regions": `[{"x":0.1,"y":0.1,"w":0.2,"h":0.2,"note":"γωνία"}]`})
 	f.insB = id(map[string]string{"user_id": alice.Id, "project_id": pb.Id, "note": "κρυφό Β"})
 	f.insX = id(map[string]string{"user_id": alice.Id, "note": "χωρίς project"})
@@ -95,7 +95,7 @@ func TestPublicBoardDefaults(t *testing.T) {
 	f.set(t, map[string]any{"public": true})
 	out := f.view(t, 200)
 	// Defaults: notes, region notes, tags and level shown; sources hidden.
-	mustHave(t, out, "Σπίτι Α", "περιγραφή", "φως Α", "γωνία", "ξύλο", "detail", f.insA, `"x":10`, `"t:ξύλο"`)
+	mustHave(t, out, "Σπίτι Α", "περιγραφή", "φως Α", "γωνία", "ξύλο", "Λεπτομέρεια", f.insA, `"x":10`, `"t:ξύλο"`)
 	mustLack(t, out, "site.example", "Σελίδα Α", "Μυστικό Β", "κρυφό Β", f.insB, f.insX, "χωρίς project", "παλιό-μυστικό",
 		"alice@x.gr", "user_id", f.projB)
 
@@ -134,7 +134,7 @@ func TestPublicBoardOptions(t *testing.T) {
 	f.set(t, map[string]any{"public": true, "share_hide_notes": true, "share_hide_regions": true, "share_hide_tags": true, "share_show_sources": true})
 	out := f.view(t, 200)
 	mustHave(t, out, "Σπίτι Α", f.insA, "https://site.example/a", "Σελίδα Α")
-	mustLack(t, out, "φως Α", "γωνία", "ξύλο", "detail")
+	mustLack(t, out, "φως Α", "γωνία", "ξύλο", "Λεπτομέρεια")
 	// Turning it off stops the view and the images at once.
 	f.set(t, map[string]any{"public": false})
 	f.view(t, 404)

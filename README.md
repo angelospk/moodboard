@@ -1,8 +1,9 @@
 # Moodboard
 
 Save inspiration images from anywhere on the web, tag them, mark the details you like, and lay
-them out on a live map. Built for architecture work: every image has a level (urban, building,
-interior, detail, material), free tags, a note, and marked regions with their own notes.
+them out on a live map. Built for architecture work: every image has a level (your own list of
+scales; new accounts start with Αστικό, Κτίριο, Εσωτερικό, Λεπτομέρεια, Υλικό and can add, rename,
+reorder or remove them), free tags, a note, and marked regions with their own notes.
 
 - **App:** https://moodboard.haroldpoi.dev (sign-up needs an invite code)
 - **API:** https://moodboard-api.haroldpoi.dev
@@ -68,8 +69,8 @@ when its `updated_at` is newer, so a late echo of an older save cannot undo a ne
 (`web/src/lib/realtime.ts`).
 
 **MCP.** `POST https://moodboard-api.haroldpoi.dev/mcp` (streamable HTTP, stateless) with
-`Authorization: Bearer <token>`. Tools: `list_projects`, `search_inspirations`,
-`get_inspiration`, `save_inspiration`, `add_note`.
+`Authorization: Bearer <token>`. Tools: `list_projects`, `list_levels`, `search_inspirations`,
+`get_inspiration`, `save_inspiration`, `suggest_labels`, `add_note`. Levels are passed by name.
 
 - **claude.ai:** Settings → Connectors → «Add custom connector» → URL
   `https://moodboard-api.haroldpoi.dev/mcp`. Claude opens our sign-in page; use your Moodboard

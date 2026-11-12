@@ -1,13 +1,10 @@
-export const LEVELS = ['urban', 'building', 'interior', 'detail', 'material'] as const;
-export type Level = (typeof LEVELS)[number];
+/** The id of one of the user's levels (collection "levels"). */
+export type Level = string;
 
-export const LEVEL_LABELS: Record<Level, string> = {
-	urban: 'Πόλη',
-	building: 'Κτίριο',
-	interior: 'Εσωτερικό',
-	detail: 'Λεπτομέρεια',
-	material: 'Υλικό',
-};
+export interface LevelRow {
+	id: string;
+	name: string;
+}
 
 export interface Project {
 	id: string;

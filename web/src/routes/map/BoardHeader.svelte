@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { LEVELS, type Level } from '#lib/types.js';
-	import { LEVEL_LABELS } from '#lib/tags.js';
+	import type { Level } from '#lib/types.js';
+	import { levelStore } from '#lib/levels.svelte.js';
 	import Icon from './Icon.svelte';
 	import TagChips from './TagChips.svelte';
 	import type { ZoneColor } from './board.js';
@@ -54,9 +54,9 @@
 {#snippet levelSeg()}
 	<div class="seg levels" role="group" aria-label="Επίπεδο">
 		<button type="button" class:on={level === ''} aria-pressed={level === ''} onclick={() => (level = '')}>Όλα</button>
-		{#each LEVELS as l (l)}
-			<button type="button" class:on={level === l} aria-pressed={level === l} onclick={() => (level = level === l ? '' : l)}>
-				{LEVEL_LABELS[l]}
+		{#each levelStore.list as l (l.id)}
+			<button type="button" class:on={level === l.id} aria-pressed={level === l.id} onclick={() => (level = level === l.id ? '' : l.id)}>
+				{l.name}
 			</button>
 		{/each}
 	</div>
@@ -113,7 +113,7 @@
 		<div class="wide">{@render levelSeg()}</div>
 		<select class="narrow" bind:value={level} aria-label="Επίπεδο">
 			<option value="">Όλα τα επίπεδα</option>
-			{#each LEVELS as l (l)}<option value={l}>{LEVEL_LABELS[l]}</option>{/each}
+			{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
 		</select>
 	</div>
 
@@ -137,9 +137,9 @@
 		<p class="slabel">Επίπεδο</p>
 		<div class="levelchips">
 			<button type="button" class="chip" class:on={level === ''} onclick={() => (level = '')}>Όλα</button>
-			{#each LEVELS as l (l)}
-				<button type="button" class="chip" class:on={level === l} onclick={() => (level = level === l ? '' : l)}>
-					{LEVEL_LABELS[l]}
+			{#each levelStore.list as l (l.id)}
+				<button type="button" class="chip" class:on={level === l.id} onclick={() => (level = level === l.id ? '' : l.id)}>
+					{l.name}
 				</button>
 			{/each}
 		</div>

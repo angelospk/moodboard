@@ -16,8 +16,13 @@ import (
 // Register binds the hooks and routes to app.
 func Register(app core.App) {
 	app.OnRecordCreateRequest("users").BindFunc(checkInvite)
+	app.OnRecordAfterCreateSuccess("users").BindFunc(seedLevels)
+	app.OnRecordCreateRequest("levels").BindFunc(checkLevel)
+	app.OnRecordUpdateRequest("levels").BindFunc(checkLevel)
 	app.OnRecordCreateRequest("inspirations").BindFunc(checkProjectOwner)
 	app.OnRecordUpdateRequest("inspirations").BindFunc(checkProjectOwner)
+	app.OnRecordCreateRequest("inspirations").BindFunc(checkLevelOwner)
+	app.OnRecordUpdateRequest("inspirations").BindFunc(checkLevelOwner)
 	app.OnRecordCreate("inspirations").BindFunc(func(e *core.RecordEvent) error {
 		defaultsForInspiration(e.Record)
 		return e.Next()

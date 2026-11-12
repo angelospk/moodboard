@@ -10,6 +10,8 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/types"
 	"github.com/spf13/cobra"
+
+	"moodboard/server/migrations"
 )
 
 // Export is the file `web/scripts/export-supabase.ts` writes (export.json + files/).
@@ -96,6 +98,23 @@ func Import(app core.App, dir string) error {
 			}
 			return tx.SaveNoValidate(r)
 		}
+		// The export names levels by the old fixed keys; they become the user's default levels.
+		levelIDs := map[string]map[string]string{} // new user id -> old key -> level id
+		for _, uid := range userMap {
+			if _, err := migrations.SeedLevels(tx, uid); err != nil {
+				return err
+			}
+			names := levelNames(tx, uid)
+			byName := map[string]string{}
+			for id, n := range names {
+				byName[n] = id
+			}
+			keys := map[string]string{}
+			for i, key := range migrations.Levels {
+				keys[key] = byName[migrations.DefaultLevels[i]]
+			}
+			levelIDs[uid] = keys
+		}
 		for _, p := range ex.Projects {
 			if err := save("projects", func(r *core.Record) error {
 				r.Id = p.ID
@@ -122,7 +141,7 @@ func Import(app core.App, dir string) error {
 				r.Set("source_title", deref(in.SourceTitle))
 				r.Set("note", in.Note)
 				r.Set("tags", CleanTags(in.Tags))
-				r.Set("level", deref(in.Level))
+				r.Set("level", levelIDs[userMap[in.UserID]][deref(in.Level)])
 				r.Set("regions", in.Regions)
 				setDate(r, in.CreatedAt)
 				return nil

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import type PocketBase from 'pocketbase';
-	import { LEVELS, type Level, type Project } from '#lib/types.js';
-	import { LEVEL_LABELS } from '#lib/tags.js';
+	import type { Level, Project } from '#lib/types.js';
+	import { levelStore } from '#lib/levels.svelte.js';
 	import { checkImage, cleanTags, createInspiration } from '#lib/inspirations.js';
 	import TagInput from './TagInput.svelte';
 
@@ -220,7 +220,7 @@
 				<span>Επίπεδο</span>
 				<select bind:value={level}>
 					<option value="">—</option>
-					{#each LEVELS as l (l)}<option value={l}>{LEVEL_LABELS[l]}</option>{/each}
+					{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
 				</select>
 			</label>
 			<label class="field">

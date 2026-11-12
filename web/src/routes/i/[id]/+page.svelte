@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { beforeNavigate, goto } from '$app/navigation';
-	import { LEVELS, type Level, type Region } from '#lib/types.js';
-	import { LEVEL_LABELS } from '#lib/tags.js';
+	import type { Level, Region } from '#lib/types.js';
+	import { levelStore } from '#lib/levels.svelte.js';
 	import { deleteInspiration, updateInspiration, type EditableFields } from '#lib/inspirations.js';
 	import TagInput from '#lib/components/TagInput.svelte';
 	import RegionEditor from '#lib/components/RegionEditor.svelte';
@@ -182,9 +182,9 @@
 				<div class="field">
 					<span class="lbl" id="item-level">Επίπεδο</span>
 					<div class="chips" role="group" aria-labelledby="item-level">
-						{#each LEVELS as l (l)}
-							<button type="button" class={['chip', level === l && 'on']} aria-pressed={level === l} onclick={() => setLevel(l)}>
-								{LEVEL_LABELS[l]}
+						{#each levelStore.list as l (l.id)}
+							<button type="button" class={['chip', level === l.id && 'on']} aria-pressed={level === l.id} onclick={() => setLevel(l.id)}>
+								{l.name}
 							</button>
 						{/each}
 					</div>

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { LEVELS, type Level } from '#lib/types.js';
-	import { LEVEL_LABELS } from '#lib/tags.js';
+	import type { Level } from '#lib/types.js';
+	import { levelStore } from '#lib/levels.svelte.js';
 	import { checkImage, createInspiration } from '#lib/inspirations.js';
 	import TagInput from '#lib/components/TagInput.svelte';
 	import type { PageProps } from './$types';
@@ -141,7 +141,7 @@
 				<span>Επίπεδο</span>
 				<select bind:value={level}>
 					<option value="">— κανένα —</option>
-					{#each LEVELS as l (l)}<option value={l}>{LEVEL_LABELS[l]}</option>{/each}
+					{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
 				</select>
 			</label>
 

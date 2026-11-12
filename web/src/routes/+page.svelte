@@ -2,8 +2,9 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { LEVELS, type Inspiration, type Level } from '#lib/types.js';
-	import { LEVEL_LABELS } from '#lib/tags.js';
+	import type { Inspiration, Level } from '#lib/types.js';
+	import { levelLabel, levelStore } from '#lib/levels.svelte.js';
+	import LevelManager from '#lib/components/LevelManager.svelte';
 	import {
 		createProject as createProjectRow,
 		deleteProject,
@@ -22,6 +23,7 @@
 	let creating = $state(false);
 	let projectError = $state('');
 	let loggingOut = $state(false);
+	let managingLevels = $state(false);
 	let lastProjectId = $state<string | null>(null);
 	/** Client clock; 0 until mounted, so relative times never mismatch on hydration. */
 	let now = $state(0);
@@ -334,6 +336,7 @@
 	<div class="actions">
 		<a class="btn" href={selected === 'all' ? '/map' : `/map?project=${encodeURIComponent(selected)}`}>Χάρτης</a>
 		<a class="btn" href="/sources">Πηγές</a>
+		<button class="btn" type="button" onclick={() => (managingLevels = true)}>Επίπεδα</button>
 		<a class="btn primary new-image" href="/new">+ Νέα εικόνα</a>
 		<button class="btn" type="button" disabled={loggingOut} onclick={logout}>
 			{loggingOut ? '…' : 'Αποσύνδεση'}
@@ -603,7 +606,7 @@
 		/>
 		<select bind:value={level} aria-label="Επίπεδο">
 			<option value="">Όλα τα επίπεδα</option>
-			{#each LEVELS as l (l)}<option value={l}>{LEVEL_LABELS[l]}</option>{/each}
+			{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
 		</select>
 	</div>
 {/snippet}
@@ -633,8 +636,8 @@
 						{:else}
 							<span class="missing">χωρίς εικόνα</span>
 						{/if}
-						{#if item.level}
-							<span class="badge">{LEVEL_LABELS[item.level]}</span>
+						{#if levelLabel(item.level)}
+							<span class="badge">{levelLabel(item.level)}</span>
 						{/if}
 					</div>
 					<div class="body">
@@ -652,6 +655,13 @@
 {/snippet}
 
 <a class="fab" href="/new" aria-label="Νέα εικόνα">+</a>
+
+{#if managingLevels && data.user}
+	<LevelManager pb={data.pb} userId={data.user.id} onclose={() => {
+			managingLevels = false;
+			if (level && !levelLabel(level)) level = '';
+		}} />
+{/if}
 
 <style>
 	.appbar {

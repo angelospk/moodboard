@@ -16,8 +16,6 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
-
-	"moodboard/server/migrations"
 )
 
 const inlineImageBytes = 2 << 20
@@ -58,7 +56,7 @@ type (
 		Query     string   `json:"query,omitempty" jsonschema:"Words to find in the note or source title"`
 		Project   string   `json:"project,omitempty" jsonschema:"Project name or id"`
 		Tags      []string `json:"tags,omitempty" jsonschema:"All of these tags must be present"`
-		Level     string   `json:"level,omitempty" jsonschema:"Scale: urban, building, interior, detail or material"`
+		Level     string   `json:"level,omitempty" jsonschema:"Name of one of the user's levels (see list_levels)"`
 		Limit     int      `json:"limit,omitempty" jsonschema:"1..100, default 20"`
 		Unlabeled bool     `json:"unlabeled,omitempty" jsonschema:"Only inspirations with no level or no tags and no pending suggestion"`
 	}
@@ -70,13 +68,13 @@ type (
 		Project     string   `json:"project,omitempty" jsonschema:"Project name or id (created if missing)"`
 		Note        string   `json:"note,omitempty"`
 		Tags        []string `json:"tags,omitempty"`
-		Level       string   `json:"level,omitempty" jsonschema:"urban, building, interior, detail or material"`
+		Level       string   `json:"level,omitempty" jsonschema:"Name of one of the user's levels (see list_levels)"`
 		SourceURL   string   `json:"source_url,omitempty"`
 		SourceTitle string   `json:"source_title,omitempty"`
 	}
 	suggestArgs struct {
 		ID    string   `json:"id" jsonschema:"Inspiration id"`
-		Level string   `json:"level,omitempty" jsonschema:"urban, building, interior, detail or material"`
+		Level string   `json:"level,omitempty" jsonschema:"Name of one of the user's levels (see list_levels)"`
 		Tags  []string `json:"tags,omitempty" jsonschema:"Short lowercase tags in the user's language, at most 10"`
 	}
 	noteArgs struct {
@@ -97,6 +95,12 @@ func NewMCPServer(app core.App, user *core.Record) *mcp.Server {
 		Description: "List the user's moodboard projects with how many inspirations each has."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, any, error) {
 			return jsonResult(listProjects(app, uid))
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "list_levels", Title: "List levels", Annotations: ro,
+		Description: "List the user's levels (their own scale labels, in order). Use these names for the level argument of other tools."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, any, error) {
+			return jsonResult(listLevels(app, uid))
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "search_inspirations", Title: "Search inspirations", Annotations: ro,
@@ -123,7 +127,7 @@ func NewMCPServer(app core.App, user *core.Record) *mcp.Server {
 			if err != nil {
 				return nil, nil, err
 			}
-			return jsonResult(publicRow(r, ""))
+			return jsonResult(publicRow(r, "", levelNames(app, uid)))
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "suggest_labels", Title: "Suggest level and tags",
@@ -137,7 +141,7 @@ func NewMCPServer(app core.App, user *core.Record) *mcp.Server {
 			if err != nil {
 				return nil, nil, err
 			}
-			return jsonResult(publicRow(r, ""))
+			return jsonResult(publicRow(r, "", levelNames(app, uid)))
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "add_note", Title: "Add note",
@@ -156,15 +160,21 @@ func NewMCPServer(app core.App, user *core.Record) *mcp.Server {
 	return s
 }
 
-func publicRow(r *core.Record, project string) map[string]any {
+// publicRow is the MCP view of an inspiration. lv maps level ids to names: the AI sees names only.
+func publicRow(r *core.Record, project string, lv map[string]string) map[string]any {
 	row := map[string]any{
 		"id": r.Id, "project_id": nilIfEmpty(r.GetString("project_id")), "note": r.GetString("note"),
-		"tags": stringList(r.Get("tags")), "level": nilIfEmpty(r.GetString("level")), "regions": r.Get("regions"),
+		"tags": stringList(r.Get("tags")), "level": nilIfEmpty(lv[r.GetString("level")]), "regions": r.Get("regions"),
 		"source_url": nilIfEmpty(r.GetString("source_url")), "source_title": nilIfEmpty(r.GetString("source_title")),
 		"created_at": r.GetString("created_at"),
 	}
-	if sg := r.Get("suggestion"); hasSuggestion(r) {
-		row["suggestion"] = sg
+	if hasSuggestion(r) {
+		var sg struct {
+			Level string   `json:"level"`
+			Tags  []string `json:"tags"`
+		}
+		_ = r.UnmarshalJSONField("suggestion", &sg)
+		row["suggestion"] = map[string]any{"level": nilIfEmpty(lv[sg.Level]), "tags": sg.Tags}
 	}
 	if project != "" {
 		row["project"] = project
@@ -243,11 +253,12 @@ func searchInspirations(app core.App, uid string, a searchArgs) ([]map[string]an
 		params["p"] = p.Id
 	}
 	if a.Level != "" {
-		if !slices.Contains(migrations.Levels, a.Level) {
-			return nil, fmt.Errorf("invalid level: %s", a.Level)
+		l, err := resolveLevel(app, uid, a.Level)
+		if err != nil {
+			return nil, err
 		}
 		filter = append(filter, "level = {:l}")
-		params["l"] = a.Level
+		params["l"] = l.Id
 	}
 	if text := strings.TrimSpace(nonText.ReplaceAllString(a.Query, " ")); text != "" {
 		filter = append(filter, "(note ~ {:q} || source_title ~ {:q})")
@@ -260,6 +271,7 @@ func searchInspirations(app core.App, uid string, a searchArgs) ([]map[string]an
 		return nil, err
 	}
 	names := map[string]string{}
+	lv := levelNames(app, uid)
 	out := []map[string]any{}
 	for _, r := range rs {
 		have := stringList(r.Get("tags"))
@@ -272,7 +284,7 @@ func searchInspirations(app core.App, uid string, a searchArgs) ([]map[string]an
 				names[pid] = p.GetString("name")
 			}
 		}
-		out = append(out, publicRow(r, names[pid]))
+		out = append(out, publicRow(r, names[pid], lv))
 		if len(out) == limit {
 			break
 		}
@@ -298,7 +310,7 @@ func getInspiration(app core.App, user *core.Record, id string) (*mcp.CallToolRe
 	if p, err := app.FindRecordById("projects", r.GetString("project_id")); err == nil {
 		project = p.GetString("name")
 	}
-	row := publicRow(r, project)
+	row := publicRow(r, project, levelNames(app, user.Id))
 	key := r.BaseFilesPath() + "/" + r.GetString("image")
 	if tok, err := user.NewFileToken(); err == nil {
 		row["image_url"] = strings.TrimRight(app.Settings().Meta.AppURL, "/") + "/api/files/" + key + "?token=" + tok
@@ -322,8 +334,13 @@ func getInspiration(app core.App, user *core.Record, id string) (*mcp.CallToolRe
 type imageFetcher func(ctx context.Context, url string) ([]byte, string, error)
 
 func saveInspiration(ctx context.Context, app core.App, uid string, a saveArgs, fetch imageFetcher) (*core.Record, error) {
-	if a.Level != "" && !slices.Contains(migrations.Levels, a.Level) {
-		return nil, fmt.Errorf("invalid level: %s", a.Level)
+	levelID := ""
+	if a.Level != "" {
+		l, err := resolveLevel(app, uid, a.Level)
+		if err != nil {
+			return nil, err
+		}
+		levelID = l.Id
 	}
 	if utf8.RuneCountInString(a.Note) > 5000 || utf8.RuneCountInString(a.SourceTitle) > 300 || len(a.Tags) > 30 {
 		return nil, errors.New("note, source_title or tags too long")
@@ -364,7 +381,7 @@ func saveInspiration(ctx context.Context, app core.App, uid string, a saveArgs, 
 	r.Set("image", f)
 	r.Set("note", strings.TrimSpace(a.Note))
 	r.Set("tags", CleanTags(a.Tags))
-	r.Set("level", a.Level)
+	r.Set("level", levelID)
 	r.Set("regions", []any{})
 	r.Set("source_url", src)
 	r.Set("source_title", a.SourceTitle)
@@ -381,8 +398,13 @@ func hasSuggestion(r *core.Record) bool {
 }
 
 func suggestLabels(app core.App, uid string, a suggestArgs) (*core.Record, error) {
-	if a.Level != "" && !slices.Contains(migrations.Levels, a.Level) {
-		return nil, fmt.Errorf("invalid level: %s", a.Level)
+	levelID := ""
+	if a.Level != "" {
+		l, err := resolveLevel(app, uid, a.Level)
+		if err != nil {
+			return nil, err
+		}
+		levelID = l.Id
 	}
 	tags := CleanTags(a.Tags)
 	if len(tags) > 10 {
@@ -395,7 +417,7 @@ func suggestLabels(app core.App, uid string, a suggestArgs) (*core.Record, error
 	if err != nil || r.GetString("user_id") != uid {
 		return nil, fmt.Errorf("inspiration not found: %s", a.ID)
 	}
-	r.Set("suggestion", map[string]any{"level": nilIfEmpty(a.Level), "tags": tags})
+	r.Set("suggestion", map[string]any{"level": nilIfEmpty(levelID), "tags": tags})
 	// Write only this field, so an autosave from the web app between the read and the save is kept.
 	r.IgnoreUnchangedFields(true)
 	return r, app.Save(r)

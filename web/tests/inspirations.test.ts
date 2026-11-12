@@ -2,6 +2,7 @@
 import type PocketBase from 'pocketbase';
 import { beforeAll, describe, expect, inject, it } from 'vitest';
 import { createClient } from '../src/lib/pb';
+import { listLevels } from '../src/lib/levels';
 import {
 	copyInspiration,
 	createInspiration,
@@ -38,6 +39,8 @@ let A: { pb: PocketBase; id: string };
 let B: { pb: PocketBase; id: string };
 let p1: string;
 let p2: string;
+let detail = '';
+let material = '';
 
 beforeAll(async () => {
 	const admin = createClient(URL_);
@@ -49,6 +52,9 @@ beforeAll(async () => {
 	B = await newUser();
 	p1 = (await createProject(A.pb, A.id, 'One')).id;
 	p2 = (await createProject(A.pb, A.id, 'Two')).id;
+	const levels = await listLevels(A.pb);
+	detail = levels.find((l) => l.name === 'Λεπτομέρεια')!.id;
+	material = levels.find((l) => l.name === 'Υλικό')!.id;
 });
 
 describe('signUp', () => {
@@ -61,10 +67,10 @@ describe('signUp', () => {
 describe('createInspiration', () => {
 	it('uploads, inserts and normalizes tags', async () => {
 		const { id } = await createInspiration(A.pb, A.id, png(), {
-			project_id: p1, note: '  φως  ', tags: [' Ξύλο ', 'ξύλο', 'Φως'], level: 'detail'
+			project_id: p1, note: '  φως  ', tags: [' Ξύλο ', 'ξύλο', 'Φως'], level: detail
 		});
 		const row = await getInspiration(A.pb, id);
-		expect(row).toMatchObject({ project_id: p1, note: 'φως', tags: ['ξύλο', 'φως'], level: 'detail', regions: [] });
+		expect(row).toMatchObject({ project_id: p1, note: 'φως', tags: ['ξύλο', 'φως'], level: detail, regions: [] });
 		expect(row!.image_path).toMatch(/\.png$/);
 		const urls = await imageUrls(A.pb, [row!]);
 		const res = await fetch(urls[row!.image_path]);
@@ -108,7 +114,7 @@ describe('lists', () => {
 describe('copyInspiration', () => {
 	it('copies row and image into another project, original unchanged', async () => {
 		const { id } = await createInspiration(A.pb, A.id, png(), {
-			project_id: p1, note: 'n', tags: ['a'], level: 'material',
+			project_id: p1, note: 'n', tags: ['a'], level: material,
 			regions: [{ x: 0.1, y: 0.1, w: 0.2, h: 0.2, note: 'r' }], source_url: 'https://e.com'
 		});
 		const { id: copy } = await copyInspiration(A.pb, A.id, id, p2);
@@ -116,7 +122,7 @@ describe('copyInspiration', () => {
 		const orig = (await getInspiration(A.pb, id))!;
 		const dup = (await getInspiration(A.pb, copy))!;
 		expect(orig.project_id).toBe(p1);
-		expect(dup).toMatchObject({ project_id: p2, note: 'n', tags: ['a'], level: 'material', regions: orig.regions, source_url: 'https://e.com' });
+		expect(dup).toMatchObject({ project_id: p2, note: 'n', tags: ['a'], level: material, regions: orig.regions, source_url: 'https://e.com' });
 		const urls = await imageUrls(A.pb, [dup]);
 		expect((await fetch(urls[dup.image_path])).status).toBe(200);
 	});
@@ -172,9 +178,9 @@ describe('update and delete', () => {
 	it('updates editable fields with clean tags and returns the row', async () => {
 		const { id } = await createInspiration(A.pb, A.id, png(), { note: 'a', project_id: p1 });
 		const row = await updateInspiration(A.pb, id, {
-			note: ' b ', tags: ['Ξύλο', 'ξύλο'], level: 'detail', regions: [{ x: 0, y: 0, w: 0.5, h: 0.5, note: '', rating: 4 }]
+			note: ' b ', tags: ['Ξύλο', 'ξύλο'], level: detail, regions: [{ x: 0, y: 0, w: 0.5, h: 0.5, note: '', rating: 4 }]
 		});
-		expect(row).toMatchObject({ id, note: 'b', tags: ['ξύλο'], level: 'detail' });
+		expect(row).toMatchObject({ id, note: 'b', tags: ['ξύλο'], level: detail });
 		expect(row.regions[0].rating).toBe(4);
 		expect(await updateInspiration(A.pb, id, { project_id: null, level: null })).toMatchObject({ project_id: null, level: null });
 	});

@@ -5,11 +5,10 @@
 	import { clearPending, getPending, type CaptureResult, type PendingCapture } from '@/lib/pending';
 	import TagInput from '@/lib/TagInput.svelte';
 	import {
-		LEVELS,
-		LEVEL_LABELS,
 		MIME_EXT,
 		normalizeMime,
 		type Level,
+		type LevelRow,
 		type Project,
 	} from '@/lib/types';
 
@@ -33,6 +32,7 @@
 	let note = $state('');
 	let tags = $state<string[]>([]);
 	let tagSuggestions = $state<string[]>([]);
+	let levels = $state<LevelRow[]>([]);
 	let level = $state<Level | ''>('');
 	let saving = $state(false);
 	let errorMessage = $state('');
@@ -83,6 +83,7 @@
 	async function refresh() {
 		pending = await getPending();
 		await loadProjects();
+		await loadLevels();
 		await loadUserTags();
 	}
 
@@ -92,6 +93,16 @@
 			tagSuggestions = Array.isArray(rows) ? rows : [];
 		} catch {
 			tagSuggestions = [];
+		}
+	}
+
+	async function loadLevels() {
+		try {
+			const rows = await pb.collection('levels').getFullList({ sort: 'position,created_at' });
+			levels = rows.map((row) => ({ id: row.id, name: row.name ?? '' }));
+			if (level && !levels.some((l) => l.id === level)) level = '';
+		} catch {
+			levels = [];
 		}
 	}
 
@@ -325,8 +336,8 @@
 					<label>Επίπεδο
 						<select bind:value={level}>
 							<option value="">—</option>
-							{#each LEVELS as item (item)}
-								<option value={item}>{LEVEL_LABELS[item]}</option>
+							{#each levels as item (item.id)}
+								<option value={item.id}>{item.name}</option>
 							{/each}
 						</select>
 					</label>

@@ -2,8 +2,8 @@
 	// CONTRACT (fixed). Inline editor for one inspiration with autosave (see DESIGN.md "Inspiration panel").
 	import type PocketBase from 'pocketbase';
 	import type { Inspiration, Project } from '#lib/types.js';
-	import { LEVELS, type Level, type Region, type Suggestion } from '#lib/types.js';
-	import { LEVEL_LABELS } from '#lib/tags.js';
+	import type { Level, Region, Suggestion } from '#lib/types.js';
+	import { levelLabel, levelStore } from '#lib/levels.svelte.js';
 	import { acceptSuggestion, copyInspiration, deleteInspiration, updateInspiration, type EditableFields } from '#lib/inspirations.js';
 	import TagInput from '#lib/components/TagInput.svelte';
 	import RegionEditor from '#lib/components/RegionEditor.svelte';
@@ -137,7 +137,10 @@
 	/** Apply the AI suggestion (its level, plus its tags) and clear it, in one autosave. */
 	function accept() {
 		if (!suggestion) return;
-		const next = acceptSuggestion({ level, tags }, suggestion);
+		// A level the user has deleted since the AI proposed it is dropped; the tags still apply.
+		// With no levels loaded (a failed fetch) nothing can be told apart, so the level stays.
+		const known = suggestion.level && (levelLabel(suggestion.level) || !levelStore.list.length) ? suggestion.level : null;
+		const next = acceptSuggestion({ level, tags }, { ...suggestion, level: known });
 		level = next.level;
 		tags = next.tags;
 		suggestion = null;
@@ -213,7 +216,7 @@
 <section class="panel" aria-label="Επεξεργασία εικόνας">
 	<header>
 		<div class="title">
-			<span class="lvl">{level ? LEVEL_LABELS[level] : 'Εικόνα'}</span>
+			<span class="lvl">{levelLabel(level) || 'Εικόνα'}</span>
 			<span class={['status', status]} aria-live="polite">
 				{#if status === 'saving' || status === 'pending'}
 					Αποθήκευση…
@@ -276,7 +279,7 @@
 			<div class="suggest" role="group" aria-labelledby="panel-suggest">
 				<span class="lbl" id="panel-suggest">Πρόταση AI</span>
 				<p class="chips">
-					{#if suggestion.level}<span class="chip on">{LEVEL_LABELS[suggestion.level]}</span>{/if}
+					{#if levelLabel(suggestion.level)}<span class="chip on">{levelLabel(suggestion.level)}</span>{/if}
 					{#each suggestion.tags as t (t)}<span class={['chip', tags.includes(t) && 'have']}>#{t}</span>{/each}
 				</p>
 				<div class="sbtns">
@@ -299,9 +302,9 @@
 		<div class="field">
 			<span class="lbl" id="panel-level">Επίπεδο</span>
 			<div class="chips" role="group" aria-labelledby="panel-level">
-				{#each LEVELS as l (l)}
-					<button type="button" class={['chip', level === l && 'on']} aria-pressed={level === l} onclick={() => setLevel(l)}>
-						{LEVEL_LABELS[l]}
+				{#each levelStore.list as l (l.id)}
+					<button type="button" class={['chip', level === l.id && 'on']} aria-pressed={level === l.id} onclick={() => setLevel(l.id)}>
+						{l.name}
 					</button>
 				{/each}
 			</div>

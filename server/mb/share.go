@@ -47,6 +47,7 @@ func handlePublicBoard(e *core.RequestEvent) error {
 		return e.InternalServerError("", err)
 	}
 	items := make([]map[string]any, 0, len(rows))
+	lv := levelNames(e.App, owner)
 	nodes := map[string]bool{} // layout keys that may show: this board's cards and shown tags
 	for _, r := range rows {
 		item := map[string]any{
@@ -69,7 +70,7 @@ func handlePublicBoard(e *core.RequestEvent) error {
 		}
 		if !hideTags {
 			tags := stringList(r.Get("tags"))
-			item["tags"], item["level"] = tags, r.GetString("level")
+			item["tags"], item["level"] = tags, lv[r.GetString("level")]
 			for _, t := range tags {
 				nodes["t:"+t] = true
 			}

@@ -2,7 +2,7 @@
 // the collection API rules and the server hooks limit every call to the user's own rows and files.
 import type PocketBase from 'pocketbase';
 import type { RecordModel } from 'pocketbase';
-import { LEVELS, type Crop, type Inspiration, type Project, type Suggestion } from '#lib/types.js';
+import type { Crop, Inspiration, Project, Suggestion } from '#lib/types.js';
 
 export const IMAGE_EXT: Record<string, string> = {
 	'image/png': 'png',
@@ -30,7 +30,7 @@ export function checkImage(file: Blob): string {
 	return ext;
 }
 
-function msg(e: unknown): string {
+export function msg(e: unknown): string {
 	const r = e as { response?: { message?: string; data?: Record<string, { message?: string }> }; message?: string };
 	const field = r.response?.data && Object.entries(r.response.data)[0];
 	if (field) return `${field[0]}: ${field[1]?.message ?? ''}`.trim();
@@ -60,7 +60,7 @@ export function toInspiration(r: RecordModel): Inspiration {
 
 function toSuggestion(v: unknown): Suggestion | null {
 	const s = v as Partial<Suggestion> | null;
-	if (!s || typeof s !== 'object' || (s.level != null && !LEVELS.includes(s.level))) return null;
+	if (!s || typeof s !== 'object' || (s.level != null && typeof s.level !== 'string')) return null;
 	const tags = Array.isArray(s.tags) ? s.tags.filter((t): t is string => typeof t === 'string') : [];
 	return s.level || tags.length ? { level: s.level || null, tags } : null;
 }

@@ -370,6 +370,9 @@ func TestImportKeepsIdsAndPassword(t *testing.T) {
 	if err != nil || r.GetString("project_id") != pid || r.GetString("image") == "" || !strings.HasPrefix(r.GetString("created_at"), "2026-11-02") {
 		t.Fatalf("inspiration not imported right: %v %v", err, r)
 	}
+	if r.GetString("level") != e.levelID(r.GetString("user_id"), "Λεπτομέρεια") {
+		t.Fatalf("imported level key detail not mapped to the user's level: %q", r.GetString("level"))
+	}
 	code, out := e.json("POST", "/api/collections/users/auth-with-password", "", map[string]any{"identity": "h@x.gr", "password": "secret-pass"})
 	if code != 200 {
 		t.Fatalf("login with imported hash: %d %s", code, out)
@@ -392,7 +395,7 @@ func TestMCPSuggestLabels(t *testing.T) {
 	}
 	_, out := e.upload(aTok, map[string]string{"user_id": alice.Id, "note": "bare"})
 	bare := id(out)
-	_, out = e.upload(aTok, map[string]string{"user_id": alice.Id, "tags": `["wood"]`, "level": "detail", "note": "done"})
+	_, out = e.upload(aTok, map[string]string{"user_id": alice.Id, "tags": `["wood"]`, "level": e.levelID(alice.Id, "Λεπτομέρεια"), "note": "done"})
 	done := id(out)
 
 	call := func(tok, name string, args map[string]any) string {
@@ -412,7 +415,7 @@ func TestMCPSuggestLabels(t *testing.T) {
 	if out = call(bTok, "suggest_labels", map[string]any{"id": bare, "tags": []string{"x"}}); !strings.Contains(out, `"isError":true`) {
 		t.Fatalf("bob can suggest on alice's row: %s", out)
 	}
-	if out = call(aTok, "suggest_labels", map[string]any{"id": bare, "level": "building", "tags": []string{" Ξύλο ", "ξύλο", "φως"}}); strings.Contains(out, `"isError":true`) {
+	if out = call(aTok, "suggest_labels", map[string]any{"id": bare, "level": "κτίριο", "tags": []string{" Ξύλο ", "ξύλο", "φως"}}); strings.Contains(out, `"isError":true`) {
 		t.Fatalf("suggest_labels: %s", out)
 	}
 	r, _ := e.app.FindRecordById("inspirations", bare)
@@ -423,7 +426,7 @@ func TestMCPSuggestLabels(t *testing.T) {
 		Level string   `json:"level"`
 		Tags  []string `json:"tags"`
 	}
-	if err := r.UnmarshalJSONField("suggestion", &s); err != nil || s.Level != "building" || strings.Join(s.Tags, ",") != "ξύλο,φως" {
+	if err := r.UnmarshalJSONField("suggestion", &s); err != nil || s.Level != e.levelID(alice.Id, "Κτίριο") || strings.Join(s.Tags, ",") != "ξύλο,φως" {
 		t.Fatalf("stored suggestion: %+v %v", s, err)
 	}
 	// A pending suggestion takes the row off the unlabeled list, so the AI does not redo it.
