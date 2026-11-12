@@ -121,7 +121,9 @@
 		for (const i of items) per.set(i.project_id, (per.get(i.project_id) ?? 0) + 1);
 		return [
 			{ id: 'all', name: 'Όλα τα projects', count: items.length },
-			...data.projects.map((p) => ({ id: p.id, name: p.name, count: per.get(p.id) ?? 0 })),
+			...data.projects
+				.filter((p) => !p.archived || p.id === project)
+				.map((p) => ({ id: p.id, name: p.name, count: per.get(p.id) ?? 0 })),
 			{ id: 'none', name: 'Χωρίς project', count: per.get(null) ?? 0 }
 		];
 	});
@@ -511,7 +513,9 @@
 				title: 'Αντιγραφή σε',
 				onback: back,
 				items: [
-					...data.projects.map((p) => ({ label: p.name, onselect: act(() => void copyTo(id, p.id)) })),
+					...data.projects
+						.filter((p) => !p.archived)
+						.map((p) => ({ label: p.name, onselect: act(() => void copyTo(id, p.id)) })),
 					{ label: 'Χωρίς project', onselect: act(() => void copyTo(id, null)) }
 				]
 			};

@@ -4,7 +4,12 @@
 	import { onMount } from 'svelte';
 	import { LEVELS, type Inspiration, type Level } from '#lib/types.js';
 	import { LEVEL_LABELS } from '#lib/tags.js';
-	import { createProject as createProjectRow } from '#lib/inspirations.js';
+	import {
+		createProject as createProjectRow,
+		deleteProject,
+		renameProject,
+		setProjectArchived
+	} from '#lib/inspirations.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -112,7 +117,7 @@
 	});
 
 	const cards = $derived.by<Card[]>(() => {
-		const out: Card[] = data.projects.map((p) => {
+		const out: Card[] = data.projects.filter((p) => !p.archived).map((p) => {
 			const images = groups.get(p.id) ?? [];
 			return {
 				key: p.id,
@@ -148,6 +153,15 @@
 		return best;
 	});
 
+	const archivedCards = $derived.by<Card[]>(() =>
+		data.projects
+			.filter((p) => p.archived)
+			.map((p) => {
+				const images = groups.get(p.id) ?? [];
+				return { key: p.id, name: p.name, images, count: images.length, tags: [], lastChange: '' };
+			})
+	);
+
 	const gridCards = $derived(cards.filter((c) => c.key !== resumeCard?.key));
 
 	const filtered = $derived.by(() => {
@@ -167,6 +181,11 @@
 			? 'Χωρίς project'
 			: (data.projects.find((p) => p.id === selected)?.name ?? 'Εικόνες')
 	);
+
+	const selectedCard = $derived.by<Card | null>(() => {
+		const p = data.projects.find((x) => x.id === selected);
+		return p ? { key: p.id, name: p.name, images: [], count: 0, tags: [], lastChange: '' } : null;
+	});
 
 	const orphanCount = $derived((groups.get('none') ?? []).length);
 
@@ -206,6 +225,81 @@
 			creating = false;
 		}
 	}
+
+	// ---------- rename, archive, delete ----------
+	/** Project whose "⋯" menu is open. */
+	let menuFor = $state<string | null>(null);
+	/** Project being renamed, and the draft name. */
+	let editing = $state<string | null>(null);
+	let draft = $state('');
+	/** Project waiting for the delete confirmation. */
+	let confirming = $state<string | null>(null);
+	let manageBusy = $state(false);
+	let manageError = $state('');
+
+	function closeManage() {
+		menuFor = null;
+		confirming = null;
+	}
+
+	function startRename(card: Card) {
+		closeManage();
+		manageError = '';
+		draft = card.name;
+		editing = card.key;
+	}
+
+	function focusSelect(el: HTMLInputElement) {
+		el.focus();
+		el.select();
+	}
+
+	async function commitRename(card: Card) {
+		if (editing !== card.key || manageBusy) return;
+		const name = draft.trim();
+		if (!name || name === card.name) {
+			editing = null;
+			return;
+		}
+		manageBusy = true;
+		try {
+			await renameProject(data.pb, card.key, name);
+			editing = null;
+			await invalidate('moodboard:data');
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Αποτυχία.';
+			manageError = /unique|υπάρχει|already/i.test(message)
+				? 'Υπάρχει ήδη project με αυτό το όνομα.'
+				: message;
+		} finally {
+			manageBusy = false;
+		}
+	}
+
+	async function manage(action: () => Promise<unknown>, after?: () => void) {
+		if (manageBusy) return;
+		manageBusy = true;
+		manageError = '';
+		try {
+			await action();
+			closeManage();
+			after?.();
+			await invalidate('moodboard:data');
+		} catch (err) {
+			manageError = err instanceof Error ? err.message : 'Αποτυχία.';
+		} finally {
+			manageBusy = false;
+		}
+	}
+
+	const archive = (card: Card, on: boolean) => manage(() => setProjectArchived(data.pb, card.key, on));
+	const removeProject = (card: Card) =>
+		manage(
+			() => deleteProject(data.pb, card.key),
+			() => {
+				if (selected === card.key) selectProject('all');
+			}
+		);
 
 	function selectProject(id: string) {
 		const url = id === 'all' ? '/' : `/?project=${encodeURIComponent(id)}`;
@@ -268,9 +362,10 @@
 				<article class="pcard resume">
 					{@render collage(resumeCard.images)}
 					<span class="resume-label">ΣΥΝΕΧΙΣΕ ΕΔΩ</span>
+					{@render projectMenu(resumeCard)}
 					<div class="pmeta">
 						<div class="headrow">
-							<h3>{resumeCard.name}</h3>
+							{@render projectTitle(resumeCard)}
 							<a
 								class="btn primary cta"
 								href={mapHref(resumeCard.key)}
@@ -308,13 +403,45 @@
 				{/each}
 				{@render newProjectCard()}
 			</div>
+			{#if manageError && !editing}<p class="err">{manageError}</p>{/if}
+			{#if archivedCards.length}
+				<details class="archive">
+					<summary>Αρχείο ({archivedCards.length})</summary>
+					<ul>
+						{#each archivedCards as card (card.key)}
+							<li>
+								<span class="aname">{card.name}</span>
+								<span class="ameta">{card.count} {card.count === 1 ? 'εικόνα' : 'εικόνες'}</span>
+								{#if confirming === card.key}
+									<span class="confirm">
+										Διαγραφή; Οι εικόνες μένουν χωρίς project.
+										<button class="btn danger" type="button" disabled={manageBusy} onclick={() => removeProject(card)}>Ναι, διαγραφή</button>
+										<button class="btn ghost" type="button" onclick={() => (confirming = null)}>Άκυρο</button>
+									</span>
+								{:else}
+									<button class="btn" type="button" disabled={manageBusy} onclick={() => archive(card, false)}>Επαναφορά</button>
+									<button class="btn ghost" type="button" onclick={() => (confirming = card.key)}>Διαγραφή</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</details>
+			{/if}
 		</section>
 	{:else}
 		<section class="images">
 			<a class="back" href="/">← Όλα τα projects</a>
 			<div class="sec-head">
-				<h2>{selectedName}</h2>
+				{#if selectedCard && editing === selectedCard.key}
+					{@render renameInput(selectedCard, 'h2')}
+				{:else}
+					<h2>{selectedName}</h2>
+					{#if selectedCard}
+						<button class="btn ghost edit" type="button" onclick={() => startRename(selectedCard)}>Μετονομασία</button>
+					{/if}
+				{/if}
 				<span class="sec-meta">{filtered.length} εικόνες</span>
+				{#if manageError && selectedCard && editing === selectedCard.key}<span class="err">{manageError}</span>{/if}
 			</div>
 			{@render filters()}
 			{@render imageGrid()}
@@ -360,8 +487,9 @@
 {#snippet projectCard(card: Card)}
 	<article class="pcard">
 		{@render collage(card.images)}
+		{@render projectMenu(card)}
 		<div class="pmeta">
-			<h3>{card.name}</h3>
+			{@render projectTitle(card)}
 			<div class="prow">
 				<span>{card.count} {card.count === 1 ? 'εικόνα' : 'εικόνες'}</span>
 				<span>{relTime(card.lastChange, now)}</span>
@@ -382,6 +510,68 @@
 			aria-label={`Άνοιγμα χάρτη: ${card.name}`}
 		></a>
 	</article>
+{/snippet}
+
+{#snippet renameInput(card: Card, tag: 'h2' | 'h3')}
+	<form
+		class="rename"
+		class:big={tag === 'h2'}
+		onsubmit={(e) => {
+			e.preventDefault();
+			void commitRename(card);
+		}}
+	>
+		<input
+			bind:value={draft}
+			{@attach focusSelect}
+			maxlength="120"
+			aria-label="Όνομα project"
+			disabled={manageBusy}
+			onkeydown={(e) => e.key === 'Escape' && (editing = null)}
+			onblur={() => void commitRename(card)}
+		/>
+	</form>
+{/snippet}
+
+{#snippet projectTitle(card: Card)}
+	{#if editing === card.key}
+		{@render renameInput(card, 'h3')}
+		{#if manageError}<p class="err rename-err">{manageError}</p>{/if}
+	{:else}
+		<h3>{card.name}</h3>
+	{/if}
+{/snippet}
+
+{#snippet projectMenu(card: Card)}
+	<div class="pmenu">
+		<button
+			type="button"
+			class="dots"
+			aria-label={`Επιλογές: ${card.name}`}
+			aria-haspopup="true"
+			aria-expanded={menuFor === card.key}
+			onclick={() => {
+				confirming = null;
+				manageError = '';
+				menuFor = menuFor === card.key ? null : card.key;
+			}}>⋯</button
+		>
+		{#if menuFor === card.key}
+			<div class="scrim" role="presentation" onpointerdown={closeManage}></div>
+			<div class="mpop" role="menu" aria-label={card.name}>
+				{#if confirming === card.key}
+					<p class="mwarn">Διαγραφή του «{card.name}»; Οι εικόνες μένουν, χωρίς project.</p>
+					<button type="button" class="mi danger" disabled={manageBusy} onclick={() => removeProject(card)}>Ναι, διαγραφή</button>
+					<button type="button" class="mi" onclick={() => (confirming = null)}>Άκυρο</button>
+				{:else}
+					<button type="button" role="menuitem" class="mi" onclick={() => startRename(card)}>Μετονομασία</button>
+					<button type="button" role="menuitem" class="mi" disabled={manageBusy} onclick={() => archive(card, true)}>Αρχειοθέτηση</button>
+					<button type="button" role="menuitem" class="mi danger" onclick={() => (confirming = card.key)}>Διαγραφή…</button>
+				{/if}
+				{#if manageError}<p class="err">{manageError}</p>{/if}
+			</div>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet newProjectCard()}
@@ -700,6 +890,69 @@
 	.body { padding: 10px 12px 12px; }
 	.note { margin: 0; font-size: 0.88rem; line-height: 1.45; white-space: pre-line; }
 	.tags { margin: 6px 0 0; color: var(--muted); font-size: 0.76rem; }
+
+	.pmenu { position: absolute; top: 8px; right: 8px; z-index: 3; }
+	.dots {
+		width: 32px;
+		height: 32px;
+		padding: 0;
+		display: grid;
+		place-items: center;
+		font-size: 18px;
+		line-height: 1;
+		background: var(--surface);
+		opacity: 0.92;
+	}
+	.dots:hover { border-color: var(--muted); }
+	.pcard.resume .pmenu { left: auto; }
+	.scrim { position: fixed; inset: 0; z-index: 4; }
+	.mpop {
+		position: absolute;
+		top: 38px;
+		right: 0;
+		z-index: 5;
+		min-width: 190px;
+		max-width: 260px;
+		display: flex;
+		flex-direction: column;
+		padding: 5px;
+		background: var(--raised);
+		border-radius: 10px;
+		box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.3), 0 0 0 1px var(--line);
+	}
+	.mi {
+		border: 0;
+		background: none;
+		text-align: left;
+		padding: 8px 10px;
+		min-height: 36px;
+		font-size: 0.85rem;
+		border-radius: 6px;
+	}
+	.mi:hover:not(:disabled) { background: var(--sunk); }
+	.mi.danger { color: var(--accent); }
+	.mwarn { margin: 6px 10px 8px; font-size: 0.8rem; line-height: 1.4; color: var(--muted); }
+	.rename { display: flex; flex: 1; min-width: 0; position: relative; z-index: 3; }
+	.rename input { width: 100%; font-family: var(--font-serif); font-size: 1.05rem; font-weight: 600; }
+	.rename.big input { font-size: 1.05rem; max-width: 420px; }
+	.rename-err { flex-basis: 100%; }
+	.edit { font-size: 0.8rem; }
+
+	.archive { margin-top: 20px; color: var(--muted); font-size: 0.85rem; }
+	.archive summary { cursor: pointer; padding: 6px 0; }
+	.archive ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+	.archive li {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+		padding: 8px 12px;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--r-ctl);
+	}
+	.aname { font-family: var(--font-serif); color: var(--text); font-size: 0.95rem; flex: 1; min-width: 120px; overflow-wrap: anywhere; }
+	.confirm { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 	.fab { display: none; }
 

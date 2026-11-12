@@ -30,6 +30,8 @@ export interface Project {
 	id: string;
 	name: string;
 	description: string;
+	/** Put away by the owner: hidden from the project list and pickers, images kept. */
+	archived: boolean;
 	created_at: string;
 }
 

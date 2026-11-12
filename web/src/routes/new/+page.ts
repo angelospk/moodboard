@@ -3,7 +3,7 @@ import { listProjects, userTags } from '#lib/inspirations.js';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { pb } = await parent();
-	const projects = await listProjects(pb);
+	const projects = (await listProjects(pb)).filter((p) => !p.archived);
 	const tags = await userTags(pb).catch(() => []);
 	return { projects, tags };
 };

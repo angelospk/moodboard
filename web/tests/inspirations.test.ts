@@ -7,6 +7,9 @@ import {
 	createInspiration,
 	createProject,
 	deleteInspiration,
+	deleteProject,
+	renameProject,
+	setProjectArchived,
 	deletePosition,
 	getInspiration,
 	imageUrls,
@@ -190,6 +193,40 @@ describe('update and delete', () => {
 		await deleteInspiration(A.pb, id);
 		expect(await getInspiration(A.pb, id)).toBeNull();
 		expect((await fetch(url)).status).toBe(404);
+	});
+});
+
+describe('project rename, archive, delete', () => {
+	it('renames a project; a duplicate name is refused', async () => {
+		const a = await createProject(A.pb, A.id, 'Old name');
+		await createProject(A.pb, A.id, 'Taken');
+		expect((await renameProject(A.pb, a.id, '  New name ')).name).toBe('New name');
+		await expect(renameProject(A.pb, a.id, 'taken')).rejects.toThrow();
+		expect((await listProjects(A.pb)).find((p) => p.id === a.id)?.name).toBe('New name');
+	});
+
+	it('archives and restores a project; images stay', async () => {
+		const p = await createProject(A.pb, A.id, 'To archive');
+		const row = await createInspiration(A.pb, A.id, png(), { project_id: p.id });
+		expect((await listProjects(A.pb)).find((x) => x.id === p.id)?.archived).toBe(false);
+		expect((await setProjectArchived(A.pb, p.id, true)).archived).toBe(true);
+		expect((await listProjects(A.pb)).find((x) => x.id === p.id)?.archived).toBe(true);
+		expect((await getInspiration(A.pb, row.id))?.project_id).toBe(p.id);
+		expect((await setProjectArchived(A.pb, p.id, false)).archived).toBe(false);
+	});
+
+	it('deletes a project; its images become unassigned', async () => {
+		const p = await createProject(A.pb, A.id, 'To delete');
+		const row = await createInspiration(A.pb, A.id, png(), { project_id: p.id });
+		await deleteProject(A.pb, p.id);
+		expect((await listProjects(A.pb)).some((x) => x.id === p.id)).toBe(false);
+		expect((await getInspiration(A.pb, row.id))?.project_id).toBeNull();
+	});
+
+	it("another user cannot rename, archive or delete", async () => {
+		await expect(renameProject(B.pb, p1, 'Hacked')).rejects.toThrow();
+		await expect(setProjectArchived(B.pb, p1, true)).rejects.toThrow();
+		await expect(deleteProject(B.pb, p1)).rejects.toThrow();
 	});
 });
 

@@ -78,7 +78,7 @@ function toCrop(v: unknown): Crop | null {
 }
 
 export function toProject(r: RecordModel): Project {
-	return { id: r.id, name: r.name, description: r.description ?? '', created_at: r.created_at };
+	return { id: r.id, name: r.name, description: r.description ?? '', archived: !!r.archived, created_at: r.created_at };
 }
 
 /** The user's projects, by name. */
@@ -93,6 +93,33 @@ export async function createProject(pb: PocketBase, userId: string, name: string
 		return toProject(await pb.collection('projects').create({ user_id: userId, name: name.trim(), description }));
 	} catch (e) {
 		throw new Error(`Αποτυχία δημιουργίας project: ${msg(e)}`);
+	}
+}
+
+/** Rename a project. A name another project already has is refused. */
+export async function renameProject(pb: PocketBase, id: string, name: string): Promise<Project> {
+	try {
+		return toProject(await pb.collection('projects').update(id, { name: name.trim() }));
+	} catch (e) {
+		throw new Error(`Αποτυχία μετονομασίας: ${msg(e)}`);
+	}
+}
+
+/** Put a project in the archive, or bring it back. Its images stay. */
+export async function setProjectArchived(pb: PocketBase, id: string, archived: boolean): Promise<Project> {
+	try {
+		return toProject(await pb.collection('projects').update(id, { archived }));
+	} catch (e) {
+		throw new Error(`Αποτυχία αρχειοθέτησης: ${msg(e)}`);
+	}
+}
+
+/** Delete a project. Its images stay, without a project. */
+export async function deleteProject(pb: PocketBase, id: string): Promise<void> {
+	try {
+		await pb.collection('projects').delete(id);
+	} catch (e) {
+		throw new Error(`Αποτυχία διαγραφής project: ${msg(e)}`);
 	}
 }
 

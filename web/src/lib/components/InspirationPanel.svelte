@@ -327,7 +327,7 @@
 			<span class="sr">Αντιγραφή σε project</span>
 			<select onchange={copyTo} disabled={!!busy}>
 				<option value="" selected>{busy === 'copy' ? 'Αντιγραφή…' : 'Αντιγραφή σε…'}</option>
-				{#each projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+				{#each projects.filter((p) => !p.archived) as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 				<option value="-">Χωρίς project</option>
 			</select>
 			<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" /></svg>
