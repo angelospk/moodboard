@@ -798,6 +798,7 @@
 				alt={selected.note || 'Έμπνευση'}
 				sourceUrl={selected.source_url}
 				crop={selected.crop}
+				regions={selected.regions}
 				oncrop={(c) => void saveCrop(selected!, c)}
 				onclose={() => (viewing = false)}
 				onprev={selIndex > 0 ? () => step(-1) : undefined}

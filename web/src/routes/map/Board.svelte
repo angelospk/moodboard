@@ -134,6 +134,26 @@
 	// Region boxes need room to read; region notes appear when there is more.
 	const cardWidth = $derived(size * view.k);
 	const showBoxes = $derived(cardWidth >= 200);
+
+	// Sharp layer: the 480px thumbnail blurs once a card is wider than that on screen. When the zoom
+	// has rested for a moment and cards need more pixels, the full file loads on top of the thumbnail
+	// and fades in (see .hi). Zooming back out keeps it; it costs nothing more.
+	let sharp = $state(false);
+	let sharpTimer: ReturnType<typeof setTimeout> | undefined;
+	$effect(() => {
+		const need = cardWidth * (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) > 440;
+		clearTimeout(sharpTimer);
+		if (!need || sharp) return;
+		sharpTimer = setTimeout(() => (sharp = true), 250);
+		return () => clearTimeout(sharpTimer);
+	});
+
+	function hiReady(el: HTMLImageElement) {
+		const done = () => (el.dataset.loaded = '1');
+		if (el.complete && el.naturalWidth) done();
+		el.addEventListener('load', done);
+		return () => el.removeEventListener('load', done);
+	}
 	const showRegionNotes = $derived(cardWidth >= 360);
 	/** The region whose note row is under the pointer; its box lights up on the image. */
 	let hot = $state<{ id: string; r: number } | null>(null);
@@ -1022,6 +1042,9 @@
 					>
 						{#if url}
 							<img src={url} alt="" loading="lazy" decoding="async" draggable="false" {@attach imgReady} />
+							{#if sharp && url !== urlOf(item)}
+								<img class="hi" src={urlOf(item)} alt="" loading="lazy" decoding="async" draggable="false" {@attach hiReady} />
+							{/if}
 						{:else}
 							<span class="missing">χωρίς εικόνα</span>
 						{/if}
@@ -1280,6 +1303,28 @@
 		width: 100%;
 		height: auto;
 		pointer-events: none;
+	}
+	/* Full file over the thumbnail: same box, invisible until loaded, then a soft fade. */
+	.shot img.hi {
+		position: absolute;
+		inset: auto;
+		left: 0;
+		top: 0;
+		height: 100%;
+		transition: opacity 0.35s ease;
+	}
+	.shot img.hi:not([data-loaded]) {
+		opacity: 0;
+	}
+	.shot.cropped img.hi {
+		left: calc(-100% * var(--cx) / var(--cw));
+		top: calc(-100% * var(--cy) / var(--ch));
+		height: calc(100% / var(--ch));
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.shot img.hi {
+			transition: none;
+		}
 	}
 	.shot img:not([data-loaded]) {
 		aspect-ratio: 4 / 3;

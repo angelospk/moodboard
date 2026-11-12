@@ -1,13 +1,16 @@
 <script lang="ts">
 	// Full-screen view of one image, with a crop tool. The crop is only a rectangle stored on the row
 	// (fractions of the image); the file stays whole, and cards on the map show just that part.
-	import type { Crop } from '#lib/types.js';
+	import type { Crop, Region } from '#lib/types.js';
+	import { svgPoints } from '#lib/shape.js';
 	interface Props {
 		src: string | null;
 		alt?: string;
 		/** Page the image came from (shown as a link). */
 		sourceUrl?: string | null;
 		crop: Crop | null;
+		/** What the user marked: shown over the image (boxes and freeform shapes) with their notes. */
+		regions?: Region[];
 		/** Save a new crop (null = whole image). */
 		oncrop: (crop: Crop | null) => void;
 		onclose: () => void;
@@ -15,12 +18,14 @@
 		onprev?: () => void;
 		onnext?: () => void;
 	}
-	let { src, alt = '', sourceUrl = null, crop, oncrop, onclose, onprev, onnext }: Props = $props();
+	let { src, alt = '', sourceUrl = null, crop, regions = [], oncrop, onclose, onprev, onnext }: Props = $props();
 
 	const MIN = 0.02;
 	type Handle = 'move' | 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se' | 'new';
 
 	let editing = $state(false);
+	let showMarks = $state(true);
+	let hotMark = $state<number | null>(null);
 	let box = $state<Crop>({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
 	let stage = $state<HTMLDivElement | null>(null);
 	let closeBtn = $state<HTMLButtonElement | null>(null);
@@ -134,6 +139,9 @@
 			// e.code, so it also works with a Greek keyboard layout.
 			e.preventDefault();
 			startCrop();
+		} else if (!editing && regions.length && e.code === 'KeyM' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+			e.preventDefault();
+			showMarks = !showMarks;
 		} else if (!editing && e.key === 'ArrowLeft' && onprev) {
 			e.preventDefault();
 			onprev();
@@ -158,6 +166,12 @@
 			{/if}
 		</div>
 		<div class="tools">
+			{#if !editing && regions.length}
+				<button type="button" class="tool" class:on={showMarks} aria-pressed={showMarks} title="Σημεία (M)" onclick={() => (showMarks = !showMarks)}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" rx="1" /></svg>
+					Σημεία · {regions.length}
+				</button>
+			{/if}
 			{#if !editing}
 				<button type="button" class="tool" title="Περικοπή (C)" onclick={startCrop} disabled={!src}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5v10.5h10.5M1.5 4h10.5v10.5" /></svg>
@@ -199,6 +213,32 @@
 					</div>
 				{:else if crop}
 					<div class="outline" style={rect(crop)} aria-hidden="true"></div>
+				{/if}
+				{#if !editing && showMarks && regions.length}
+					<svg class="shapes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+						{#each regions as r, i (i)}
+							{#if r.points}
+								<polygon points={svgPoints(r.points)} class:hot={hotMark === i} />
+							{:else}
+								<rect x={r.x} y={r.y} width={r.w} height={r.h} class:hot={hotMark === i} />
+							{/if}
+						{/each}
+					</svg>
+					{#each regions as r, i (i)}
+						<div
+							class="mark"
+							class:hot={hotMark === i}
+							style={rect(r)}
+							role="presentation"
+							onpointerenter={() => (hotMark = i)}
+							onpointerleave={() => (hotMark = null)}
+						>
+							<span class="mtag">
+								<b>{i + 1}</b>
+								{#if r.note?.trim()}<span class="mnote">{r.note}</span>{/if}
+							</span>
+						</div>
+					{/each}
 				{/if}
 			</div>
 		{:else}
@@ -439,5 +479,73 @@
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.viewer { animation: none; }
+	}
+	/* Marks: the shape is an SVG outline; an invisible box over it holds the number and note. */
+	.shapes {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+	.shapes :is(polygon, rect) {
+		fill: rgb(255 255 255 / 0.06);
+		stroke: rgb(255 255 255 / 0.9);
+		stroke-width: 1.5;
+		vector-effect: non-scaling-stroke;
+		stroke-linejoin: round;
+		filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.7));
+		transition: fill 160ms ease, stroke-width 160ms ease;
+	}
+	.shapes :is(polygon, rect).hot {
+		fill: rgb(255 255 255 / 0.16);
+		stroke-width: 2.5;
+	}
+	.mark {
+		position: absolute;
+		pointer-events: auto;
+	}
+	.mtag {
+		position: absolute;
+		left: 0;
+		top: 0;
+		display: flex;
+		align-items: stretch;
+		max-width: max(100%, 14rem);
+		font: 600 12px/1 system-ui, sans-serif;
+		pointer-events: none;
+		transform: translateY(-100%);
+	}
+	.mtag b {
+		flex: none;
+		padding: 4px 7px;
+		background: rgb(236 232 224);
+		color: rgb(12 11 10);
+		border-radius: 3px 0 0 3px;
+		font-variant-numeric: tabular-nums;
+	}
+	.mtag b:last-child {
+		border-radius: 3px;
+	}
+	.mnote {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-weight: 500;
+		padding: 4px 8px;
+		background: rgb(12 11 10 / 0.82);
+		color: rgb(236 232 224);
+		border-radius: 0 3px 3px 0;
+	}
+	.mark.hot .mnote {
+		white-space: normal;
+		overflow: visible;
+	}
+	.mark.hot {
+		z-index: 2;
+	}
+	.tool.on {
+		background: rgb(236 232 224 / 0.16);
 	}
 </style>

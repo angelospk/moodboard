@@ -10,6 +10,8 @@ export interface Region {
 	note: string;
 	/** 1 = not this, 5 = exactly this; null/absent = not rated. */
 	rating?: number | null;
+	/** Freeform outline (closed polygon, fractions 0..1 of the image). x/y/w/h are then its bounding box. */
+	points?: [number, number][];
 }
 
 /** The part of an image that cards show. Fractions (0..1) of the image size; the file is not changed. */

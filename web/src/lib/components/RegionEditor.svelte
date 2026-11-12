@@ -1,6 +1,7 @@
 <script lang="ts">
 	// CONTRACT (fixed). Image shown whole with numbered region boxes; drag on the image draws a new region.
 	import type { Region } from '#lib/types.js';
+	import { regionFromStroke, svgPoints, type Pt } from '#lib/shape.js';
 	interface Props {
 		src: string | null;
 		/** Bindable. New regions are appended with note '' and rating null. */
@@ -22,6 +23,9 @@
 
 	let stage = $state<HTMLDivElement | null>(null);
 	let draft = $state<Box | null>(null);
+	/** 'box' = drag a rectangle; 'free' = draw any outline around what matters. */
+	let tool = $state<'box' | 'free'>('box');
+	let stroke = $state<Pt[]>([]);
 	let origin = { x: 0, y: 0 };
 	let pointerId: number | null = null;
 
@@ -39,6 +43,7 @@
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
 		pointerId = e.pointerId;
 		origin = point(e);
+		if (tool === 'free') stroke = [[origin.x, origin.y]];
 		draft = { ...origin, w: 0, h: 0 };
 		stage.setPointerCapture(e.pointerId);
 		e.preventDefault();
@@ -47,6 +52,11 @@
 	function onMove(e: PointerEvent) {
 		if (e.pointerId !== pointerId || !draft) return;
 		const p = point(e);
+		if (tool === 'free') {
+			const last = stroke[stroke.length - 1];
+			if (Math.hypot(p.x - last[0], p.y - last[1]) > 0.003) stroke = [...stroke, [p.x, p.y]];
+			return;
+		}
 		draft = {
 			x: Math.min(origin.x, p.x),
 			y: Math.min(origin.y, p.y),
@@ -61,6 +71,15 @@
 		pointerId = null;
 		const d = draft;
 		draft = null;
+		if (tool === 'free') {
+			const s = stroke;
+			stroke = [];
+			const r = keep ? regionFromStroke(s) : null;
+			if (!r) return;
+			regions = [...regions, r];
+			active = regions.length - 1;
+			return;
+		}
 		if (!keep || !d || d.w < MIN || d.h < MIN) return;
 		// A new array, so bindable parents see the change.
 		regions = [...regions, { ...d, note: '', rating: null }];
@@ -73,6 +92,7 @@
 		if (pointerId !== null && stage?.hasPointerCapture(pointerId)) stage.releasePointerCapture(pointerId);
 		pointerId = null;
 		draft = null;
+		stroke = [];
 	}
 
 	function pct(v: number) {
@@ -83,6 +103,18 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="re">
+	{#if src && editable}
+		<div class="tools" role="group" aria-label="Εργαλείο σήμανσης">
+			<button type="button" class:on={tool === 'box'} aria-pressed={tool === 'box'} onclick={() => (tool = 'box')}>
+				<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" rx="1" /></svg>
+				Πλαίσιο
+			</button>
+			<button type="button" class:on={tool === 'free'} aria-pressed={tool === 'free'} onclick={() => (tool = 'free')}>
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 11c-1-4 2-8 6-8s5 3 3.5 6S6 14 3 11z" /></svg>
+				Ελεύθερο
+			</button>
+		</div>
+	{/if}
 	{#if src}
 		<div
 			class={['stage', editable && 'editable', draft && 'drawing', active !== null && 'focus']}
@@ -98,7 +130,7 @@
 
 			{#each regions as r, i (i)}
 				<div
-					class={['box', active === i && 'on']}
+					class={['box', active === i && 'on', r.points && 'shape']}
 					style:left={pct(r.x)}
 					style:top={pct(r.y)}
 					style:width={pct(r.w)}
@@ -118,7 +150,14 @@
 				</div>
 			{/each}
 
-			{#if draft}
+			<svg class="shapes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+				{#each regions as r, i (i)}
+					{#if r.points}<polygon points={svgPoints(r.points)} class:on={active === i} />{/if}
+				{/each}
+				{#if stroke.length > 1}<polyline points={svgPoints(stroke)} class="draft" />{/if}
+			</svg>
+
+			{#if draft && tool === 'box'}
 				<div
 					class={['box', 'draft', (draft.w < MIN || draft.h < MIN) && 'tiny']}
 					style:left={pct(draft.x)}
@@ -137,6 +176,7 @@
 	/* Parents size the image with --re-max-h (default 70vh). */
 	.re {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: center;
 		width: 100%;
@@ -185,6 +225,70 @@
 		box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--scrim) 80%, transparent);
 	}
 	.stage.drawing .box:not(.draft) {
+		pointer-events: none;
+	}
+	.tools {
+		flex-basis: 100%;
+		display: flex;
+		gap: 4px;
+		margin-bottom: 8px;
+	}
+	.tools button {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 10px;
+		font-size: 12.5px;
+		color: var(--muted);
+	}
+	.tools button.on {
+		color: var(--text);
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+	}
+	.tools svg {
+		width: 14px;
+		height: 14px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+	}
+	/* A freeform region: the polygon is the outline; its box only places the number and listens to the pointer. */
+	.box.shape,
+	.box.shape.on {
+		border-color: transparent;
+		background: transparent;
+		box-shadow: none;
+	}
+	.shapes {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+	.shapes polygon {
+		fill: color-mix(in srgb, var(--accent) 10%, transparent);
+		stroke: var(--accent);
+		stroke-width: 1.5;
+		vector-effect: non-scaling-stroke;
+		stroke-linejoin: round;
+		transition: fill 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.shapes polygon.on {
+		fill: color-mix(in srgb, var(--accent) 24%, transparent);
+		stroke-width: 2.5;
+	}
+	.shapes polyline.draft {
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 2;
+		stroke-dasharray: 5 4;
+		vector-effect: non-scaling-stroke;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.stage.drawing .box.shape {
 		pointer-events: none;
 	}
 	.box.draft {

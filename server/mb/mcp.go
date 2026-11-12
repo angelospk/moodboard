@@ -110,7 +110,7 @@ func NewMCPServer(app core.App, user *core.Record) *mcp.Server {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "get_inspiration", Title: "Get inspiration", Annotations: ro,
-		Description: "Get one inspiration with its image, note and marked regions. Regions are rectangles in fractions (0..1) of the image with the user's note on what they like there."},
+		Description: "Get one inspiration with its image, note and marked regions. Regions are rectangles in fractions (0..1) of the image with the user's note on what they like there; a freeform region also has points (its outline as [x, y] pairs), and x/y/w/h are then its bounding box."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a idArgs) (*mcp.CallToolResult, any, error) {
 			return getInspiration(app, user, a.ID)
 		})
