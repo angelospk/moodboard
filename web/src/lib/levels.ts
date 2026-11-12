@@ -3,6 +3,7 @@
 import type PocketBase from 'pocketbase';
 import type { RecordModel } from 'pocketbase';
 import { msg } from '#lib/inspirations.js';
+import { t } from '#lib/i18n.js';
 
 export interface LevelRow {
 	id: string;
@@ -28,8 +29,8 @@ export function levelName(rows: LevelRow[], id: string | null | undefined): stri
 
 function checkName(name: string): string {
 	const n = name.trim();
-	if (!n) throw new Error('Γράψε ένα όνομα.');
-	if (n.length > MAX_LEVEL_NAME) throw new Error(`Το πολύ ${MAX_LEVEL_NAME} χαρακτήρες.`);
+	if (!n) throw new Error(t('levels.enterName'));
+	if (n.length > MAX_LEVEL_NAME) throw new Error(t('levels.maxChars', { n: MAX_LEVEL_NAME }));
 	return n;
 }
 

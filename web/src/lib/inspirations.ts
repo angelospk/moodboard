@@ -1,6 +1,7 @@
 // Client-side data helpers (browser and tests). The PocketBase client acts as the signed-in user, so
 // the collection API rules and the server hooks limit every call to the user's own rows and files.
 import type PocketBase from 'pocketbase';
+import { t } from '#lib/i18n.js';
 import type { RecordModel } from 'pocketbase';
 import type { Crop, Inspiration, Project, Suggestion } from '#lib/types.js';
 
@@ -25,8 +26,8 @@ export function cleanTags(tags: string[] = []): string[] {
 /** Throws a user-readable (Greek) message when the file cannot be stored. */
 export function checkImage(file: Blob): string {
 	const ext = IMAGE_EXT[file.type];
-	if (!ext) throw new Error('Μη υποστηριζόμενος τύπος εικόνας (type): png, jpeg, webp, gif ή avif.');
-	if (file.size > MAX_IMAGE_BYTES) throw new Error('Η εικόνα είναι μεγαλύτερη από 10MB.');
+	if (!ext) throw new Error(t('err.imageType'));
+	if (file.size > MAX_IMAGE_BYTES) throw new Error(t('err.imageSize'));
 	return ext;
 }
 
@@ -34,7 +35,7 @@ export function msg(e: unknown): string {
 	const r = e as { response?: { message?: string; data?: Record<string, { message?: string }> }; message?: string };
 	const field = r.response?.data && Object.entries(r.response.data)[0];
 	if (field) return `${field[0]}: ${field[1]?.message ?? ''}`.trim();
-	return r.response?.message || r.message || 'άγνωστο σφάλμα';
+	return r.response?.message || r.message || t('common.unknownError');
 }
 
 /** A PocketBase inspirations record in the app's shape. `image_path` is the stored file name: it is
@@ -92,7 +93,7 @@ export async function createProject(pb: PocketBase, userId: string, name: string
 	try {
 		return toProject(await pb.collection('projects').create({ user_id: userId, name: name.trim(), description }));
 	} catch (e) {
-		throw new Error(`Αποτυχία δημιουργίας project: ${msg(e)}`);
+		throw new Error(t('err.createProject', { msg: msg(e) }));
 	}
 }
 
@@ -101,7 +102,7 @@ export async function renameProject(pb: PocketBase, id: string, name: string): P
 	try {
 		return toProject(await pb.collection('projects').update(id, { name: name.trim() }));
 	} catch (e) {
-		throw new Error(`Αποτυχία μετονομασίας: ${msg(e)}`);
+		throw new Error(t('err.renameProject', { msg: msg(e) }));
 	}
 }
 
@@ -110,7 +111,7 @@ export async function setProjectArchived(pb: PocketBase, id: string, archived: b
 	try {
 		return toProject(await pb.collection('projects').update(id, { archived }));
 	} catch (e) {
-		throw new Error(`Αποτυχία αρχειοθέτησης: ${msg(e)}`);
+		throw new Error(t('err.archiveProject', { msg: msg(e) }));
 	}
 }
 
@@ -119,7 +120,7 @@ export async function deleteProject(pb: PocketBase, id: string): Promise<void> {
 	try {
 		await pb.collection('projects').delete(id);
 	} catch (e) {
-		throw new Error(`Αποτυχία διαγραφής project: ${msg(e)}`);
+		throw new Error(t('err.deleteProject', { msg: msg(e) }));
 	}
 }
 
@@ -274,7 +275,7 @@ export async function createInspiration(
 		);
 		return toInspiration(rec);
 	} catch (e) {
-		throw new Error(`Αποτυχία αποθήκευσης: ${msg(e)}`);
+		throw new Error(t('err.save', { msg: msg(e) }));
 	}
 }
 
@@ -291,7 +292,7 @@ export async function copyInspiration(
 			body: { project_id: projectId }
 		});
 	} catch (e) {
-		throw new Error(`Αποτυχία αντιγραφής: ${msg(e)}`);
+		throw new Error(t('err.copy', { msg: msg(e) }));
 	}
 }
 
@@ -349,8 +350,8 @@ export async function updateInspiration(pb: PocketBase, id: string, fields: Edit
 	try {
 		return toInspiration(await pb.collection('inspirations').update(id, patch));
 	} catch (e) {
-		if ((e as { status?: number }).status === 404) throw new Error('Η εικόνα δεν βρέθηκε.');
-		throw new Error(`Αποτυχία αποθήκευσης: ${msg(e)}`);
+		if ((e as { status?: number }).status === 404) throw new Error(t('err.imageNotFound'));
+		throw new Error(t('err.save', { msg: msg(e) }));
 	}
 }
 
@@ -359,8 +360,8 @@ export async function deleteInspiration(pb: PocketBase, id: string): Promise<voi
 	try {
 		await pb.collection('inspirations').delete(id);
 	} catch (e) {
-		if ((e as { status?: number }).status === 404) throw new Error('Η εικόνα δεν βρέθηκε.');
-		throw new Error(`Αποτυχία διαγραφής: ${msg(e)}`);
+		if ((e as { status?: number }).status === 404) throw new Error(t('err.imageNotFound'));
+		throw new Error(t('err.delete', { msg: msg(e) }));
 	}
 }
 

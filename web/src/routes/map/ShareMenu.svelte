@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// «Κοινοποίηση»: make a board public at /s/<project id> and pick what visitors see. Every change
 	// saves at once; on an error the switch goes back.
 	import type PocketBase from 'pocketbase';
@@ -8,10 +9,10 @@
 	let { pb, projectId }: { pb: PocketBase; projectId: string } = $props();
 
 	const OPTIONS: { key: Exclude<keyof ShareSettings, 'public'>; label: string }[] = [
-		{ key: 'notes', label: 'Σημειώσεις εικόνων' },
-		{ key: 'regions', label: 'Σημειώσεις περιοχών' },
-		{ key: 'tags', label: 'Tags και επίπεδο' },
-		{ key: 'sources', label: 'Πηγές' }
+		{ key: 'notes', label: t('share.optNotes') },
+		{ key: 'regions', label: t('share.optRegions') },
+		{ key: 'tags', label: t('share.optTags') },
+		{ key: 'sources', label: t('share.optSources') }
 	];
 
 	let open = $state(false);
@@ -57,42 +58,42 @@
 	async function copy() {
 		try {
 			await navigator.clipboard.writeText(link);
-			msg = 'Ο σύνδεσμος αντιγράφηκε ✓';
+			msg = t('share.copied');
 		} catch {
-			msg = 'Αντέγραψε τον σύνδεσμο από το πεδίο.';
+			msg = t('share.copyManual');
 		}
 	}
 </script>
 
 <div class="share">
-	<button type="button" class="btn ghost" class:on={s?.public} aria-haspopup="dialog" aria-expanded={open} onclick={toggle} title="Κοινοποίηση">
-		<Icon name="open" size={15} /> <span class="lbl">{s?.public ? 'Δημόσιο' : 'Κοινοποίηση'}</span>
+	<button type="button" class="btn ghost" class:on={s?.public} aria-haspopup="dialog" aria-expanded={open} onclick={toggle} title={t('common.shareTitle')}>
+		<Icon name="open" size={15} /> <span class="lbl">{s?.public ? t('share.public') : t('common.shareTitle')}</span>
 	</button>
 	{#if open}
 		<div class="scrim" role="presentation" onpointerdown={() => (open = false)}></div>
-		<div class="pop" role="dialog" aria-label="Κοινοποίηση">
+		<div class="pop" role="dialog" aria-label={t('common.shareTitle')}>
 			{#if !s}
 				{#if busy}
-					<p class="hint">Φόρτωση…</p>
+					<p class="hint">{t('common.loading')}</p>
 				{:else}
-					<button type="button" class="btn" onclick={load}>Δοκίμασε ξανά</button>
+					<button type="button" class="btn" onclick={load}>{t('share.retry')}</button>
 				{/if}
 			{:else}
 				<label class="switch">
 					<input type="checkbox" checked={s.public} disabled={busy} onchange={(e) => change('public', e.currentTarget.checked)} />
 					<span>
-						<b>Δημόσιο board</b>
-						<small>Όποιος έχει τον σύνδεσμο το βλέπει, χωρίς λογαριασμό. Δεν αλλάζει τίποτα.</small>
+						<b>{t('share.publicBoard')}</b>
+						<small>{t('share.publicHint')}</small>
 					</span>
 				</label>
 				{#if s.public}
 					<div class="row">
-						<input class="url" readonly value={link} aria-label="Σύνδεσμος" onfocus={(e) => e.currentTarget.select()} />
-						<button type="button" class="btn" onclick={copy}><Icon name="copy" size={14} /> Αντιγραφή</button>
+						<input class="url" readonly value={link} aria-label={t('share.link')} onfocus={(e) => e.currentTarget.select()} />
+						<button type="button" class="btn" onclick={copy}><Icon name="copy" size={14} /> {t('common.copy')}</button>
 					</div>
 				{/if}
 				<fieldset>
-					<legend>Τι φαίνεται</legend>
+					<legend>{t('share.whatShows')}</legend>
 					{#each OPTIONS as o (o.key)}
 						<label class="opt">
 							<input type="checkbox" checked={s[o.key]} disabled={busy} onchange={(e) => change(o.key, e.currentTarget.checked)} />

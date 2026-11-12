@@ -16,6 +16,7 @@
 </script>
 
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	import Icon from './Icon.svelte';
 
 	interface Props {
@@ -64,7 +65,7 @@
 		{#if title}
 			<div class="head">
 				{#if onback}
-					<button type="button" class="back" role="menuitem" aria-label="Πίσω" onclick={onback}>
+					<button type="button" class="back" role="menuitem" aria-label={t('common.back2')} onclick={onback}>
 						<Icon name="chevronLeft" size={14} />
 					</button>
 				{/if}

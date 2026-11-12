@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// CONTRACT (fixed). Inline editor for one inspiration with autosave (see DESIGN.md "Inspiration panel").
 	import type PocketBase from 'pocketbase';
 	import type { Inspiration, Project } from '#lib/types.js';
@@ -117,7 +118,7 @@
 		busy = 'leave';
 		const ok = await saver.flush();
 		busy = '';
-		if (ok || confirm('Οι αλλαγές δεν αποθηκεύτηκαν. Κλείσιμο χωρίς αποθήκευση;')) onclose();
+		if (ok || confirm(t('panel.leaveConfirm'))) onclose();
 	}
 
 	async function openFull() {
@@ -165,7 +166,7 @@
 		actionError = '';
 		try {
 			// The copy reads the stored row, so store the latest edits first.
-			if (!(await saver.flush())) throw new Error('Οι αλλαγές δεν αποθηκεύτηκαν ακόμα. Πάτα «Ξανά».');
+			if (!(await saver.flush())) throw new Error(t('panel.notSavedYet'));
 			await copyInspiration(pb, userId, target, projectId);
 			oncopied(projectId ? (projects.find((p) => p.id === projectId)?.name ?? null) : null);
 		} catch (err) {
@@ -176,7 +177,7 @@
 	}
 
 	async function remove() {
-		if (busy || !confirm('Διαγραφή αυτής της εικόνας;')) return;
+		if (busy || !confirm(t('item.deleteConfirm'))) return;
 		const target = id;
 		busy = 'delete';
 		actionError = '';
@@ -213,33 +214,33 @@
 
 <svelte:window onpagehide={() => void saver.flush()} />
 
-<section class="panel" aria-label="Επεξεργασία εικόνας">
+<section class="panel" aria-label={t('panel.aria')}>
 	<header>
 		<div class="title">
-			<span class="lvl">{levelLabel(level) || 'Εικόνα'}</span>
+			<span class="lvl">{levelLabel(level) || t('panel.image')}</span>
 			<span class={['status', status]} aria-live="polite">
 				{#if status === 'saving' || status === 'pending'}
-					Αποθήκευση…
+					{t('common.saving')}
 				{:else if status === 'saved'}
-					Αποθηκεύτηκε ✓
+					{t('item.saved')}
 				{:else if status === 'error'}
-					<span class="err" title={failure}>Δεν αποθηκεύτηκε</span>
-					<button type="button" class="retry" onclick={() => void saver.retry()}>Ξανά</button>
+					<span class="err" title={failure}>{t('item.notSaved')}</span>
+					<button type="button" class="retry" onclick={() => void saver.retry()}>{t('item.retry')}</button>
 				{/if}
 			</span>
 		</div>
 		<div class="nav">
 			{#if onprev}
-				<button type="button" class="icon" aria-label="Προηγούμενη εικόνα" title="Προηγούμενη (←)" onclick={onprev}>
+				<button type="button" class="icon" aria-label={t('panel.prevImage')} title={t('panel.prevTitle')} onclick={onprev}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" /></svg>
 				</button>
 			{/if}
 			{#if onnext}
-				<button type="button" class="icon" aria-label="Επόμενη εικόνα" title="Επόμενη (→)" onclick={onnext}>
+				<button type="button" class="icon" aria-label={t('panel.nextImage')} title={t('panel.nextTitle')} onclick={onnext}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
 				</button>
 			{/if}
-			<button type="button" class="icon" aria-label="Κλείσιμο" title="Κλείσιμο (Esc)" onclick={close}>
+			<button type="button" class="icon" aria-label={t('common.close')} title={t('panel.closeTitle')} onclick={close}>
 				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
 			</button>
 		</div>
@@ -252,39 +253,39 @@
 
 		<div class="well">
 			{#if onexpand && imageUrl}
-				<button type="button" class="expand" aria-label="Πλήρης οθόνη" title="Πλήρης οθόνη και περικοπή (Space)" onclick={onexpand}>
+				<button type="button" class="expand" aria-label={t('panel.fullscreen')} title={t('panel.fullscreenTitle')} onclick={onexpand}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></svg>
 				</button>
 			{/if}
 			<RegionEditor
 				src={imageUrl}
-				alt={note || 'Έμπνευση'}
+				alt={note || t('item.alt')}
 				bind:regions={() => regions, (v) => ((regions = v), change('regions', v))}
 				bind:active
 			/>
 		</div>
 
 		<label class="field">
-			<span class="lbl">Σημείωση</span>
+			<span class="lbl">{t('panel.noteLabel')}</span>
 			<textarea
 				bind:this={noteEl}
 				bind:value={() => note, (v) => ((note = v), change('note', v))}
 				{@attach autogrow}
 				rows="2"
-				placeholder="Τι σου αρέσει εδώ;"
+				placeholder={t('item.notePlaceholder')}
 			></textarea>
 		</label>
 
 		{#if suggestion}
 			<div class="suggest" role="group" aria-labelledby="panel-suggest">
-				<span class="lbl" id="panel-suggest">Πρόταση AI</span>
+				<span class="lbl" id="panel-suggest">{t('panel.suggestion')}</span>
 				<p class="chips">
 					{#if levelLabel(suggestion.level)}<span class="chip on">{levelLabel(suggestion.level)}</span>{/if}
 					{#each suggestion.tags as t (t)}<span class={['chip', tags.includes(t) && 'have']}>#{t}</span>{/each}
 				</p>
 				<div class="sbtns">
-					<button type="button" class="btn primary" onclick={accept}>Αποδοχή</button>
-					<button type="button" class="btn ghost" onclick={dismiss}>Απόρριψη</button>
+					<button type="button" class="btn primary" onclick={accept}>{t('panel.accept')}</button>
+					<button type="button" class="btn ghost" onclick={dismiss}>{t('panel.dismiss')}</button>
 				</div>
 			</div>
 		{/if}
@@ -295,12 +296,12 @@
 				id="panel-tags"
 				bind:tags={() => tags, (v) => ((tags = v), change('tags', v))}
 				{suggestions}
-				placeholder="ξύλο, φως…"
+				placeholder={t('item.tagsPlaceholder')}
 			/>
 		</div>
 
 		<div class="field">
-			<span class="lbl" id="panel-level">Επίπεδο</span>
+			<span class="lbl" id="panel-level">{t('common.level')}</span>
 			<div class="chips" role="group" aria-labelledby="panel-level">
 				{#each levelStore.list as l (l.id)}
 					<button type="button" class={['chip', level === l.id && 'on']} aria-pressed={level === l.id} onclick={() => setLevel(l.id)}>
@@ -311,13 +312,13 @@
 		</div>
 
 		<div class="field">
-			<span class="lbl">Περιοχές{regions.length ? ` · ${regions.length}` : ''}</span>
+			<span class="lbl">{t('item.regions')}{regions.length ? ` · ${regions.length}` : ''}</span>
 			<RegionList bind:regions={() => regions, (v) => ((regions = v), change('regions', v))} bind:active />
 		</div>
 
 		{#if safeSource}
 			<div class="field">
-				<span class="lbl">Πηγή</span>
+				<span class="lbl">{t('item.source')}</span>
 				<a class="src" href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 			</div>
 		{/if}
@@ -327,18 +328,18 @@
 
 	<footer>
 		<label class="copy">
-			<span class="sr">Αντιγραφή σε project</span>
+			<span class="sr">{t('panel.copyToProject')}</span>
 			<select onchange={copyTo} disabled={!!busy}>
-				<option value="" selected>{busy === 'copy' ? 'Αντιγραφή…' : 'Αντιγραφή σε…'}</option>
+				<option value="" selected>{busy === 'copy' ? t('panel.copying') : t('panel.copyTo')}</option>
 				{#each projects.filter((p) => !p.archived) as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-				<option value="-">Χωρίς project</option>
+				<option value="-">{t('common.noProject')}</option>
 			</select>
 			<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" /></svg>
 		</label>
-		<a class="btn ghost" href={`/i/${item.id}`} onclick={(e) => { e.preventDefault(); void openFull(); }}>Πλήρης σελίδα</a>
+		<a class="btn ghost" href={`/i/${item.id}`} onclick={(e) => { e.preventDefault(); void openFull(); }}>{t('panel.fullPage')}</a>
 		<span class="grow"></span>
 		<button type="button" class="btn ghost danger" disabled={!!busy} onclick={remove}>
-			{busy === 'delete' ? 'Διαγραφή…' : 'Διαγραφή'}
+			{busy === 'delete' ? t('item.deleting') : t('common.delete')}
 		</button>
 	</footer>
 </section>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '@/lib/i18n';
 	let {
 		tags = $bindable<string[]>([]),
 		suggestions = [],
@@ -89,7 +90,7 @@
 	{#each tags as tag (tag)}
 		<span class="chip">
 			{tag}
-			<button type="button" class="x" aria-label={`Αφαίρεση ${tag}`} onclick={() => remove(tag)}>×</button>
+			<button type="button" class="x" aria-label={t('tags.remove', { tag })} onclick={() => remove(tag)}>×</button>
 		</span>
 	{/each}
 	<input

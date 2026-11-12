@@ -173,7 +173,7 @@ type authRequest struct {
 	client                                                                         *core.Record
 }
 
-func readAuthRequest(app core.App, v url.Values) (*authRequest, string) {
+func readAuthRequest(app core.App, r *http.Request, v url.Values) (*authRequest, string) {
 	a := &authRequest{
 		ClientID: v.Get("client_id"), RedirectURI: v.Get("redirect_uri"), State: v.Get("state"),
 		Challenge: v.Get("code_challenge"), Method: v.Get("code_challenge_method"),
@@ -181,10 +181,10 @@ func readAuthRequest(app core.App, v url.Values) (*authRequest, string) {
 	}
 	c, err := app.FindRecordById("oauth_clients", a.ClientID)
 	if err != nil {
-		return nil, "Άγνωστη εφαρμογή (client_id)."
+		return nil, tr(r, "Άγνωστη εφαρμογή (client_id).", "Unknown application (client_id).")
 	}
 	if !slices.Contains(stringList(c.Get("redirect_uris")), a.RedirectURI) {
-		return nil, "Η διεύθυνση επιστροφής (redirect_uri) δεν είναι δηλωμένη."
+		return nil, tr(r, "Η διεύθυνση επιστροφής (redirect_uri) δεν είναι δηλωμένη.", "The redirect address (redirect_uri) is not registered.")
 	}
 	a.client = c
 	return a, ""
@@ -217,8 +217,8 @@ func (a *authRequest) protocolError() string {
 }
 
 var consentPage = template.Must(template.New("consent").Parse(`<!doctype html>
-<html lang="el"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Σύνδεση · Moodboard</title>
+<html lang="{{if .EN}}en{{else}}el{{end}}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{if .EN}}Sign in{{else}}Σύνδεση{{end}} · Moodboard</title>
 <style>
 :root{color-scheme:light dark;--bg:#f4f1ea;--card:#fbfaf6;--ink:#1f1d1a;--muted:#6f6a62;--line:#ddd7cc;--accent:#b5532b}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1b19;--card:#262421;--ink:#ece8e0;--muted:#a49d92;--line:#3a3733}}
@@ -233,16 +233,16 @@ button{font:inherit;padding:.65rem;border-radius:10px;border:0;background:var(--
 small{color:var(--muted);display:block;margin-top:1rem}
 </style></head><body><main>
 <h1>Moodboard</h1>
-<p>Η εφαρμογή <strong>{{.Client}}</strong> ζητά πρόσβαση στο moodboard σου: να διαβάζει projects και εικόνες, να αποθηκεύει νέες εικόνες και να προσθέτει σημειώσεις.</p>
-<p>Μετά την έγκριση θα σε στείλει στο <strong>{{.Host}}</strong>. Το όνομα της εφαρμογής δεν είναι επαληθευμένο: συνέχισε μόνο αν εσύ πρόσθεσες τη σύνδεση εκεί (π.χ. <em>claude.ai</em>).</p>
+<p>{{if .EN}}The application <strong>{{.Client}}</strong> asks for access to your moodboard: to read projects and images, save new images and add notes.{{else}}Η εφαρμογή <strong>{{.Client}}</strong> ζητά πρόσβαση στο moodboard σου: να διαβάζει projects και εικόνες, να αποθηκεύει νέες εικόνες και να προσθέτει σημειώσεις.{{end}}</p>
+<p>{{if .EN}}After you approve, it sends you to <strong>{{.Host}}</strong>. The application name is not verified: continue only if you added the connection there (for example <em>claude.ai</em>).{{else}}Μετά την έγκριση θα σε στείλει στο <strong>{{.Host}}</strong>. Το όνομα της εφαρμογής δεν είναι επαληθευμένο: συνέχισε μόνο αν εσύ πρόσθεσες τη σύνδεση εκεί (π.χ. <em>claude.ai</em>).{{end}}</p>
 <form method="post" action="/oauth/authorize">
 {{range $k, $v := .Hidden}}<input type="hidden" name="{{$k}}" value="{{$v}}">{{end}}
 <input type="email" name="email" placeholder="email" value="{{.Email}}" required autocomplete="email" autofocus>
-<input type="password" name="password" placeholder="κωδικός" required autocomplete="current-password">
+<input type="password" name="password" placeholder="{{if .EN}}password{{else}}κωδικός{{end}}" required autocomplete="current-password">
 {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
-<button>Σύνδεση και έγκριση</button>
+<button>{{if .EN}}Sign in and approve{{else}}Σύνδεση και έγκριση{{end}}</button>
 </form>
-<small>Αν δεν το ζήτησες εσύ, κλείσε αυτή τη σελίδα.</small>
+<small>{{if .EN}}If you did not ask for this, close this page.{{else}}Αν δεν το ζήτησες εσύ, κλείσε αυτή τη σελίδα.{{end}}</small>
 </main></body></html>`))
 
 func renderConsent(e *core.RequestEvent, status int, a *authRequest, email, errMsg string) error {
@@ -256,7 +256,7 @@ func renderConsent(e *core.RequestEvent, status int, a *authRequest, email, errM
 		name = "MCP client"
 	}
 	return consentPage.Execute(e.Response, map[string]any{
-		"Client": name, "Email": email, "Error": errMsg, "Host": redirectHost(a.RedirectURI),
+		"EN": isEnglish(e.Request), "Client": name, "Email": email, "Error": errMsg, "Host": redirectHost(a.RedirectURI),
 		"Hidden": map[string]string{
 			"client_id": a.ClientID, "redirect_uri": a.RedirectURI, "state": a.State, "code_challenge": a.Challenge,
 			"code_challenge_method": a.Method, "response_type": a.ResponseType, "scope": a.Scope, "resource": a.Resource,
@@ -275,31 +275,31 @@ func plainError(e *core.RequestEvent, msg string) error {
 }
 
 func handleAuthorizePage(e *core.RequestEvent) error {
-	a, bad := readAuthRequest(e.App, e.Request.URL.Query())
+	a, bad := readAuthRequest(e.App, e.Request, e.Request.URL.Query())
 	if a == nil {
 		return plainError(e, bad)
 	}
 	if pe := a.protocolError(); pe != "" {
-		return plainError(e, "Μη έγκυρο αίτημα ("+pe+"): απαιτούνται response_type=code και PKCE S256.")
+		return plainError(e, tr(e.Request, "Μη έγκυρο αίτημα ("+pe+"): απαιτούνται response_type=code και PKCE S256.", "Invalid request ("+pe+"): response_type=code and PKCE S256 are required."))
 	}
 	return renderConsent(e, http.StatusOK, a, "", "")
 }
 
 func handleAuthorizeSubmit(e *core.RequestEvent) error {
 	if err := e.Request.ParseForm(); err != nil {
-		return plainError(e, "Λάθος αίτημα.")
+		return plainError(e, tr(e.Request, "Λάθος αίτημα.", "Invalid request."))
 	}
-	a, bad := readAuthRequest(e.App, e.Request.PostForm)
+	a, bad := readAuthRequest(e.App, e.Request, e.Request.PostForm)
 	if a == nil {
 		return plainError(e, bad)
 	}
 	if pe := a.protocolError(); pe != "" {
-		return plainError(e, "Μη έγκυρο αίτημα ("+pe+").")
+		return plainError(e, tr(e.Request, "Μη έγκυρο αίτημα ("+pe+").", "Invalid request ("+pe+")."))
 	}
 	email := strings.TrimSpace(e.Request.PostForm.Get("email"))
 	user, err := e.App.FindAuthRecordByEmail("users", email)
 	if err != nil || !user.ValidatePassword(e.Request.PostForm.Get("password")) {
-		return renderConsent(e, http.StatusUnauthorized, a, email, "Λάθος email ή κωδικός.")
+		return renderConsent(e, http.StatusUnauthorized, a, email, tr(e.Request, "Λάθος email ή κωδικός.", "Wrong email or password."))
 	}
 	code := randomToken()
 	coll, err := e.App.FindCollectionByNameOrId("oauth_codes")

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	import { cleanTags } from '#lib/inspirations.js';
 
 	interface Props {
@@ -10,7 +11,7 @@
 		/** id for the text input, so a <label for> can point at it. */
 		id?: string;
 	}
-	let { tags = $bindable([]), suggestions = [], placeholder = 'ξύλο, φως…', id }: Props = $props();
+	let { tags = $bindable([]), suggestions = [], placeholder = t('tags.placeholder'), id }: Props = $props();
 
 	let draft = $state('');
 
@@ -85,7 +86,7 @@
 		{#each tags as tag (tag)}
 			<span class="chip">
 				{tag}
-				<button type="button" onclick={() => remove(tag)} aria-label={`Αφαίρεση ${tag}`}>×</button>
+				<button type="button" onclick={() => remove(tag)} aria-label={t('tags.remove', { tag })}>×</button>
 			</span>
 		{/each}
 		<input

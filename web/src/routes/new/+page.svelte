@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import type { Level } from '#lib/types.js';
@@ -24,7 +25,7 @@
 		try {
 			checkImage(f);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Μη υποστηριζόμενη εικόνα.';
+			error = e instanceof Error ? e.message : t('new.unsupported');
 			return;
 		}
 		file = f;
@@ -70,7 +71,7 @@
 	async function save(e: SubmitEvent) {
 		e.preventDefault();
 		if (!file || busy) return;
-		if (!data.user) { error = 'Δεν βρέθηκε χρήστης. Συνδέσου ξανά.'; return; }
+		if (!data.user) { error = t('new.noUser'); return; }
 
 		busy = true;
 		error = '';
@@ -83,7 +84,7 @@
 			});
 			await goto(`/i/${id}`);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Αποτυχία αποθήκευσης.';
+			error = e instanceof Error ? e.message : t('new.saveFailed');
 		} finally {
 			busy = false;
 		}
@@ -91,12 +92,12 @@
 </script>
 
 <svelte:head>
-	<title>Νέα εικόνα · Moodboard</title>
+	<title>{t('new.title')}</title>
 </svelte:head>
 
 <header>
-	<a class="back" href="/">← Πίσω</a>
-	<h1>Νέα εικόνα</h1>
+	<a class="back" href="/">{t('common.back')}</a>
+	<h1>{t('common.newImage')}</h1>
 </header>
 
 <main>
@@ -113,17 +114,17 @@
 			}}
 		>
 			{#if preview}
-				<img src={preview} alt="Προεπισκόπηση" />
+				<img src={preview} alt={t('new.preview')} />
 				<label class="replace">
 					<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" onchange={onPick} />
-					Αλλαγή εικόνας
+					{t('new.change')}
 				</label>
 			{:else}
 				<label class="pick">
 					<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" onchange={onPick} />
-					<span class="cta">Επίλεξε εικόνα</span>
-					<span class="hint">ή σύρε τη εδώ, ή κάνε επικόλληση (Ctrl+V)</span>
-					<span class="hint">png · jpeg · webp · gif · avif — έως 10MB</span>
+					<span class="cta">{t('new.pick')}</span>
+					<span class="hint">{t('new.dropHint')}</span>
+					<span class="hint">{t('new.formats')}</span>
 				</label>
 			{/if}
 		</div>
@@ -132,27 +133,27 @@
 			<label>
 				<span>Project</span>
 				<select bind:value={projectId}>
-					<option value="">— χωρίς project —</option>
+					<option value="">{t('common.noProjectOption')}</option>
 					{#each data.projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 				</select>
 			</label>
 
 			<label>
-				<span>Επίπεδο</span>
+				<span>{t('common.level')}</span>
 				<select bind:value={level}>
-					<option value="">— κανένα —</option>
+					<option value="">{t('common.noneOption')}</option>
 					{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
 				</select>
 			</label>
 
 			<label class="wide">
-				<span>Σημείωση</span>
-				<textarea bind:value={note} rows="4" placeholder="Τι σου αρέσει εδώ; Φως, υλικό, αναλογίες…"></textarea>
+				<span>{t('new.note')}</span>
+				<textarea bind:value={note} rows="4" placeholder={t('new.notePlaceholder')}></textarea>
 			</label>
 
 			<div class="wide field">
-				<label for="tags">Tags <em>(έως 30)</em></label>
-				<TagInput id="tags" bind:tags suggestions={data.tags} placeholder="ξύλο, πέργκολα, ζεστό φως" />
+				<label for="tags">Tags <em>{t('new.tagsLimit')}</em></label>
+				<TagInput id="tags" bind:tags suggestions={data.tags} placeholder={t('new.tagsPlaceholder')} />
 			</div>
 		</div>
 
@@ -160,9 +161,9 @@
 
 		<div class="submit">
 			<button class="primary" type="submit" disabled={busy || !file}>
-				{busy ? 'Αποθήκευση…' : 'Αποθήκευση'}
+				{busy ? t('common.saving') : t('common.save')}
 			</button>
-			<a href="/">Άκυρο</a>
+			<a href="/">{t('common.cancel')}</a>
 		</div>
 	</form>
 </main>

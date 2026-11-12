@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import type { Level, Region } from '#lib/types.js';
 	import { levelStore } from '#lib/levels.svelte.js';
@@ -62,7 +63,7 @@
 		const to = nav.to?.url;
 		void saver.flush().then((ok) => {
 			if (!to) return;
-			if (ok || confirm('Οι αλλαγές δεν αποθηκεύτηκαν. Φεύγεις χωρίς αποθήκευση;')) {
+			if (ok || confirm(t('item.leaveConfirm'))) {
 				leaving = true;
 				void goto(to);
 			}
@@ -82,7 +83,7 @@
 	}
 
 	async function remove() {
-		if (deleting || !confirm('Διαγραφή αυτής της εικόνας;')) return;
+		if (deleting || !confirm(t('item.deleteConfirm'))) return;
 		deleting = true;
 		try {
 			await saver.flush();
@@ -111,39 +112,39 @@
 
 <div class="page">
 	<header>
-		<nav class="crumb" aria-label="Διαδρομή">
+		<nav class="crumb" aria-label={t('common.breadcrumb')}>
 			<a class="home" href="/">Moodboard</a>
 			<span aria-hidden="true">›</span>
 			{#if project}
 				<a class="proj" href={`/map?project=${encodeURIComponent(project.id)}`}>{project.name}</a>
 			{:else}
-				<a class="proj" href="/map?project=none">Χωρίς project</a>
+				<a class="proj" href="/map?project=none">{t('common.noProject')}</a>
 			{/if}
 		</nav>
 		<span class="grow"></span>
 		<span class={['status', status]} aria-live="polite">
 			{#if status === 'saving' || status === 'pending'}
-				Αποθήκευση…
+				{t('common.saving')}
 			{:else if status === 'saved'}
-				Αποθηκεύτηκε ✓
+				{t('item.saved')}
 			{:else if status === 'error'}
-				<span class="err">Δεν αποθηκεύτηκε</span>
-				<button type="button" class="retry" onclick={() => void saver.retry()}>Ξανά</button>
+				<span class="err">{t('item.notSaved')}</span>
+				<button type="button" class="retry" onclick={() => void saver.retry()}>{t('item.retry')}</button>
 			{/if}
 		</span>
 	</header>
 
 	<main class="editor">
-		<section class="stage" aria-label="Εικόνα και περιοχές">
+		<section class="stage" aria-label={t('item.stage')}>
 			<RegionEditor
 				src={data.imageUrl}
-				alt={note || 'Έμπνευση'}
+				alt={note || t('item.alt')}
 				labels
 				bind:regions={() => regions, (v) => ((regions = v), change('regions', v))}
 				bind:active
 			/>
 			<p class="hint">
-				Σύρε πάνω στην εικόνα για να σημειώσεις μια λεπτομέρεια
+				{t('item.dragHint')}
 				{#if safeSource}
 					· <a href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 				{/if}
@@ -155,17 +156,17 @@
 				{#if failure}<p class="banner" role="alert">{failure}</p>{/if}
 
 				<div class="field">
-					<span class="lbl">Περιοχές{regions.length ? ` · ${regions.length}` : ''}</span>
+					<span class="lbl">{t('item.regions')}{regions.length ? ` · ${regions.length}` : ''}</span>
 					<RegionList bind:regions={() => regions, (v) => ((regions = v), change('regions', v))} bind:active />
 				</div>
 
 				<label class="field">
-					<span class="lbl">Σημείωση εικόνας</span>
+					<span class="lbl">{t('item.imageNote')}</span>
 					<textarea
 						bind:value={() => note, (v) => ((note = v), change('note', v))}
 						{@attach autogrow}
 						rows="3"
-						placeholder="Τι σου αρέσει εδώ;"
+						placeholder={t('item.notePlaceholder')}
 					></textarea>
 				</label>
 
@@ -175,12 +176,12 @@
 						id="item-tags"
 						bind:tags={() => tags, (v) => ((tags = v), change('tags', v))}
 						suggestions={data.tags}
-						placeholder="ξύλο, φως…"
+						placeholder={t('item.tagsPlaceholder')}
 					/>
 				</div>
 
 				<div class="field">
-					<span class="lbl" id="item-level">Επίπεδο</span>
+					<span class="lbl" id="item-level">{t('common.level')}</span>
 					<div class="chips" role="group" aria-labelledby="item-level">
 						{#each levelStore.list as l (l.id)}
 							<button type="button" class={['chip', level === l.id && 'on']} aria-pressed={level === l.id} onclick={() => setLevel(l.id)}>
@@ -193,14 +194,14 @@
 				<label class="field">
 					<span class="lbl">Project</span>
 					<select bind:value={() => projectId, (v) => ((projectId = v), change('project_id', v || null))}>
-						<option value="">Χωρίς project</option>
+						<option value="">{t('common.noProject')}</option>
 						{#each data.projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 					</select>
 				</label>
 
 				{#if safeSource}
 					<div class="field">
-						<span class="lbl">Πηγή</span>
+						<span class="lbl">{t('item.source')}</span>
 						<a class="src" href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 					</div>
 				{/if}
@@ -209,7 +210,7 @@
 			<footer>
 				<span class="grow"></span>
 				<button type="button" class="btn ghost danger" disabled={deleting} onclick={remove}>
-					{deleting ? 'Διαγραφή…' : 'Διαγραφή'}
+					{deleting ? t('item.deleting') : t('common.delete')}
 				</button>
 			</footer>
 		</aside>

@@ -8,6 +8,7 @@
 </script>
 
 <script lang="ts">
+	import { t as tl } from '#lib/i18n.js';
 	interface Props {
 		toasts: Toast[];
 		/** Screen px covered on the right (panel). */
@@ -33,7 +34,7 @@
 				>
 			{/if}
 			{#if t.tone === 'error'}
-				<button type="button" class="x" aria-label="Κλείσιμο" onclick={() => ondismiss(t.id)}>
+				<button type="button" class="x" aria-label={tl('common.close')} onclick={() => ondismiss(t.id)}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
 				</button>
 			{/if}

@@ -5,6 +5,8 @@
 	import type { Inspiration, Level } from '#lib/types.js';
 	import { levelLabel, levelStore } from '#lib/levels.svelte.js';
 	import LevelManager from '#lib/components/LevelManager.svelte';
+	import LanguageSwitch from '#lib/components/LanguageSwitch.svelte';
+	import { t, tn, timeAgo } from '#lib/i18n.js';
 	import {
 		createProject as createProjectRow,
 		deleteProject,
@@ -68,24 +70,9 @@
 
 	function relTime(iso: string, nowMs: number): string {
 		if (!iso || nowMs <= 0) return '';
-		const t = Date.parse(iso);
-		if (!Number.isFinite(t)) return '';
-		const minutes = Math.floor(Math.max(0, nowMs - t) / 60000);
-		if (minutes < 1) return 'μόλις τώρα';
-		if (minutes < 60) return `πριν ${minutes} ${minutes === 1 ? 'λεπτό' : 'λεπτά'}`;
-		const hours = Math.floor(minutes / 60);
-		if (hours < 24) return `πριν ${hours} ${hours === 1 ? 'ώρα' : 'ώρες'}`;
-		const days = Math.floor(hours / 24);
-		if (days === 1) return 'χθες';
-		if (days < 7) return `πριν ${days} μέρες`;
-		if (days < 30) {
-			const weeks = Math.floor(days / 7);
-			return weeks === 1 ? 'πριν 1 εβδομάδα' : `πριν ${weeks} εβδομάδες`;
-		}
-		const months = Math.floor(days / 30);
-		if (months < 12) return months === 1 ? 'πριν 1 μήνα' : `πριν ${months} μήνες`;
-		const years = Math.floor(days / 365);
-		return years <= 1 ? 'πριν 1 χρόνο' : `πριν ${years} χρόνια`;
+		const at = Date.parse(iso);
+		if (!Number.isFinite(at)) return '';
+		return timeAgo(new Date(Math.min(at, nowMs)), new Date(nowMs));
 	}
 
 	function remember(id: string) {
@@ -134,7 +121,7 @@
 		if (orphans.length) {
 			out.push({
 				key: 'none',
-				name: 'Χωρίς project',
+				name: t('common.noProject'),
 				images: orphans,
 				count: orphans.length,
 				tags: topTags(orphans),
@@ -180,8 +167,8 @@
 
 	const selectedName = $derived(
 		selected === 'none'
-			? 'Χωρίς project'
-			: (data.projects.find((p) => p.id === selected)?.name ?? 'Εικόνες')
+			? t('common.noProject')
+			: (data.projects.find((p) => p.id === selected)?.name ?? t('home.fallbackTitle'))
 	);
 
 	const selectedCard = $derived.by<Card | null>(() => {
@@ -219,9 +206,9 @@
 			await invalidate('moodboard:data');
 			selectProject(row.id);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Αποτυχία.';
+			const message = err instanceof Error ? err.message : t('common.failed');
 			projectError = /unique|υπάρχει|already/i.test(message)
-				? 'Υπάρχει ήδη project με αυτό το όνομα.'
+				? t('home.projectExists')
 				: message;
 		} finally {
 			creating = false;
@@ -269,9 +256,9 @@
 			editing = null;
 			await invalidate('moodboard:data');
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Αποτυχία.';
+			const message = err instanceof Error ? err.message : t('common.failed');
 			manageError = /unique|υπάρχει|already/i.test(message)
-				? 'Υπάρχει ήδη project με αυτό το όνομα.'
+				? t('home.projectExists')
 				: message;
 		} finally {
 			manageBusy = false;
@@ -288,7 +275,7 @@
 			after?.();
 			await invalidate('moodboard:data');
 		} catch (err) {
-			manageError = err instanceof Error ? err.message : 'Αποτυχία.';
+			manageError = err instanceof Error ? err.message : t('common.failed');
 		} finally {
 			manageBusy = false;
 		}
@@ -334,19 +321,20 @@
 		<span class="who">{data.user?.email ?? ''}</span>
 	</a>
 	<div class="actions">
-		<a class="btn" href={selected === 'all' ? '/map' : `/map?project=${encodeURIComponent(selected)}`}>Χάρτης</a>
-		<a class="btn" href="/sources">Πηγές</a>
-		<button class="btn" type="button" onclick={() => (managingLevels = true)}>Επίπεδα</button>
-		<a class="btn primary new-image" href="/new">+ Νέα εικόνα</a>
+		<a class="btn" href={selected === 'all' ? '/map' : `/map?project=${encodeURIComponent(selected)}`}>{t('common.map')}</a>
+		<a class="btn" href="/sources">{t('common.sources')}</a>
+		<button class="btn" type="button" onclick={() => (managingLevels = true)}>{t('common.levels')}</button>
+		<a class="btn primary new-image" href="/new">{t('common.newImagePlus')}</a>
+		<LanguageSwitch />
 		<button class="btn" type="button" disabled={loggingOut} onclick={logout}>
-			{loggingOut ? '…' : 'Αποσύνδεση'}
+			{loggingOut ? '…' : t('common.logout')}
 		</button>
 	</div>
 </header>
 
 <div class="page">
 	{#if data.error}
-		<p class="err">Σφάλμα φόρτωσης: {data.error}</p>
+		<p class="err">{t('home.loadError', { error: data.error })}</p>
 	{/if}
 
 	{#if selected === 'all'}
@@ -354,17 +342,15 @@
 			<div class="sec-head">
 				<h2>Projects</h2>
 				<span class="sec-meta">
-					{data.projects.length}
-					{data.projects.length === 1 ? 'project' : 'projects'} · {data.inspirations.length}
-					{data.inspirations.length === 1 ? 'εικόνα' : 'εικόνες'}{#if orphanCount > 0}
-						· {orphanCount} χωρίς project{/if}
+					{tn('common.projects', data.projects.length)} · {tn('common.images', data.inspirations.length)}{#if orphanCount > 0}
+						· {orphanCount} {t('home.noProjectCount')}{/if}
 				</span>
 			</div>
 
 			{#if resumeCard}
 				<article class="pcard resume">
 					{@render collage(resumeCard.images)}
-					<span class="resume-label">ΣΥΝΕΧΙΣΕ ΕΔΩ</span>
+					<span class="resume-label">{t('home.resumeLabel')}</span>
 					{@render projectMenu(resumeCard)}
 					<div class="pmeta">
 						<div class="headrow">
@@ -374,13 +360,12 @@
 								href={mapHref(resumeCard.key)}
 								onclick={() => remember(resumeCard.key)}
 							>
-								Άνοιγμα χάρτη →
+								{t('home.openMap')}
 							</a>
 						</div>
 						<div class="prow">
 							<span>
-								{resumeCard.count}
-								{resumeCard.count === 1 ? 'εικόνα' : 'εικόνες'}
+								{tn('common.images', resumeCard.count)}
 								{#if relTime(resumeCard.lastChange, now)}· {relTime(resumeCard.lastChange, now)}{/if}
 							</span>
 						</div>
@@ -409,21 +394,21 @@
 			{#if manageError && !editing}<p class="err">{manageError}</p>{/if}
 			{#if archivedCards.length}
 				<details class="archive">
-					<summary>Αρχείο ({archivedCards.length})</summary>
+					<summary>{t('home.archive', { n: archivedCards.length })}</summary>
 					<ul>
 						{#each archivedCards as card (card.key)}
 							<li>
 								<span class="aname">{card.name}</span>
-								<span class="ameta">{card.count} {card.count === 1 ? 'εικόνα' : 'εικόνες'}</span>
+								<span class="ameta">{tn('common.images', card.count)}</span>
 								{#if confirming === card.key}
 									<span class="confirm">
-										Διαγραφή; Οι εικόνες μένουν χωρίς project.
-										<button class="btn danger" type="button" disabled={manageBusy} onclick={() => removeProject(card)}>Ναι, διαγραφή</button>
-										<button class="btn ghost" type="button" onclick={() => (confirming = null)}>Άκυρο</button>
+										{t('home.confirmDeleteShort')}
+										<button class="btn danger" type="button" disabled={manageBusy} onclick={() => removeProject(card)}>{t('common.yesDelete')}</button>
+										<button class="btn ghost" type="button" onclick={() => (confirming = null)}>{t('common.cancel')}</button>
 									</span>
 								{:else}
-									<button class="btn" type="button" disabled={manageBusy} onclick={() => archive(card, false)}>Επαναφορά</button>
-									<button class="btn ghost" type="button" onclick={() => (confirming = card.key)}>Διαγραφή</button>
+									<button class="btn" type="button" disabled={manageBusy} onclick={() => archive(card, false)}>{t('common.restore')}</button>
+									<button class="btn ghost" type="button" onclick={() => (confirming = card.key)}>{t('common.delete')}</button>
 								{/if}
 							</li>
 						{/each}
@@ -433,17 +418,17 @@
 		</section>
 	{:else}
 		<section class="images">
-			<a class="back" href="/">← Όλα τα projects</a>
+			<a class="back" href="/">{t('home.allProjects')}</a>
 			<div class="sec-head">
 				{#if selectedCard && editing === selectedCard.key}
 					{@render renameInput(selectedCard, 'h2')}
 				{:else}
 					<h2>{selectedName}</h2>
 					{#if selectedCard}
-						<button class="btn ghost edit" type="button" onclick={() => startRename(selectedCard)}>Μετονομασία</button>
+						<button class="btn ghost edit" type="button" onclick={() => startRename(selectedCard)}>{t('common.rename')}</button>
 					{/if}
 				{/if}
-				<span class="sec-meta">{filtered.length} εικόνες</span>
+				<span class="sec-meta">{tn('common.images', filtered.length)}</span>
 				{#if manageError && selectedCard && editing === selectedCard.key}<span class="err">{manageError}</span>{/if}
 			</div>
 			{@render filters()}
@@ -454,9 +439,9 @@
 	{#if selected === 'all'}
 		<section class="images">
 			<div class="sec-head">
-				<h2>Όλες οι εικόνες</h2>
+				<h2>{t('home.allImages')}</h2>
 				{#if data.inspirations.length > 0}
-					<span class="sec-meta">{filtered.length} από {data.inspirations.length}</span>
+					<span class="sec-meta">{t('home.countOf', { n: filtered.length, total: data.inspirations.length })}</span>
 				{/if}
 			</div>
 			{@render filters()}
@@ -468,7 +453,7 @@
 {#snippet collage(images: Inspiration[])}
 	<div class="collage" data-count={Math.min(images.length, 3)}>
 		{#if images.length === 0}
-			<span class="collage-none">χωρίς εικόνες</span>
+			<span class="collage-none">{t('common.imageCollageNone')}</span>
 		{:else}
 			{#each images.slice(0, 3) as img, idx (img.id)}
 				{#if data.urls[img.image_path]}
@@ -494,7 +479,7 @@
 		<div class="pmeta">
 			{@render projectTitle(card)}
 			<div class="prow">
-				<span>{card.count} {card.count === 1 ? 'εικόνα' : 'εικόνες'}</span>
+				<span>{tn('common.images', card.count)}</span>
 				<span>{relTime(card.lastChange, now)}</span>
 			</div>
 			{#if card.tags.length}
@@ -503,14 +488,14 @@
 				</div>
 			{/if}
 			<div class="prow">
-				<a class="sub" href={gridHref(card.key)}>Πίνακας</a>
+				<a class="sub" href={gridHref(card.key)}>{t('home.table')}</a>
 			</div>
 		</div>
 		<a
 			class="stretch"
 			href={mapHref(card.key)}
 			onclick={() => remember(card.key)}
-			aria-label={`Άνοιγμα χάρτη: ${card.name}`}
+			aria-label={t('home.openMapFor', { name: card.name })}
 		></a>
 	</article>
 {/snippet}
@@ -528,7 +513,7 @@
 			bind:value={draft}
 			{@attach focusSelect}
 			maxlength="120"
-			aria-label="Όνομα project"
+			aria-label={t('home.projectName')}
 			disabled={manageBusy}
 			onkeydown={(e) => e.key === 'Escape' && (editing = null)}
 			onblur={() => void commitRename(card)}
@@ -550,7 +535,7 @@
 		<button
 			type="button"
 			class="dots"
-			aria-label={`Επιλογές: ${card.name}`}
+			aria-label={t('home.options', { name: card.name })}
 			aria-haspopup="true"
 			aria-expanded={menuFor === card.key}
 			onclick={() => {
@@ -563,13 +548,13 @@
 			<div class="scrim" role="presentation" onpointerdown={closeManage}></div>
 			<div class="mpop" role="menu" aria-label={card.name}>
 				{#if confirming === card.key}
-					<p class="mwarn">Διαγραφή του «{card.name}»; Οι εικόνες μένουν, χωρίς project.</p>
-					<button type="button" class="mi danger" disabled={manageBusy} onclick={() => removeProject(card)}>Ναι, διαγραφή</button>
-					<button type="button" class="mi" onclick={() => (confirming = null)}>Άκυρο</button>
+					<p class="mwarn">{t('home.confirmDelete', { name: card.name })}</p>
+					<button type="button" class="mi danger" disabled={manageBusy} onclick={() => removeProject(card)}>{t('common.yesDelete')}</button>
+					<button type="button" class="mi" onclick={() => (confirming = null)}>{t('common.cancel')}</button>
 				{:else}
-					<button type="button" role="menuitem" class="mi" onclick={() => startRename(card)}>Μετονομασία</button>
-					<button type="button" role="menuitem" class="mi" disabled={manageBusy} onclick={() => archive(card, true)}>Αρχειοθέτηση</button>
-					<button type="button" role="menuitem" class="mi danger" onclick={() => (confirming = card.key)}>Διαγραφή…</button>
+					<button type="button" role="menuitem" class="mi" onclick={() => startRename(card)}>{t('common.rename')}</button>
+					<button type="button" role="menuitem" class="mi" disabled={manageBusy} onclick={() => archive(card, true)}>{t('common.archive')}</button>
+					<button type="button" role="menuitem" class="mi danger" onclick={() => (confirming = card.key)}>{t('common.deleteEllipsis')}</button>
 				{/if}
 				{#if manageError}<p class="err">{manageError}</p>{/if}
 			</div>
@@ -580,16 +565,16 @@
 {#snippet newProjectCard()}
 	<article class="pcard new">
 		<form onsubmit={createProject}>
-			<label class="np-label" for="new-project-name">+ Νέο project</label>
+			<label class="np-label" for="new-project-name">{t('common.newProjectPlus')}</label>
 			<div class="np-row">
 				<input
 					id="new-project-name"
 					bind:this={createInput}
 					bind:value={newProject}
-					placeholder="Όνομα project"
+					placeholder={t('home.newProjectName')}
 					maxlength="120"
 				/>
-				<button class="btn" type="submit" disabled={creating}>{creating ? '…' : 'Δημιουργία'}</button>
+				<button class="btn" type="submit" disabled={creating}>{creating ? '…' : t('common.create')}</button>
 			</div>
 			{#if projectError}<p class="err">{projectError}</p>{/if}
 		</form>
@@ -600,12 +585,12 @@
 	<div class="filters">
 		<input
 			type="search"
-			placeholder="Αναζήτηση σε σημειώσεις και tags"
+			placeholder={t('home.searchPlaceholder')}
 			bind:value={query}
-			aria-label="Αναζήτηση"
+			aria-label={t('home.search')}
 		/>
-		<select bind:value={level} aria-label="Επίπεδο">
-			<option value="">Όλα τα επίπεδα</option>
+		<select bind:value={level} aria-label={t('common.level')}>
+			<option value="">{t('home.allLevels')}</option>
 			{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
 		</select>
 	</div>
@@ -614,17 +599,17 @@
 {#snippet imageGrid()}
 	{#if data.inspirations.length === 0}
 		<div class="empty-state">
-			<p class="empty-title">Εδώ θα ζουν τα moodboards σου.</p>
-			<p class="empty-body">Ξεκίνα ένα project και πρόσθεσε την πρώτη εικόνα.</p>
+			<p class="empty-title">{t('home.emptyTitle')}</p>
+			<p class="empty-body">{t('home.emptyBody')}</p>
 			<div class="empty-actions">
-				<button class="btn" type="button" onclick={focusCreate}>+ Νέο project</button>
-				<a class="btn primary" href="/new">+ Νέα εικόνα</a>
+				<button class="btn" type="button" onclick={focusCreate}>{t('common.newProjectPlus')}</button>
+				<a class="btn primary" href="/new">{t('common.newImagePlus')}</a>
 			</div>
 		</div>
 	{:else if filtered.length === 0}
 		<p class="empty">
-			Καμία εικόνα με αυτά τα φίλτρα.
-			<a href="/new">Πρόσθεσε μια εικόνα →</a>
+			{t('home.noMatch')}
+			<a href="/new">{t('home.addImage')}</a>
 		</p>
 	{:else}
 		<div class="grid">
@@ -634,7 +619,7 @@
 						{#if data.urls[item.image_path]}
 							<img src={data.urls[item.image_path]} alt="" loading="lazy" decoding="async" />
 						{:else}
-							<span class="missing">χωρίς εικόνα</span>
+							<span class="missing">{t('common.noImage')}</span>
 						{/if}
 						{#if levelLabel(item.level)}
 							<span class="badge">{levelLabel(item.level)}</span>
@@ -654,7 +639,7 @@
 	{/if}
 {/snippet}
 
-<a class="fab" href="/new" aria-label="Νέα εικόνα">+</a>
+<a class="fab" href="/new" aria-label={t('common.newImage')}>+</a>
 
 {#if managingLevels && data.user}
 	<LevelManager pb={data.pb} userId={data.user.id} onclose={() => {

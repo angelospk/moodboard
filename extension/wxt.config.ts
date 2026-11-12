@@ -7,7 +7,9 @@ export default defineConfig({
   modules: ['@wxt-dev/module-svelte'],
   manifest: {
     name: 'Moodboard',
-    description: 'Αποθήκευση εικόνων έμπνευσης σε moodboard.',
+    // Greek and English texts: public/_locales/*/messages.json.
+    default_locale: 'el',
+    description: '__MSG_extDescription__',
     version: VERSION,
     permissions: ['contextMenus', 'storage', 'activeTab', 'tabs'],
     host_permissions: ['<all_urls>'],

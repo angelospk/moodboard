@@ -2,6 +2,8 @@
  * Viewer appearance: theme (auto / light / dark) and canvas colour per theme.
  * Stored in localStorage (a per-viewer convenience); src/app.html applies it before first paint.
  */
+import { t } from './i18n.js';
+
 export type Theme = 'auto' | 'light' | 'dark';
 export type Prefs = { theme: Theme; light: string; dark: string };
 export type Canvas = { id: string; name: string; color: string };
@@ -9,23 +11,23 @@ export type Canvas = { id: string; name: string; color: string };
 /** Light canvases suit dark text, dark canvases light text; each theme offers only its own. */
 export const CANVASES: Record<'light' | 'dark', Canvas[]> = {
 	light: [
-		{ id: 'paper', name: 'Χαρτί', color: '#f4f1eb' },
-		{ id: 'white', name: 'Λευκό', color: '#ffffff' },
-		{ id: 'concrete', name: 'Μπετό', color: '#e6e4df' },
-		{ id: 'sand', name: 'Άμμος', color: '#efe6d6' }
+		{ id: 'paper', name: t('appearance.paper'), color: '#f4f1eb' },
+		{ id: 'white', name: t('appearance.white'), color: '#ffffff' },
+		{ id: 'concrete', name: t('appearance.concrete'), color: '#e6e4df' },
+		{ id: 'sand', name: t('appearance.sand'), color: '#efe6d6' }
 	],
 	dark: [
-		{ id: 'night', name: 'Νύχτα', color: '#161513' },
-		{ id: 'graphite', name: 'Γραφίτης', color: '#24262a' },
-		{ id: 'black', name: 'Μαύρο', color: '#0a0a0a' },
-		{ id: 'walnut', name: 'Καρυδιά', color: '#1f1915' }
+		{ id: 'night', name: t('appearance.night'), color: '#161513' },
+		{ id: 'graphite', name: t('appearance.graphite'), color: '#24262a' },
+		{ id: 'black', name: t('appearance.black'), color: '#0a0a0a' },
+		{ id: 'walnut', name: t('appearance.walnut'), color: '#1f1915' }
 	]
 };
 
 export const THEMES: { id: Theme; name: string }[] = [
-	{ id: 'auto', name: 'Αυτόματο' },
-	{ id: 'light', name: 'Ανοιχτό' },
-	{ id: 'dark', name: 'Σκούρο' }
+	{ id: 'auto', name: t('appearance.auto') },
+	{ id: 'light', name: t('appearance.light') },
+	{ id: 'dark', name: t('appearance.dark') }
 ];
 
 export const DEFAULT_PREFS: Prefs = { theme: 'auto', light: 'paper', dark: 'night' };

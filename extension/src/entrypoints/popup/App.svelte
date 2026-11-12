@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LOCALES, LOCALE_NAMES, getLocale, setLocale, t, type Locale } from '@/lib/i18n';
 	import { onMount } from 'svelte';
 	import type { AuthRecord } from 'pocketbase';
 	import { msg, pb, ready } from '@/lib/pb';
@@ -207,7 +208,7 @@
 			? normalizeMime(pending.mime)
 			: normalizeMime((await dataUrlToBlob(pending.dataUrl)).type);
 		if (!MIME_EXT[mime]) {
-			errorMessage = 'Ο τύπος εικόνας δεν υποστηρίζεται.';
+			errorMessage = t('popup.unsupportedType');
 			return;
 		}
 
@@ -232,7 +233,7 @@
 		})) as CaptureResult | undefined;
 		pending = await getPending();
 		if (!pending && response && !response.ok) {
-			errorMessage = response.error ?? 'Το στιγμιότυπο απέτυχε.';
+			errorMessage = response.error ?? t('popup.screenshotFailed');
 		}
 	}
 
@@ -252,56 +253,66 @@
 
 {#if updateAvailable}
 	<div class="banner">
-		<span>Νέα έκδοση διαθέσιμη</span>
-		<button type="button" class="banner-button" onclick={restart}>Επανεκκίνηση</button>
+		<span>{t('popup.update')}</span>
+		<button type="button" class="banner-button" onclick={restart}>{t('popup.restart')}</button>
 	</div>
 {/if}
 
 <main>
-	<h1>Moodboard</h1>
+	<header class="top">
+		<h1>Moodboard</h1>
+		<select
+			class="lang"
+			value={getLocale()}
+			aria-label={t('popup.language')}
+			onchange={(e) => void setLocale(e.currentTarget.value as Locale)}
+		>
+			{#each LOCALES as l (l)}<option value={l}>{LOCALE_NAMES[l]}</option>{/each}
+		</select>
+	</header>
 
 	{#if booting}
-		<p class="muted">Φόρτωση…</p>
+		<p class="muted">{t('popup.loading')}</p>
 	{:else if !user}
 		<form class="stack" onsubmit={(event) => { event.preventDefault(); void signIn(); }}>
 			<label>Email
 				<input type="email" bind:value={email} autocomplete="username" required />
 			</label>
-			<label>Κωδικός
+			<label>{t('popup.password')}
 				<input type="password" bind:value={password} autocomplete="current-password" required />
 			</label>
-			<label>Κωδικός πρόσκλησης
+			<label>{t('popup.invite')}
 				<input type="text" bind:value={invite} autocomplete="off" />
 			</label>
 			<div class="row">
-				<button type="submit" disabled={authBusy}>Σύνδεση</button>
+				<button type="submit" disabled={authBusy}>{t('popup.signIn')}</button>
 				<button
 					type="button"
 					class="secondary"
 					disabled={authBusy}
 					onclick={() => void signUp()}
-				>Νέος λογαριασμός</button>
+				>{t('popup.signUp')}</button>
 			</div>
 			{#if authError}<p class="error">{authError}</p>{/if}
 		</form>
 	{:else}
 		<div class="row between user">
 			<span class="muted ellipsis">{user.email}</span>
-			<button type="button" class="link" onclick={() => void signOut()}>Αποσύνδεση</button>
+			<button type="button" class="link" onclick={() => void signOut()}>{t('popup.signOut')}</button>
 		</div>
 
 		{#if savedId}
 			<p class="success">
-				Αποθηκεύτηκε ·
-				<a href={`${WEB_URL}/i/${savedId}`} target="_blank" rel="noreferrer">Άνοιγμα</a>
+				{t('popup.saved')}
+				<a href={`${WEB_URL}/i/${savedId}`} target="_blank" rel="noreferrer">{t('popup.open')}</a>
 			</p>
-			<button type="button" class="secondary" onclick={resetCapture}>Νέα αποθήκευση</button>
+			<button type="button" class="secondary" onclick={resetCapture}>{t('popup.again')}</button>
 		{:else if pending}
 			{#if pending.error}
 				<p class="error">{pending.error}</p>
-				<button type="button" class="secondary" onclick={resetCapture}>Κλείσιμο</button>
+				<button type="button" class="secondary" onclick={resetCapture}>{t('popup.close')}</button>
 			{:else}
-				<img class="preview" src={pending.dataUrl} alt="Προεπισκόπηση" />
+				<img class="preview" src={pending.dataUrl} alt={t('popup.preview')} />
 				{#if pending.sourceTitle}<p class="muted ellipsis">{pending.sourceTitle}</p>{/if}
 
 				<div class="stack">
@@ -315,25 +326,25 @@
 					</label>
 					{#if creatingProject}
 						<div class="row">
-							<input placeholder="Όνομα project" bind:value={newProjectName} />
-							<button type="button" onclick={() => void createProject()}>Προσθήκη</button>
+							<input placeholder={t('popup.projectName')} bind:value={newProjectName} />
+							<button type="button" onclick={() => void createProject()}>{t('popup.add')}</button>
 						</div>
 					{:else}
 						<button type="button" class="link left" onclick={() => (creatingProject = true)}>
-							+ νέο project
+							{t('popup.newProject')}
 						</button>
 					{/if}
 
-					<label>Σημείωση
+					<label>{t('popup.note')}
 						<textarea rows="3" bind:value={note}></textarea>
 					</label>
 
 					<div class="field">
 						<span class="field-label">Tags</span>
-						<TagInput bind:tags suggestions={tagSuggestions} placeholder="ξύλο, φως" />
+						<TagInput bind:tags suggestions={tagSuggestions} placeholder={t('popup.tagsPlaceholder')} />
 					</div>
 
-					<label>Επίπεδο
+					<label>{t('popup.level')}
 						<select bind:value={level}>
 							<option value="">—</option>
 							{#each levels as item (item.id)}
@@ -344,10 +355,10 @@
 
 					<div class="row">
 						<button type="button" disabled={saving} onclick={() => void save()}>
-							{saving ? 'Αποθήκευση…' : 'Αποθήκευση'}
+							{saving ? t('popup.saving') : t('popup.save')}
 						</button>
 						<button type="button" class="secondary" disabled={saving} onclick={resetCapture}>
-							Άκυρο
+							{t('popup.cancel')}
 						</button>
 					</div>
 					{#if errorMessage}<p class="error">{errorMessage}</p>{/if}
@@ -355,11 +366,11 @@
 			{/if}
 		{:else}
 			<div class="stack">
-				<p class="muted">Κάνε δεξί κλικ σε μια εικόνα και επίλεξε «Αποθήκευση εικόνας στο Moodboard».</p>
+				<p class="muted">{t('popup.hint', { menu: t('menu.saveImage') })}</p>
 				<button type="button" onclick={() => void captureActiveTab()}>
-					Στιγμιότυπο αυτής της σελίδας
+					{t('popup.screenshot')}
 				</button>
-				<a href={WEB_URL} target="_blank" rel="noreferrer">Άνοιγμα moodboard</a>
+				<a href={WEB_URL} target="_blank" rel="noreferrer">{t('popup.openApp')}</a>
 				{#if errorMessage}<p class="error">{errorMessage}</p>{/if}
 			</div>
 		{/if}
@@ -367,6 +378,17 @@
 </main>
 
 <style>
+	.top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.lang {
+		width: auto;
+		font-size: 0.8rem;
+		padding: 2px 6px;
+	}
 	.banner {
 		display: flex;
 		align-items: center;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	import { onMount } from 'svelte';
 	import Icon from './Icon.svelte';
 	import { CANVASES, THEMES, applyPrefs, loadPrefs, type Prefs, type Theme } from '#lib/appearance.js';
@@ -55,21 +56,21 @@
 	type="button"
 	class="dbtn icon"
 	class:on={open}
-	aria-label="Εμφάνιση"
+	aria-label={t('appearance.title')}
 	aria-expanded={open}
 	aria-haspopup="dialog"
 	bind:this={btn}
 	onclick={toggle}
 >
 	<Icon name="contrast" />
-	{#if !open}<span class="tip" aria-hidden="true">Θέμα και χρώμα καμβά</span>{/if}
+	{#if !open}<span class="tip" aria-hidden="true">{t('appearance.tip')}</span>{/if}
 </button>
 
 {#if open}
 	<div
 		class="pop"
 		role="dialog"
-		aria-label="Εμφάνιση"
+		aria-label={t('appearance.title')}
 		tabindex="-1"
 		bind:this={pop}
 		onkeydown={(e) => {
@@ -78,8 +79,8 @@
 		}}
 	>
 		<div class="row">
-			<span class="h">Θέμα</span>
-			<div class="seg" role="group" aria-label="Θέμα">
+			<span class="h">{t('appearance.theme')}</span>
+			<div class="seg" role="group" aria-label={t('appearance.theme')}>
 				{#each THEMES as t (t.id)}
 					<button
 						type="button"
@@ -91,8 +92,8 @@
 			</div>
 		</div>
 		<div class="row">
-			<span class="h">Καμβάς</span>
-			<div class="sw" role="group" aria-label="Χρώμα καμβά">
+			<span class="h">{t('appearance.canvas')}</span>
+			<div class="sw" role="group" aria-label={t('appearance.canvasColor')}>
 				{#each CANVASES[mode] as c (c.id)}
 					{@const on = prefs[mode] === c.id}
 					<button

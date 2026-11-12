@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	import type { Level } from '#lib/types.js';
 	import { levelStore } from '#lib/levels.svelte.js';
 	import Icon from './Icon.svelte';
@@ -52,8 +53,8 @@
 </script>
 
 {#snippet levelSeg()}
-	<div class="seg levels" role="group" aria-label="Επίπεδο">
-		<button type="button" class:on={level === ''} aria-pressed={level === ''} onclick={() => (level = '')}>Όλα</button>
+	<div class="seg levels" role="group" aria-label={t('common.level')}>
+		<button type="button" class:on={level === ''} aria-pressed={level === ''} onclick={() => (level = '')}>{t('common.all')}</button>
 		{#each levelStore.list as l (l.id)}
 			<button type="button" class:on={level === l.id} aria-pressed={level === l.id} onclick={() => (level = level === l.id ? '' : l.id)}>
 				{l.name}
@@ -65,12 +66,12 @@
 {#snippet searchField(id: string)}
 	<label class="search" for={id}>
 		<Icon name="search" size={15} />
-		<input {id} type="search" placeholder="Αναζήτηση" autocomplete="off" bind:value={search} aria-label="Αναζήτηση" />
+		<input {id} type="search" placeholder={t('header.search')} autocomplete="off" bind:value={search} aria-label={t('header.search')} />
 	</label>
 {/snippet}
 
 <header class="bar">
-	<nav class="crumb" aria-label="Διαδρομή">
+	<nav class="crumb" aria-label={t('common.breadcrumb')}>
 		<a class="home" href="/">Moodboard</a>
 		<span class="sep" aria-hidden="true"><Icon name="chevronRight" size={14} /></span>
 		<div class="switch">
@@ -111,8 +112,8 @@
 	<div class="right">
 		{@render searchField('board-search')}
 		<div class="wide">{@render levelSeg()}</div>
-		<select class="narrow" bind:value={level} aria-label="Επίπεδο">
-			<option value="">Όλα τα επίπεδα</option>
+		<select class="narrow" bind:value={level} aria-label={t('common.level')}>
+			<option value="">{t('home.allLevels')}</option>
 			{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
 		</select>
 	</div>
@@ -124,19 +125,19 @@
 		onclick={() => (filtersOpen = true)}
 	>
 		<Icon name="filter" size={15} />
-		Φίλτρα
+		{t('header.filters')}
 		{#if active}<span class="badge">{active}</span>{/if}
 	</button>
 </header>
 
 {#if filtersOpen}
 	<div class="sheetscrim" role="presentation" onpointerdown={() => (filtersOpen = false)}></div>
-	<div class="sheet" role="dialog" aria-label="Φίλτρα">
+	<div class="sheet" role="dialog" aria-label={t('header.filters')}>
 		<div class="grab" aria-hidden="true"></div>
 		{@render searchField('sheet-search')}
-		<p class="slabel">Επίπεδο</p>
+		<p class="slabel">{t('common.level')}</p>
 		<div class="levelchips">
-			<button type="button" class="chip" class:on={level === ''} onclick={() => (level = '')}>Όλα</button>
+			<button type="button" class="chip" class:on={level === ''} onclick={() => (level = '')}>{t('common.all')}</button>
 			{#each levelStore.list as l (l.id)}
 				<button type="button" class="chip" class:on={level === l.id} onclick={() => (level = level === l.id ? '' : l.id)}>
 					{l.name}
@@ -147,7 +148,7 @@
 			<p class="slabel">Tags</p>
 			<TagChips {tags} {colors} {highlight} ontoggle={ontoggletag} wrap />
 		{/if}
-		<button type="button" class="btn primary done" onclick={() => (filtersOpen = false)}>Τέλος</button>
+		<button type="button" class="btn primary done" onclick={() => (filtersOpen = false)}>{t('header.done')}</button>
 	</div>
 {/if}
 

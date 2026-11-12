@@ -65,12 +65,12 @@ func checkInvite(e *core.RecordRequestEvent) error {
 	code, _ := info.Body["invite"].(string)
 	code = strings.TrimSpace(code)
 	if code == "" {
-		return e.BadRequestError("Χρειάζεται κωδικός πρόσκλησης.", nil)
+		return e.BadRequestError(tr(e.Request, "Χρειάζεται κωδικός πρόσκλησης.", "An invite code is required."), nil)
 	}
 	return e.App.RunInTransaction(func(tx core.App) error {
 		inv, err := tx.FindFirstRecordByData("invites", "code", code)
 		if err != nil || inv.GetInt("uses_left") <= 0 {
-			return e.BadRequestError("Ο κωδικός πρόσκλησης δεν ισχύει.", nil)
+			return e.BadRequestError(tr(e.Request, "Ο κωδικός πρόσκλησης δεν ισχύει.", "The invite code is not valid."), nil)
 		}
 		inv.Set("uses_left", inv.GetInt("uses_left")-1)
 		if err := tx.Save(inv); err != nil {
@@ -88,7 +88,7 @@ func checkProjectOwner(e *core.RecordRequestEvent) error {
 	}
 	if pid := e.Record.GetString("project_id"); pid != "" {
 		if !ownsProject(e.App, e.Auth.Id, pid) {
-			return e.BadRequestError("Το project δεν ανήκει στον χρήστη.", nil)
+			return e.BadRequestError(tr(e.Request, "Το project δεν ανήκει στον χρήστη.", "The project does not belong to the user."), nil)
 		}
 	}
 	return e.Next()
@@ -166,5 +166,5 @@ func validCrop(raw string) bool {
 }
 
 func notFound(e *core.RequestEvent) error {
-	return e.Error(http.StatusNotFound, "Η εικόνα δεν βρέθηκε.", nil)
+	return e.Error(http.StatusNotFound, tr(e.Request, "Η εικόνα δεν βρέθηκε.", "Image not found."), nil)
 }

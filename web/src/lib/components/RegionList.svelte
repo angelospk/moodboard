@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// CONTRACT (fixed). One row per region: number, note input, 5 rating squares (click again clears), delete.
 	import type { Region } from '#lib/types.js';
 	import { tick, untrack } from 'svelte';
@@ -11,11 +12,11 @@
 	let { regions = $bindable([]), active = $bindable(null) }: Props = $props();
 
 	const WORDS: Record<number, string> = {
-		1: 'όχι αυτό',
-		2: 'μάλλον όχι',
-		3: 'ενδιαφέρον',
-		4: 'μου αρέσει',
-		5: 'ακριβώς αυτό'
+		1: t('regions.word1'),
+		2: t('regions.word2'),
+		3: t('regions.word3'),
+		4: t('regions.word4'),
+		5: t('regions.word5')
 	};
 
 	let inputs: HTMLInputElement[] = $state([]);
@@ -53,7 +54,7 @@
 
 <div class="rl">
 	{#if regions.length}
-		<p class="legend">1 = όχι αυτό · 5 = ακριβώς αυτό</p>
+		<p class="legend">{t('regions.legend')}</p>
 		<ol>
 			{#each regions as r, i (i)}
 				<li
@@ -71,34 +72,34 @@
 						bind:this={inputs[i]}
 						type="text"
 						value={r.note}
-						placeholder="Τι σου αρέσει σε αυτό;"
-						aria-label={`Σημείωση περιοχής ${i + 1}`}
+						placeholder={t('regions.notePlaceholder')}
+						aria-label={t('regions.noteLabel', { n: i + 1 })}
 						maxlength="300"
 						oninput={(e) => patch(i, { note: e.currentTarget.value })}
 					/>
-					<button type="button" class="del" aria-label={`Διαγραφή περιοχής ${i + 1}`} title="Διαγραφή περιοχής" onclick={() => remove(i)}>
+					<button type="button" class="del" aria-label={t('regions.deleteLabel', { n: i + 1 })} title={t('regions.deleteTitle')} onclick={() => remove(i)}>
 						<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
 					</button>
 					<div class="sub">
-						<div class="rate" role="group" aria-label={`Βαθμός περιοχής ${i + 1}`}>
+						<div class="rate" role="group" aria-label={t('regions.ratingGroup', { n: i + 1 })}>
 							{#each [1, 2, 3, 4, 5] as n (n)}
 								<button
 									type="button"
 									class={['sq', n <= (r.rating ?? 0) && 'fill']}
 									aria-pressed={r.rating === n}
-									aria-label={`Βαθμός ${n} από 5`}
+									aria-label={t('regions.rating', { n })}
 									title={WORDS[n]}
 									onclick={() => rate(i, n)}><i></i></button
 								>
 							{/each}
 						</div>
-						<span class={['word', r.rating == null && 'none']}>{r.rating ? WORDS[r.rating] : 'χωρίς βαθμό'}</span>
+						<span class={['word', r.rating == null && 'none']}>{r.rating ? WORDS[r.rating] : t('regions.unrated')}</span>
 					</div>
 				</li>
 			{/each}
 		</ol>
 	{:else}
-		<p class="empty">Σύρε πάνω στην εικόνα για να σημειώσεις μια λεπτομέρεια.</p>
+		<p class="empty">{t('regions.empty')}</p>
 	{/if}
 </div>
 

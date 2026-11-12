@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// Read-only view of a public board: the owner's layout, images and what the owner chose to show.
 	// Nothing here writes: the board gets canSave=false and no-op callbacks, and the server has no write route.
 	import Board from '../../map/Board.svelte';
@@ -37,7 +38,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.board?.project.name ?? 'Δημόσιο board'} · Moodboard</title>
+	<title>{data.board?.project.name ?? t('public.title')} · Moodboard</title>
 	<meta name="referrer" content="no-referrer" />
 	<meta name="robots" content="noindex" />
 </svelte:head>
@@ -48,13 +49,13 @@
 			<span class="brand">Moodboard</span>
 			{#if data.board}<h1>{data.board.project.name}</h1>{/if}
 		</div>
-		<span class="ro">Μόνο προβολή</span>
+		<span class="ro">{t('public.readOnly')}</span>
 		{#if data.board}
 			<div class="actions">
-				{#if hasNotes}<button type="button" class="btn ghost" aria-pressed={notesOn} onclick={() => (notesOn = !notesOn)} title="Σημειώσεις">
-					<Icon name="notes" size={15} /> Σημειώσεις
+				{#if hasNotes}<button type="button" class="btn ghost" aria-pressed={notesOn} onclick={() => (notesOn = !notesOn)} title={t('common.notes')}>
+					<Icon name="notes" size={15} /> {t('common.notes')}
 				</button>{/if}
-				<button type="button" class="btn ghost" onclick={() => board?.fit()} title="Κεντράρισμα">
+				<button type="button" class="btn ghost" onclick={() => board?.fit()} title={t('common.fit')}>
 					<Icon name="fit" size={15} />
 				</button>
 			</div>
@@ -74,7 +75,7 @@
 		{#if data.error}
 			<p class="msg">{data.error}</p>
 		{:else if !items.length}
-			<p class="msg">Το board είναι άδειο.</p>
+			<p class="msg">{t('public.empty')}</p>
 		{:else}
 			<Board
 				bind:this={board}

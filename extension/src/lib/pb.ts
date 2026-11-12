@@ -1,4 +1,5 @@
 import PocketBase, { AsyncAuthStore } from 'pocketbase';
+import { acceptLanguage, t } from './i18n';
 
 /** MV3 service workers and popups have no localStorage: keep the auth state in browser.storage.local. */
 const AUTH_KEY = 'pb_auth';
@@ -28,6 +29,11 @@ export const pb = new PocketBase(
 
 // The popup and the web app can share overlapping requests; a new popup must not cancel the old one.
 pb.autoCancellation(false);
+// The server writes its error messages in the language the user picked.
+pb.beforeSend = (url, options) => {
+	options.headers = { ...options.headers, 'Accept-Language': acceptLanguage() };
+	return { url, options };
+};
 
 /**
  * Wait until the stored auth state has been loaded into `pb.authStore`.
@@ -47,5 +53,5 @@ export function msg(error: unknown): string {
 	};
 	const field = r.response?.data && Object.entries(r.response.data)[0];
 	if (field) return `${field[0]}: ${field[1]?.message ?? ''}`.trim();
-	return r.response?.message || r.message || 'άγνωστο σφάλμα';
+	return r.response?.message || r.message || t('common.unknownError');
 }

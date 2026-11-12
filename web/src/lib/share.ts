@@ -1,6 +1,7 @@
 // Public boards (server: server/mb/share.go). A public board opens at /s/<project id> for anyone with
 // the link, no account. The owner picks what shows; the flags live on the project row.
 import type PocketBase from 'pocketbase';
+import { t } from './i18n.js';
 import { PB_URL } from './pb.js';
 import { toInspiration } from './inspirations.js';
 import type { Inspiration } from './types.js';
@@ -55,8 +56,8 @@ export function publicImageUrl(projectId: string, id: string, base = PB_URL): st
 /** Read a public board without a session. Throws «Το board δεν είναι δημόσιο.» when it is not. */
 export async function loadPublic(projectId: string, base = PB_URL): Promise<PublicBoard> {
 	const res = await fetch(`${base}/api/mb/public/${encodeURIComponent(projectId)}`, { credentials: 'omit' });
-	if (res.status === 404) throw new Error('Το board δεν είναι δημόσιο.');
-	if (!res.ok) throw new Error(`Σφάλμα φόρτωσης (${res.status}).`);
+	if (res.status === 404) throw new Error(t('err.boardNotPublic'));
+	if (!res.ok) throw new Error(t('err.loadStatus', { status: res.status }));
 	const body = await res.json();
 	return {
 		project: body.project,

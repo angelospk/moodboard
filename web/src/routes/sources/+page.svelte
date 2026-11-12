@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LOCALE_TAGS, getLocale, t, tn } from '#lib/i18n.js';
 	// «Πηγές»: every website images were saved from, with its images, pages and projects.
 	import { SvelteSet } from 'svelte/reactivity';
 	import type { Inspiration } from '#lib/types.js';
@@ -51,13 +52,11 @@
 		tag = null;
 	}
 
-	const dateFmt = new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'short' });
+	const dateFmt = new Intl.DateTimeFormat(LOCALE_TAGS[getLocale()], { day: 'numeric', month: 'short' });
 	const when = (iso: string) => {
 		const d = new Date(iso.replace(' ', 'T'));
 		return Number.isNaN(d.getTime()) ? '' : dateFmt.format(d);
 	};
-
-	const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 	/** A page's label: its title, else its path. */
 	function pageLabel(url: string, title: string | null): string {
@@ -74,14 +73,14 @@
 </script>
 
 <svelte:head>
-	<title>Πηγές · Moodboard</title>
+	<title>{t('sources.title')}</title>
 </svelte:head>
 
 {#snippet strip(items: Inspiration[], limit: number)}
 	<ul class="strip">
 		{#each items.slice(0, limit) as item (item.id)}
 			<li>
-				<a href={`/i/${item.id}`} title={item.note || item.source_title || 'Εικόνα'}>
+				<a href={`/i/${item.id}`} title={item.note || item.source_title || t('sources.image')}>
 					{#if data.urls[item.image_path]}
 						<img src={data.urls[item.image_path]} alt={item.note || ''} loading="lazy" decoding="async" />
 					{:else}
@@ -91,7 +90,7 @@
 			</li>
 		{/each}
 		{#if items.length > limit}
-			<li class="more" aria-label={`και άλλες ${items.length - limit}`}>+{items.length - limit}</li>
+			<li class="more" aria-label={t('sources.more', { n: items.length - limit })}>+{items.length - limit}</li>
 		{/if}
 	</ul>
 {/snippet}
@@ -114,26 +113,26 @@
 {/snippet}
 
 <header class="appbar">
-	<nav class="crumb" aria-label="Διαδρομή">
+	<nav class="crumb" aria-label={t('common.breadcrumb')}>
 		<a class="home" href="/">Moodboard</a>
 		<span aria-hidden="true">›</span>
-		<h1>Πηγές</h1>
+		<h1>{t('common.sources')}</h1>
 	</nav>
 	<div class="actions">
-		<a class="btn" href="/map">Χάρτης</a>
+		<a class="btn" href="/map">{t('common.map')}</a>
 		<a class="btn" href="/">Projects</a>
 	</div>
 </header>
 
 <main class="page">
 	{#if data.error}
-		<p class="err">Σφάλμα φόρτωσης: {data.error}</p>
+		<p class="err">{t('common.loadError', { error: data.error })}</p>
 	{/if}
 
 	<div class="intro">
 		<p class="lead">
-			Οι ιστότοποι από όπου κράτησες εικόνες.
-			<span class="meta">{plural(allSites, 'ιστότοπος', 'ιστότοποι')} · {plural(data.inspirations.length, 'εικόνα', 'εικόνες')}</span>
+			{t('sources.intro')}
+			<span class="meta">{tn('sources.sites', allSites)} · {tn('common.images', data.inspirations.length)}</span>
 		</p>
 	</div>
 
@@ -142,24 +141,24 @@
 			class="search"
 			type="search"
 			bind:value={query}
-			placeholder="Αναζήτηση: ιστότοπος, τίτλος, σημείωση, tag…"
-			aria-label="Αναζήτηση"
+			placeholder={t('sources.searchPlaceholder')}
+			aria-label={t('home.search')}
 		/>
 		<select bind:value={project} aria-label="Project">
-			<option value="">Όλα τα projects</option>
+			<option value="">{t('common.allProjects')}</option>
 			{#each data.projects as p (p.id)}
 				<option value={p.id}>{p.name}</option>
 			{/each}
-			<option value="none">Χωρίς project</option>
+			<option value="none">{t('common.noProject')}</option>
 		</select>
-		<div class="seg" role="group" aria-label="Ταξινόμηση">
-			<button type="button" class:on={sort === 'count'} aria-pressed={sort === 'count'} onclick={() => (sort = 'count')}>Περισσότερες</button>
-			<button type="button" class:on={sort === 'recent'} aria-pressed={sort === 'recent'} onclick={() => (sort = 'recent')}>Πρόσφατες</button>
+		<div class="seg" role="group" aria-label={t('sources.sort')}>
+			<button type="button" class:on={sort === 'count'} aria-pressed={sort === 'count'} onclick={() => (sort = 'count')}>{t('sources.sortCount')}</button>
+			<button type="button" class:on={sort === 'recent'} aria-pressed={sort === 'recent'} onclick={() => (sort = 'recent')}>{t('sources.sortRecent')}</button>
 		</div>
 	</div>
 
 	{#if topTags.length}
-		<div class="tags" role="group" aria-label="Φίλτρο tag">
+		<div class="tags" role="group" aria-label={t('sources.tagFilter')}>
 			{#each topTags as t (t)}
 				<button type="button" class="chip" class:on={tag === t} aria-pressed={tag === t} onclick={() => (tag = tag === t ? null : t)}>#{t}</button>
 			{/each}
@@ -168,21 +167,21 @@
 
 	{#if filtering}
 		<p class="found">
-			{plural(grouped.sources.length, 'ιστότοπος', 'ιστότοποι')} ·
-			{plural(grouped.sources.reduce((n, s) => n + s.items.length, 0), 'εικόνα', 'εικόνες')}
-			<button type="button" class="btn ghost" onclick={clear}>Καθαρισμός</button>
+			{tn('sources.sites', grouped.sources.length)} ·
+			{tn('common.images', grouped.sources.reduce((n, s) => n + s.items.length, 0))}
+			<button type="button" class="btn ghost" onclick={clear}>{t('sources.clear')}</button>
 		</p>
 	{/if}
 
 	{#if allSites === 0}
 		<div class="empty">
-			<p>Δεν υπάρχουν ακόμα πηγές.</p>
+			<p>{t('sources.none')}</p>
 			<p class="muted">
-				Όταν αποθηκεύεις μια εικόνα με την επέκταση, κρατάμε και τη σελίδα από όπου ήρθε. Θα τη βρεις εδώ.
+				{t('sources.noneHint')}
 			</p>
 		</div>
 	{:else if !grouped.sources.length}
-		<div class="empty"><p>Καμία πηγή δεν ταιριάζει.</p></div>
+		<div class="empty"><p>{t('sources.noMatch')}</p></div>
 	{/if}
 
 	<ol class="sources">
@@ -196,15 +195,15 @@
 							<a href={`https://${s.host}`} target="_blank" rel="noopener noreferrer">{s.host}<svg class="ext" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5h7v7M12.5 3.5l-9 9" /></svg></a>
 						</h2>
 						<p class="meta">
-							{plural(s.items.length, 'εικόνα', 'εικόνες')} · {plural(s.pages.length, 'σελίδα', 'σελίδες')}
-							{#if s.last}· τελευταία {when(s.last)}{/if}
+							{tn('common.images', s.items.length)} · {tn('sources.pages', s.pages.length)}
+							{#if s.last}· {t('sources.last', { date: when(s.last) })}{/if}
 						</p>
 					</div>
 					<ul class="projects" aria-label="Projects">
 						{#each s.projects.slice(0, 4) as p (p.id ?? 'none')}
 							<li>
 								<a class="pill" href={projectHref(p.id)} class:none={!p.id}>
-									{p.id ? (projectName.get(p.id) ?? '—') : 'Χωρίς project'}
+									{p.id ? (projectName.get(p.id) ?? '—') : t('common.noProject')}
 									<span class="n">{p.count}</span>
 								</a>
 							</li>
@@ -217,7 +216,7 @@
 
 				<button type="button" class="pages-toggle" aria-expanded={expanded} onclick={() => toggle(s.host)}>
 					<svg viewBox="0 0 16 16" aria-hidden="true" class:rot={expanded}><path d="M6 3l5 5-5 5" /></svg>
-					{expanded ? 'Απόκρυψη σελίδων' : `Σελίδες (${s.pages.length})`}
+					{expanded ? t('sources.hidePages') : t('sources.showPages', { n: s.pages.length })}
 				</button>
 
 				{#if expanded}
@@ -239,8 +238,8 @@
 
 	{#if grouped.unsourced.length}
 		<section class="unsourced">
-			<h2>Χωρίς πηγή <span class="n">{grouped.unsourced.length}</span></h2>
-			<p class="muted">Εικόνες από τον υπολογιστή, επικόλληση ή στιγμιότυπο.</p>
+			<h2>{t('sources.unsourced')} <span class="n">{grouped.unsourced.length}</span></h2>
+			<p class="muted">{t('sources.unsourcedHint')}</p>
 			{@render strip(grouped.unsourced, STRIP)}
 		</section>
 	{/if}

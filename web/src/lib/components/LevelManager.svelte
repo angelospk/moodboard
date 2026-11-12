@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// Edit the user's levels: add, rename, reorder, remove. Changes save at once.
 	import { onMount } from 'svelte';
 	import type PocketBase from 'pocketbase';
@@ -82,10 +83,10 @@
 <dialog bind:this={dialog} oncancel={(e) => { e.preventDefault(); onclose(); }} onclick={onDialogClick}>
 	<div class="box">
 		<header>
-			<h2>Επίπεδα</h2>
-			<button class="x" type="button" onclick={onclose} aria-label="Κλείσιμο">×</button>
+			<h2>{t('common.levels')}</h2>
+			<button class="x" type="button" onclick={onclose} aria-label={t('common.close')}>×</button>
 		</header>
-		<p class="hint">Τα δικά σου επίπεδα για όλες τις εικόνες. Αν σβήσεις ένα, οι εικόνες μένουν χωρίς επίπεδο.</p>
+		<p class="hint">{t('levels.hint')}</p>
 
 		<ul>
 			{#each levelStore.list as l, i (l.id)}
@@ -93,29 +94,29 @@
 					{#if editing === l.id}
 						<form class="edit" onsubmit={saveRename}>
 							<!-- svelte-ignore a11y_autofocus -->
-							<input bind:value={draft} maxlength={MAX_LEVEL_NAME} aria-label="Όνομα επιπέδου" autofocus />
-							<button class="btn primary" type="submit" disabled={busy}>Αποθήκευση</button>
-							<button class="btn" type="button" onclick={() => (editing = null)}>Άκυρο</button>
+							<input bind:value={draft} maxlength={MAX_LEVEL_NAME} aria-label={t('levels.nameLabel')} autofocus />
+							<button class="btn primary" type="submit" disabled={busy}>{t('common.save')}</button>
+							<button class="btn" type="button" onclick={() => (editing = null)}>{t('common.cancel')}</button>
 						</form>
 					{:else if confirming === l.id}
-						<span class="name">Διαγραφή του «{l.name}»;</span>
-						<button class="btn danger" type="button" disabled={busy} onclick={() => remove(l.id)}>Ναι</button>
-						<button class="btn" type="button" onclick={() => (confirming = null)}>Άκυρο</button>
+						<span class="name">{t('levels.confirmDelete', { name: l.name })}</span>
+						<button class="btn danger" type="button" disabled={busy} onclick={() => remove(l.id)}>{t('levels.yes')}</button>
+						<button class="btn" type="button" onclick={() => (confirming = null)}>{t('common.cancel')}</button>
 					{:else}
 						<span class="name">{l.name}</span>
-						<button class="ib" type="button" disabled={busy || i === 0} onclick={() => move(l.id, -1)} aria-label={`Πάνω: ${l.name}`}>↑</button>
-						<button class="ib" type="button" disabled={busy || i === levelStore.list.length - 1} onclick={() => move(l.id, 1)} aria-label={`Κάτω: ${l.name}`}>↓</button>
-						<button class="btn" type="button" onclick={() => startRename(l.id, l.name)}>Μετονομασία</button>
-						<button class="btn danger" type="button" onclick={() => { confirming = l.id; editing = null; error = ''; }}>Διαγραφή</button>
+						<button class="ib" type="button" disabled={busy || i === 0} onclick={() => move(l.id, -1)} aria-label={t('levels.up', { name: l.name })}>↑</button>
+						<button class="ib" type="button" disabled={busy || i === levelStore.list.length - 1} onclick={() => move(l.id, 1)} aria-label={t('levels.down', { name: l.name })}>↓</button>
+						<button class="btn" type="button" onclick={() => startRename(l.id, l.name)}>{t('common.rename')}</button>
+						<button class="btn danger" type="button" onclick={() => { confirming = l.id; editing = null; error = ''; }}>{t('common.delete')}</button>
 					{/if}
 				</li>
 			{/each}
-			{#if levelStore.list.length === 0}<li class="none">Κανένα επίπεδο ακόμα.</li>{/if}
+			{#if levelStore.list.length === 0}<li class="none">{t('levels.none')}</li>{/if}
 		</ul>
 
 		<form class="add" onsubmit={add}>
-			<input bind:value={newName} maxlength={MAX_LEVEL_NAME} placeholder="Νέο επίπεδο" aria-label="Νέο επίπεδο" />
-			<button class="btn primary" type="submit" disabled={busy || !newName.trim()}>+ Προσθήκη</button>
+			<input bind:value={newName} maxlength={MAX_LEVEL_NAME} placeholder={t('levels.new')} aria-label={t('levels.new')} />
+			<button class="btn primary" type="submit" disabled={busy || !newName.trim()}>{t('levels.add')}</button>
 		</form>
 		{#if error}<p class="err" role="alert">{error}</p>{/if}
 	</div>

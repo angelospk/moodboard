@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// Project board: header, tag row, canvas with tag zones, dock, inspiration panel.
 	// Board.svelte owns the canvas (simulation, pan/zoom, drag, drop, saved positions); this page owns
 	// the data, filters, selection, adding images, menus and toasts.
@@ -81,9 +82,9 @@
 	});
 	const projectName = $derived(
 		project === 'all'
-			? 'Όλα τα projects'
+			? t('common.allProjects')
 			: project === 'none'
-				? 'Χωρίς project'
+				? t('common.noProject')
 				: (data.projects.find((p) => p.id === project)?.name ?? 'Project')
 	);
 	/** Project of new images added on this board. */
@@ -120,11 +121,11 @@
 		const per = new Map<string | null, number>();
 		for (const i of items) per.set(i.project_id, (per.get(i.project_id) ?? 0) + 1);
 		return [
-			{ id: 'all', name: 'Όλα τα projects', count: items.length },
+			{ id: 'all', name: t('common.allProjects'), count: items.length },
 			...data.projects
 				.filter((p) => !p.archived || p.id === project)
 				.map((p) => ({ id: p.id, name: p.name, count: per.get(p.id) ?? 0 })),
-			{ id: 'none', name: 'Χωρίς project', count: per.get(null) ?? 0 }
+			{ id: 'none', name: t('common.noProject'), count: per.get(null) ?? 0 }
 		];
 	});
 
@@ -205,7 +206,7 @@
 
 	function pickFiles(spot: Spot | null = null) {
 		if (!data.userId) {
-			toast({ text: 'Συνδέσου για να προσθέσεις εικόνες', tone: 'error' }, 5000);
+			toast({ text: t('map.signInToAdd'), tone: 'error' }, 5000);
 			return;
 		}
 		pickSpot = spot;
@@ -232,7 +233,7 @@
 	async function addFiles(files: File[], spot: Spot) {
 		const userId = data.userId;
 		if (!userId) {
-			toast({ text: 'Συνδέσου για να προσθέσεις εικόνες', tone: 'error' }, 5000);
+			toast({ text: t('map.signInToAdd'), tone: 'error' }, 5000);
 			return;
 		}
 		// A new image must be visible where it lands: clear what would hide or fade it.
@@ -249,7 +250,7 @@
 				checkImage(file);
 			} catch (err) {
 				const name = file.name && file.name !== 'image.png' ? `${file.name}: ` : '';
-				toast({ text: name + errText(err, 'Η εικόνα δεν αποθηκεύτηκε'), tone: 'error' }, 8000);
+				toast({ text: name + errText(err, t('map.imageNotSaved')), tone: 'error' }, 8000);
 				return;
 			}
 			const id = newId();
@@ -268,7 +269,7 @@
 		if (!queue.length) return;
 		uploading = new Set([...uploading, ...queue.map((q) => q.id)]);
 		const first = queue[0].id;
-		const busy = toast({ text: queue.length > 1 ? `Ανεβαίνουν ${queue.length} εικόνες…` : 'Ανεβαίνει η εικόνα…', tone: 'busy' }, 0);
+		const busy = toast({ text: queue.length > 1 ? t('map.uploadingMany', { n: queue.length }) : t('map.uploadingOne'), tone: 'busy' }, 0);
 		let added = 0;
 
 		const upload = async ({ id, file }: { id: string; file: File }) => {
@@ -289,7 +290,7 @@
 				const { [id]: _, ...rest } = localUrls;
 				localUrls = rest;
 				const name = file.name && file.name !== 'image.png' ? `${file.name}: ` : '';
-				toast({ text: name + errText(err, 'Η εικόνα δεν αποθηκεύτηκε'), tone: 'error' }, 8000);
+				toast({ text: name + errText(err, t('map.imageNotSaved')), tone: 'error' }, 8000);
 			} finally {
 				const next = new Set(uploading);
 				next.delete(id);
@@ -305,7 +306,7 @@
 			})
 		);
 		dismiss(busy);
-		if (added > 1) toast(`Προστέθηκαν ${added} εικόνες`);
+		if (added > 1) toast(t('map.added', { n: added }));
 		// Reload only when nothing else is uploading (pending rows survive a reload anyway).
 		if (added && !uploading.size) void invalidate('moodboard:data');
 	}
@@ -336,12 +337,12 @@
 				files.push(new File([blob], `paste.${type.split('/')[1]}`, { type }));
 			}
 			if (!files.length) {
-				toast('Δεν υπάρχει εικόνα στο πρόχειρο');
+				toast(t('map.noClipboardImage'));
 				return;
 			}
 			await addFiles(files, spot);
 		} catch {
-			toast(`Πάτα ${mod}V για επικόλληση`, 4000);
+			toast(t('map.pressPaste', { mod }), 4000);
 		}
 	}
 
@@ -352,7 +353,7 @@
 	async function rezone(item: Inspiration, tag: string, from: From) {
 		if (uploading.has(item.id)) {
 			board?.restore(item.id, from);
-			toast('Η εικόνα ανεβαίνει ακόμα…');
+			toast(t('map.stillUploading'));
 			return;
 		}
 		const prev = item.tags ?? [];
@@ -360,10 +361,10 @@
 		setItem({ ...item, tags: next });
 		try {
 			setItem(await updateInspiration(data.pb, item.id, { tags: next }));
-			toast({ text: `+ #${tag}`, action: { label: 'Αναίρεση', run: () => void undoRezone(item.id, tag, prev, from) } }, 5000);
+			toast({ text: `+ #${tag}`, action: { label: t('map.undo'), run: () => void undoRezone(item.id, tag, prev, from) } }, 5000);
 		} catch (err) {
 			setItem(item);
-			toast({ text: errText(err, 'Το tag δεν αποθηκεύτηκε'), tone: 'error' }, 6000);
+			toast({ text: errText(err, t('map.tagNotSaved')), tone: 'error' }, 6000);
 		}
 	}
 
@@ -380,7 +381,7 @@
 			setItem(await updateInspiration(data.pb, id, { tags }));
 		} catch (err) {
 			setItem(cur);
-			toast({ text: errText(err, 'Η αναίρεση απέτυχε'), tone: 'error' }, 6000);
+			toast({ text: errText(err, t('map.undoFailed')), tone: 'error' }, 6000);
 		}
 	}
 
@@ -391,12 +392,12 @@
 			await copyInspiration(data.pb, userId, id, projectId);
 			onCopied(projectId ? (data.projects.find((p) => p.id === projectId)?.name ?? null) : null);
 		} catch (err) {
-			toast({ text: errText(err, 'Η αντιγραφή απέτυχε'), tone: 'error' }, 6000);
+			toast({ text: errText(err, t('map.copyFailed')), tone: 'error' }, 6000);
 		}
 	}
 
 	function onCopied(projectName: string | null) {
-		toast(projectName ? `Αντιγράφηκε στο ${projectName}` : 'Αντιγράφηκε χωρίς project');
+		toast(projectName ? t('map.copiedTo', { name: projectName }) : t('map.copiedNoProject'));
 		void invalidate('moodboard:data');
 	}
 
@@ -404,7 +405,7 @@
 		items = items.filter((i) => i.id !== id);
 		if (selectedId === id) select(null);
 		board?.forget(id);
-		toast('Η εικόνα διαγράφηκε');
+		toast(t('map.imageDeleted'));
 	}
 
 	/** Full-screen viewer of the selected image (Space, or the button on the panel image). */
@@ -432,12 +433,12 @@
 				const cur = items.find((i) => i.id === item.id);
 				// Keep the server's updated_at: an older live echo (e.g. an autosave) then cannot undo the crop.
 				if (cur) setItem({ ...cur, crop: row.crop, updated_at: row.updated_at });
-				toast(crop ? 'Η περικοπή αποθηκεύτηκε' : 'Η περικοπή αφαιρέθηκε');
+				toast(crop ? t('map.cropSaved') : t('map.cropRemoved'));
 			} catch (err) {
 				if (cropSeq.get(item.id) !== seq) return;
 				const cur = items.find((i) => i.id === item.id);
 				if (cur) setItem({ ...cur, crop: cropSaved.get(item.id) ?? null });
-				toast({ text: errText(err, 'Η περικοπή δεν αποθηκεύτηκε'), tone: 'error' }, 6000);
+				toast({ text: errText(err, t('map.cropNotSaved')), tone: 'error' }, 6000);
 			}
 		};
 		const next = (cropQueue.get(item.id) ?? Promise.resolve()).then(run);
@@ -462,10 +463,10 @@
 		try {
 			await deleteInspiration(data.pb, id);
 			board?.forget(id);
-			toast('Η εικόνα διαγράφηκε');
+			toast(t('map.imageDeleted'));
 		} catch (err) {
 			if (!items.some((i) => i.id === id)) items = [row, ...items];
-			toast({ text: errText(err, 'Η διαγραφή απέτυχε'), tone: 'error' }, 6000);
+			toast({ text: errText(err, t('map.deleteFailed')), tone: 'error' }, 6000);
 		}
 	}
 
@@ -500,9 +501,9 @@
 			const spot = m.spot;
 			return {
 				items: [
-					{ label: 'Νέα εικόνα εδώ…', icon: 'image', kbd: 'N', onselect: act(() => pickFiles(spot)) },
-					{ label: 'Επικόλληση εδώ', icon: 'paste', kbd: `${mod}V`, onselect: act(() => void pasteAt(spot)) },
-					{ label: 'Κεντράρισμα', icon: 'fit', kbd: 'F', onselect: act(() => board?.fit()) }
+					{ label: t('map.menuNewHere'), icon: 'image', kbd: 'N', onselect: act(() => pickFiles(spot)) },
+					{ label: t('map.menuPasteHere'), icon: 'paste', kbd: `${mod}V`, onselect: act(() => void pasteAt(spot)) },
+					{ label: t('map.menuFit'), icon: 'fit', kbd: 'F', onselect: act(() => board?.fit()) }
 				]
 			};
 		}
@@ -510,31 +511,31 @@
 		const back = () => (menu = { ...m, view: 'card' });
 		if (m.view === 'copy') {
 			return {
-				title: 'Αντιγραφή σε',
+				title: t('map.menuCopyTitle'),
 				onback: back,
 				items: [
 					...data.projects
 						.filter((p) => !p.archived)
 						.map((p) => ({ label: p.name, onselect: act(() => void copyTo(id, p.id)) })),
-					{ label: 'Χωρίς project', onselect: act(() => void copyTo(id, null)) }
+					{ label: t('common.noProject'), onselect: act(() => void copyTo(id, null)) }
 				]
 			};
 		}
 		if (m.view === 'delete') {
 			return {
-				title: 'Διαγραφή εικόνας;',
+				title: t('map.menuDeleteTitle'),
 				onback: back,
 				items: [
-					{ label: 'Διαγραφή οριστικά', icon: 'trash', danger: true, onselect: act(() => void remove(id)) },
-					{ label: 'Άκυρο', onselect: () => (menu = null) }
+					{ label: t('map.menuDeleteForever'), icon: 'trash', danger: true, onselect: act(() => void remove(id)) },
+					{ label: t('common.cancel'), onselect: () => (menu = null) }
 				]
 			};
 		}
 		return {
 			items: [
-				{ label: 'Άνοιγμα', icon: 'open', onselect: act(() => select(id)) },
-				{ label: 'Αντιγραφή σε…', icon: 'copy', more: true, onselect: () => (menu = { ...m, view: 'copy' }) },
-				{ label: 'Διαγραφή', icon: 'trash', danger: true, more: true, onselect: () => (menu = { ...m, view: 'delete' }) }
+				{ label: t('map.menuOpen'), icon: 'open', onselect: act(() => select(id)) },
+				{ label: t('map.menuCopyTo'), icon: 'copy', more: true, onselect: () => (menu = { ...m, view: 'copy' }) },
+				{ label: t('common.delete'), icon: 'trash', danger: true, more: true, onselect: () => (menu = { ...m, view: 'delete' }) }
 			]
 		};
 	});
@@ -650,7 +651,7 @@
 	});
 
 	const boardEmpty = $derived(inProject.length === 0);
-	const hint = $derived(filtered.length < 3 && !boardEmpty ? `${mod}V επικόλληση · σύρε εικόνες εδώ` : null);
+	const hint = $derived(filtered.length < 3 && !boardEmpty ? t('map.hintPaste', { mod }) : null);
 </script>
 
 <svelte:head>
@@ -689,7 +690,7 @@
 
 	<div class="body">
 		{#if data.error}
-			<p class="msg">Σφάλμα φόρτωσης: {data.error}</p>
+			<p class="msg">{t('common.loadError', { error: data.error })}</p>
 		{:else}
 			<Board
 				bind:this={board}
@@ -707,7 +708,7 @@
 				canSave={!!data.userId}
 				{rightInset}
 				{uploading}
-				onselect={(id) => (uploading.has(id) ? toast('Η εικόνα ανεβαίνει ακόμα…') : select(id))}
+				onselect={(id) => (uploading.has(id) ? toast(t('map.stillUploading')) : select(id))}
 				onbackground={() => {
 					if (selectedId) select(null);
 				}}
@@ -727,18 +728,18 @@
 							<rect x="30" y="6" width="40" height="30" rx="3" />
 							<rect x="52" y="28" width="38" height="30" rx="3" />
 						</svg>
-						<h1>{project === 'all' ? 'Ο πίνακας είναι άδειος' : `Το «${projectName}» δεν έχει εικόνες`}</h1>
-						<p>Σύρε εικόνες εδώ, κάνε επικόλληση με <kbd class="kbd">{mod}V</kbd> ή διάλεξε αρχεία.</p>
+						<h1>{project === 'all' ? t('map.emptyBoard') : t('map.emptyProject', { name: projectName })}</h1>
+						<p>{@html t('map.emptyHint', { kbd: `<kbd class="kbd">${mod}V</kbd>` })}</p>
 						<div class="emptyacts">
 							<button type="button" class="btn primary" onclick={() => pickFiles(null)}>
-								<Icon name="plus" size={15} /> Εικόνα <kbd class="kbd onacc">N</kbd>
+								<Icon name="plus" size={15} /> {t('map.addImage')} <kbd class="kbd onacc">N</kbd>
 							</button>
 							<button
 								type="button"
 								class="btn"
 								onclick={() => void pasteAt(board?.centreSpot() ?? { x: 0, y: 0, zone: null })}
 							>
-								<Icon name="paste" size={15} /> Επικόλληση
+								<Icon name="paste" size={15} /> {t('map.paste')}
 							</button>
 						</div>
 					</div>
@@ -746,12 +747,12 @@
 			{:else if filtered.length === 0}
 				<div class="empty" style:--inset="{rightInset}px">
 					<div class="emptybox small">
-						<p>Καμία εικόνα σε αυτό το επίπεδο.</p>
-						<button type="button" class="btn" onclick={() => (level = '')}>Όλα τα επίπεδα</button>
+						<p>{t('map.noImageLevel')}</p>
+						<button type="button" class="btn" onclick={() => (level = '')}>{t('home.allLevels')}</button>
 					</div>
 				</div>
 			{:else if matches && matches.size === 0}
-				<p class="nomatch" style:--inset="{rightInset}px">Καμία εικόνα για «{search.trim()}»</p>
+				<p class="nomatch" style:--inset="{rightInset}px">{t('map.noMatch', { query: search.trim() })}</p>
 			{/if}
 
 			{#if !boardEmpty}
@@ -795,7 +796,7 @@
 		{#if viewing && selected}
 			<ImageViewer
 				src={urlOf(selected)}
-				alt={selected.note || 'Έμπνευση'}
+				alt={selected.note || t('item.alt')}
 				sourceUrl={selected.source_url}
 				crop={selected.crop}
 				regions={selected.regions}

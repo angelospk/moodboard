@@ -15,6 +15,7 @@
 </script>
 
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// The canvas: cards placed by d3-force around zone anchors, zone rects drawn around their cards,
 	// pan / zoom / pinch, card drag (into another zone re-tags it), file drop and saved positions.
 	// The simulation writes positions straight to the DOM on each tick; Svelte only renders the lists.
@@ -813,7 +814,7 @@
 		const files = [...(e.dataTransfer?.files ?? [])];
 		const images = files.filter((f) => f.type.startsWith('image/'));
 		if (!images.length) {
-			ontoast('Μόνο εικόνες μπορούν να προστεθούν');
+			ontoast(t('board.onlyImages'));
 			return;
 		}
 		onfiles(images, spotAtClient(e.clientX, e.clientY));
@@ -863,7 +864,7 @@
 				const bad = res.find((r) => r.status === 'rejected');
 				if (bad) throw bad.reason;
 			},
-			'Οι θέσεις δεν αποθηκεύτηκαν'
+			t('board.positionsNotSaved')
 		);
 	}
 
@@ -888,7 +889,7 @@
 		else if (canSave && seededScope) {
 			pendingSaves.delete(`${seededScope}|${key}`);
 			const sc = seededScope;
-			void serial(() => deletePosition(pb, sc, key), 'Η θέση δεν αποθηκεύτηκε');
+			void serial(() => deletePosition(pb, sc, key), t('board.positionNotSaved'));
 		}
 		reheat(0.3);
 	}
@@ -898,7 +899,7 @@
 		const key = `i:${itemId}`;
 		mem.delete(key);
 		for (const k of pendingSaves.keys()) if (k.endsWith(`|${key}`)) pendingSaves.delete(k);
-		if (canSave) void serial(() => deletePosition(pb, null, key), 'Η θέση δεν σβήστηκε');
+		if (canSave) void serial(() => deletePosition(pb, null, key), t('board.positionNotRemoved'));
 	}
 
 	/** Unpin every card in view, forget their saved spots and lay the board out again. */
@@ -916,7 +917,7 @@
 		reheat(0.9);
 		if (!canSave || !seededScope) return;
 		const sc = seededScope;
-		await serial(() => deletePosition(pb, sc, keys), 'Η νέα διάταξη δεν αποθηκεύτηκε');
+		await serial(() => deletePosition(pb, sc, keys), t('board.layoutNotSaved'));
 	}
 
 	// ------------------------------------------------------------- Lifecycle
@@ -950,7 +951,7 @@
 	};
 	const faded = (i: Inspiration) =>
 		(matches !== null && !matches.has(i.id)) || (highlight !== null && !(i.tags ?? []).includes(highlight));
-	const alt = (i: Inspiration) => (i.note ? i.note.slice(0, 80) : 'Εικόνα χωρίς σημείωση');
+	const alt = (i: Inspiration) => (i.note ? i.note.slice(0, 80) : t('board.altNoNote'));
 </script>
 
 <div
@@ -961,7 +962,7 @@
 	style:background-size="{grid}px {grid}px"
 	style:background-position="{view.x}px {view.y}px"
 	role="application"
-	aria-label="Πίνακας εικόνων"
+	aria-label={t('board.ariaBoard')}
 	{@attach attachWheel}
 	{@attach watchStage}
 	onpointerdown={onStageDown}
@@ -995,8 +996,8 @@
 					<button
 						type="button"
 						class="zadd"
-						aria-label={`Νέα εικόνα στο #${z.tag}`}
-						title={`Νέα εικόνα στο #${z.tag}`}
+						aria-label={t('board.newInTag', { tag: z.tag })}
+						title={t('board.newInTag', { tag: z.tag })}
 						onclick={() => onzoneadd(z.tag, zoneSpot(z.tag))}
 					>
 						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
@@ -1046,7 +1047,7 @@
 								<img class="hi" src={urlOf(item)} alt="" loading="lazy" decoding="async" draggable="false" {@attach hiReady} />
 							{/if}
 						{:else}
-							<span class="missing">χωρίς εικόνα</span>
+							<span class="missing">{t('common.noImage')}</span>
 						{/if}
 						{#each regions as r, ri (ri)}
 							<div
@@ -1062,10 +1063,10 @@
 							</div>
 						{/each}
 						{#if item.suggestion}
-							<span class="sugg" title="Πρόταση AI για επίπεδο και tags · άνοιξε την εικόνα για αποδοχή">✦</span>
+							<span class="sugg" title={t('board.suggTitle')}>✦</span>
 						{/if}
 						{#if regions.length && !showBoxes}
-							<span class="rcount" title={`${regions.length} σημεία · πέρασε το ποντίκι για να τα δεις`}>
+							<span class="rcount" title={t('board.regionsTitle', { n: regions.length })}>
 								{regions.length}
 							</span>
 						{/if}
@@ -1096,7 +1097,7 @@
 	{#if fileOver}
 		<div class="dropveil" aria-hidden="true">
 			<p>
-				Άφησε για να προστεθούν{#if dropZone}<span> στο <b>#{dropZone}</b></span>{/if}
+				{t('board.dropToAdd')}{#if dropZone}<span> {t('board.dropIn')} <b>#{dropZone}</b></span>{/if}
 			</p>
 		</div>
 	{/if}

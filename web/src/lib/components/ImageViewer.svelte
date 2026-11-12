@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// Full-screen view of one image, with a crop tool. The crop is only a rectangle stored on the row
 	// (fractions of the image); the file stays whole, and cards on the map show just that part.
 	import type { Crop, Region } from '#lib/types.js';
@@ -158,7 +159,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="viewer" role="dialog" aria-modal="true" aria-label="Πλήρης οθόνη">
+<div class="viewer" role="dialog" aria-modal="true" aria-label={t('viewer.aria')}>
 	<header>
 		<div class="meta">
 			{#if host}
@@ -167,18 +168,18 @@
 		</div>
 		<div class="tools">
 			{#if !editing && regions.length}
-				<button type="button" class="tool" class:on={showMarks} aria-pressed={showMarks} title="Σημεία (M)" onclick={() => (showMarks = !showMarks)}>
+				<button type="button" class="tool" class:on={showMarks} aria-pressed={showMarks} title={t('viewer.marks')} onclick={() => (showMarks = !showMarks)}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" rx="1" /></svg>
-					Σημεία · {regions.length}
+					{t('viewer.marksCount', { n: regions.length })}
 				</button>
 			{/if}
 			{#if !editing}
-				<button type="button" class="tool" title="Περικοπή (C)" onclick={startCrop} disabled={!src}>
+				<button type="button" class="tool" title={t('viewer.crop')} onclick={startCrop} disabled={!src}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5v10.5h10.5M1.5 4h10.5v10.5" /></svg>
-					Περικοπή
+					{t('viewer.cropLabel')}
 				</button>
 			{/if}
-			<button type="button" class="tool icon" aria-label="Κλείσιμο" title="Κλείσιμο (Esc)" onclick={onclose} bind:this={closeBtn}>
+			<button type="button" class="tool icon" aria-label={t('common.close')} title={t('panel.closeTitle')} onclick={onclose} bind:this={closeBtn}>
 				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
 			</button>
 		</div>
@@ -186,7 +187,7 @@
 
 	<div class="frame">
 		{#if onprev && !editing}
-			<button type="button" class="nav prev" aria-label="Προηγούμενη" title="Προηγούμενη (←)" onclick={onprev}>
+			<button type="button" class="nav prev" aria-label={t('viewer.prev')} title={t('panel.prevTitle')} onclick={onprev}>
 				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
 			</button>
 		{/if}
@@ -242,11 +243,11 @@
 				{/if}
 			</div>
 		{:else}
-			<p class="missing">Η εικόνα δεν είναι διαθέσιμη.</p>
+			<p class="missing">{t('viewer.unavailable')}</p>
 		{/if}
 
 		{#if onnext && !editing}
-			<button type="button" class="nav next" aria-label="Επόμενη" title="Επόμενη (→)" onclick={onnext}>
+			<button type="button" class="nav next" aria-label={t('viewer.next')} title={t('panel.nextTitle')} onclick={onnext}>
 				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>
 			</button>
 		{/if}
@@ -254,14 +255,14 @@
 
 	<footer>
 		{#if editing}
-			<p class="hint">Σύρε τις λαβές ή ζωγράφισε νέο πλαίσιο. Στον χάρτη θα φαίνεται μόνο αυτό το κομμάτι.</p>
+			<p class="hint">{t('viewer.cropHint')}</p>
 			<div class="actions">
-				<button type="button" class="tool" onclick={() => ((box = { x: 0, y: 0, w: 1, h: 1 }), save())}>Χωρίς περικοπή</button>
-				<button type="button" class="tool" onclick={() => (editing = false)}>Άκυρο</button>
-				<button type="button" class="tool primary" onclick={save}>Αποθήκευση <span class="kbd">↵</span></button>
+				<button type="button" class="tool" onclick={() => ((box = { x: 0, y: 0, w: 1, h: 1 }), save())}>{t('viewer.noCrop')}</button>
+				<button type="button" class="tool" onclick={() => (editing = false)}>{t('common.cancel')}</button>
+				<button type="button" class="tool primary" onclick={save}>{t('common.save')} <span class="kbd">↵</span></button>
 			</div>
 		{:else if crop}
-			<p class="hint">Η διακεκομμένη γραμμή δείχνει τι φαίνεται στον χάρτη.</p>
+			<p class="hint">{t('viewer.cropShown')}</p>
 		{/if}
 	</footer>
 </div>

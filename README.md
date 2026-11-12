@@ -8,6 +8,18 @@ reorder or remove them), free tags, a note, and marked regions with their own no
 - **App:** https://moodboard.haroldpoi.dev (sign-up needs an invite code)
 - **API:** https://moodboard-api.haroldpoi.dev
 
+## Languages
+
+The app, the extension and the server messages come in Greek and English. The web app and the
+extension pick the saved choice, then the browser language, then Greek; a selector switches it
+(it reloads the page). Texts live in `web/src/lib/messages/{el,en}.ts` and
+`extension/src/lib/messages/{el,en}.ts`: `el` is the source and `en` has the same keys, which the
+type checker enforces (`web/tests/i18n.test.ts` also checks placeholders). To add a language, add
+a catalog and a name in `LOCALES`/`LOCALE_NAMES` (web and extension), and a case in
+`server/mb/lang.go`. No i18n library: `web/src/lib/i18n.ts` is about 100 lines.
+
+The icon is drawn by `python3 extension/scripts/icons.py` (it writes `favicon.svg` and the PNG sizes).
+
 ## Οδηγίες για χρήστες
 
 **Σελίδα:** άνοιξε το https://moodboard.haroldpoi.dev → «Νέος λογαριασμός» με email, κωδικό και

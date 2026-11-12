@@ -29,7 +29,7 @@ func publicProject(app core.App, id string) *core.Record {
 }
 
 func publicNotFound(e *core.RequestEvent) error {
-	return e.NotFoundError("Το board δεν είναι δημόσιο.", nil)
+	return e.NotFoundError(tr(e.Request, "Το board δεν είναι δημόσιο.", "The board is not public."), nil)
 }
 
 func handlePublicBoard(e *core.RequestEvent) error {

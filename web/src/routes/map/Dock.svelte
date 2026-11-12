@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	import Icon from './Icon.svelte';
 	import Appearance from './Appearance.svelte';
 
@@ -19,11 +20,11 @@
 </script>
 
 <div class="dockwrap" style:--inset="{inset}px">
-	<div class="dock" role="toolbar" aria-label="Εργαλεία πίνακα">
-		<button type="button" class="dbtn primary" aria-label="Νέα εικόνα" aria-keyshortcuts="N" onclick={onadd}>
+	<div class="dock" role="toolbar" aria-label={t('dock.tools')}>
+		<button type="button" class="dbtn primary" aria-label={t('common.newImage')} aria-keyshortcuts="N" onclick={onadd}>
 			<Icon name="plus" />
-			<span class="lbl">Εικόνα</span>
-			<span class="tip" aria-hidden="true">Νέα εικόνα <kbd class="kbd">N</kbd></span>
+			<span class="lbl">{t('dock.image')}</span>
+			<span class="tip" aria-hidden="true">{t('common.newImage')} <kbd class="kbd">N</kbd></span>
 		</button>
 		<span class="sep" aria-hidden="true"></span>
 		<button
@@ -31,28 +32,28 @@
 			class="dbtn"
 			class:on={notesOn}
 			aria-pressed={notesOn}
-			aria-label="Σημειώσεις"
+			aria-label={t('common.notes')}
 			onclick={() => (notesOn = !notesOn)}
 		>
 			<Icon name="notes" />
-			<span class="lbl">Σημειώσεις</span>
-			<span class="tip" aria-hidden="true">{notesOn ? 'Κρύψε τις σημειώσεις' : 'Δείξε τις σημειώσεις'}</span>
+			<span class="lbl">{t('common.notes')}</span>
+			<span class="tip" aria-hidden="true">{notesOn ? t('dock.hideNotes') : t('dock.showNotes')}</span>
 		</button>
 		<label class="size">
-			<span class="sr">Μέγεθος εικόνας</span>
+			<span class="sr">{t('dock.imageSize')}</span>
 			<svg class="sq s" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="6" height="6" rx="1" /></svg>
-			<input type="range" {min} {max} step="10" bind:value={size} aria-label="Μέγεθος εικόνας" />
+			<input type="range" {min} {max} step="10" bind:value={size} aria-label={t('dock.imageSize')} />
 			<svg class="sq" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /></svg>
-			<span class="tip" aria-hidden="true">Μέγεθος εικόνων</span>
+			<span class="tip" aria-hidden="true">{t('dock.imagesSize')}</span>
 		</label>
 		<span class="sep" aria-hidden="true"></span>
-		<button type="button" class="dbtn icon" aria-label="Κεντράρισμα" aria-keyshortcuts="F" onclick={onfit}>
+		<button type="button" class="dbtn icon" aria-label={t('common.fit')} aria-keyshortcuts="F" onclick={onfit}>
 			<Icon name="fit" />
-			<span class="tip" aria-hidden="true">Κεντράρισμα <kbd class="kbd">F</kbd></span>
+			<span class="tip" aria-hidden="true">{t('common.fit')} <kbd class="kbd">F</kbd></span>
 		</button>
-		<button type="button" class="dbtn icon" aria-label="Αυτόματη διάταξη" aria-keyshortcuts="L" onclick={onlayout}>
+		<button type="button" class="dbtn icon" aria-label={t('dock.autoLayout')} aria-keyshortcuts="L" onclick={onlayout}>
 			<Icon name="layout" />
-			<span class="tip" aria-hidden="true">Αυτόματη διάταξη <kbd class="kbd">L</kbd></span>
+			<span class="tip" aria-hidden="true">{t('dock.autoLayout')} <kbd class="kbd">L</kbd></span>
 		</button>
 		<Appearance />
 	</div>

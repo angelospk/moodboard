@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	import { onMount, untrack } from 'svelte';
 	import type PocketBase from 'pocketbase';
 	import type { Level, Project } from '#lib/types.js';
@@ -89,7 +90,7 @@
 		try {
 			checkImage(f);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Μη υποστηριζόμενη εικόνα.';
+			error = e instanceof Error ? e.message : t('new.unsupported');
 			return;
 		}
 		image = f;
@@ -126,7 +127,7 @@
 		if (busy) return;
 		const f = image;
 		if (!f) {
-			error = 'Διάλεξε πρώτα μια εικόνα.';
+			error = t('quick.pickFirst');
 			return;
 		}
 		busy = true;
@@ -140,7 +141,7 @@
 			});
 			onsaved(id);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Αποτυχία αποθήκευσης.';
+			error = e instanceof Error ? e.message : t('new.saveFailed');
 		} finally {
 			busy = false;
 		}
@@ -166,8 +167,8 @@
 <dialog bind:this={dialog} oncancel={onCancel} onclick={onDialogClick}>
 	<form bind:this={formEl} onsubmit={save} onkeydown={onFormKey}>
 		<header>
-			<h2>Νέα εικόνα</h2>
-			<button class="x" type="button" onclick={onclose} aria-label="Κλείσιμο">×</button>
+			<h2>{t('common.newImage')}</h2>
+			<button class="x" type="button" onclick={onclose} aria-label={t('common.close')}>×</button>
 		</header>
 
 		<div
@@ -185,39 +186,39 @@
 			}}
 		>
 			{#if preview}
-				<img src={preview} alt="Προεπισκόπηση" />
+				<img src={preview} alt={t('new.preview')} />
 				<label class="replace">
 					<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" onchange={onPick} />
-					Αλλαγή
+					{t('quick.change')}
 				</label>
 			{:else}
 				<label class="pick">
 					<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" onchange={onPick} />
-					<span class="cta">Κάνε paste, σύρε ή διάλεξε εικόνα</span>
-					<span class="hint">png · jpeg · webp · gif · avif — έως 10MB</span>
+					<span class="cta">{t('quick.pick')}</span>
+					<span class="hint">{t('new.formats')}</span>
 				</label>
 			{/if}
 		</div>
 
 		<label class="field">
-			<span>Σημείωση</span>
+			<span>{t('new.note')}</span>
 			<textarea
 				bind:this={noteEl}
 				bind:value={note}
 				rows="3"
-				placeholder="Τι σου αρέσει εδώ; Φως, υλικό, αναλογίες…"
+				placeholder={t('new.notePlaceholder')}
 				onkeydown={onNoteKey}
 			></textarea>
 		</label>
 
 		<div class="field">
-			<span>Tags <em>(έως 30)</em></span>
-			<TagInput bind:tags {suggestions} placeholder="ξύλο, φως…" />
+			<span>Tags <em>{t('new.tagsLimit')}</em></span>
+			<TagInput bind:tags {suggestions} placeholder={t('tags.placeholder')} />
 		</div>
 
 		<div class="row">
 			<label class="field">
-				<span>Επίπεδο</span>
+				<span>{t('common.level')}</span>
 				<select bind:value={level}>
 					<option value="">—</option>
 					{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
@@ -226,7 +227,7 @@
 			<label class="field">
 				<span>Project</span>
 				<select bind:value={projectId}>
-					<option value="">Χωρίς project</option>
+					<option value="">{t('common.noProject')}</option>
 					{#each projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 				</select>
 			</label>
@@ -235,9 +236,9 @@
 		{#if error}<p class="err">{error}</p>{/if}
 
 		<div class="actions">
-			<button type="button" onclick={onclose}>Άκυρο</button>
+			<button type="button" onclick={onclose}>{t('common.cancel')}</button>
 			<button class="primary" type="submit" disabled={busy || !image}>
-				{busy ? 'Αποθήκευση…' : 'Αποθήκευση'}
+				{busy ? t('common.saving') : t('common.save')}
 			</button>
 		</div>
 	</form>

@@ -63,14 +63,14 @@ func handleAppendNote(e *core.RequestEvent) error {
 		Text string `json:"text"`
 	}
 	if err := e.BindBody(&body); err != nil || strings.TrimSpace(body.Text) == "" || utf8.RuneCountInString(body.Text) > 5000 {
-		return e.BadRequestError("Το κείμενο λείπει ή είναι πολύ μεγάλο.", nil)
+		return e.BadRequestError(tr(e.Request, "Το κείμενο λείπει ή είναι πολύ μεγάλο.", "The text is missing or too long."), nil)
 	}
 	r, err := AppendNote(e.App, e.Auth.Id, e.Request.PathValue("id"), body.Text)
 	if err == errNotFound {
 		return notFound(e)
 	}
 	if err != nil {
-		return e.BadRequestError("Αποτυχία αποθήκευσης.", err)
+		return e.BadRequestError(tr(e.Request, "Αποτυχία αποθήκευσης.", "Could not save."), err)
 	}
 	return e.JSON(http.StatusOK, map[string]string{"id": r.Id, "note": r.GetString("note")})
 }
@@ -118,7 +118,7 @@ func handleCopy(e *core.RequestEvent) error {
 		return notFound(e)
 	}
 	if err != nil {
-		return e.BadRequestError("Αποτυχία αντιγραφής.", err)
+		return e.BadRequestError(tr(e.Request, "Αποτυχία αντιγραφής.", "Could not copy."), err)
 	}
 	return e.JSON(http.StatusOK, map[string]string{"id": r.Id})
 }
@@ -166,10 +166,10 @@ func handleSavePositions(e *core.RequestEvent) error {
 		Positions []position `json:"positions"`
 	}
 	if err := e.BindBody(&body); err != nil || body.Scope == "" || len(body.Scope) > 64 || len(body.Positions) > 5000 {
-		return e.BadRequestError("Λάθος δεδομένα θέσεων.", nil)
+		return e.BadRequestError(tr(e.Request, "Λάθος δεδομένα θέσεων.", "Invalid positions."), nil)
 	}
 	if err := SavePositions(e.App, e.Auth.Id, body.Scope, body.Positions); err != nil {
-		return e.BadRequestError("Οι θέσεις δεν αποθηκεύτηκαν.", err)
+		return e.BadRequestError(tr(e.Request, "Οι θέσεις δεν αποθηκεύτηκαν.", "The positions were not saved."), err)
 	}
 	return e.NoContent(http.StatusNoContent)
 }
@@ -210,10 +210,10 @@ func handleDeletePositions(e *core.RequestEvent) error {
 		keys = append(keys, body.Key)
 	}
 	if len(keys) == 0 || len(keys) > 5000 {
-		return e.BadRequestError("Λείπει το key.", nil)
+		return e.BadRequestError(tr(e.Request, "Λείπει το key.", "The key is missing."), nil)
 	}
 	if err := DeletePositions(e.App, e.Auth.Id, body.Scope, keys); err != nil {
-		return e.BadRequestError("Η θέση δεν σβήστηκε.", err)
+		return e.BadRequestError(tr(e.Request, "Η θέση δεν σβήστηκε.", "The position was not removed."), err)
 	}
 	return e.NoContent(http.StatusNoContent)
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n.js';
 	// CONTRACT (fixed). Image shown whole with numbered region boxes; drag on the image draws a new region.
 	import type { Region } from '#lib/types.js';
 	import { regionFromStroke, svgPoints, type Pt } from '#lib/shape.js';
@@ -104,14 +105,14 @@
 
 <div class="re">
 	{#if src && editable}
-		<div class="tools" role="group" aria-label="Εργαλείο σήμανσης">
+		<div class="tools" role="group" aria-label={t('editor.tool')}>
 			<button type="button" class:on={tool === 'box'} aria-pressed={tool === 'box'} onclick={() => (tool = 'box')}>
 				<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" rx="1" /></svg>
-				Πλαίσιο
+				{t('editor.box')}
 			</button>
 			<button type="button" class:on={tool === 'free'} aria-pressed={tool === 'free'} onclick={() => (tool = 'free')}>
 				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 11c-1-4 2-8 6-8s5 3 3.5 6S6 14 3 11z" /></svg>
-				Ελεύθερο
+				{t('editor.free')}
 			</button>
 		</div>
 	{/if}
@@ -168,7 +169,7 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="missing">Η εικόνα δεν βρέθηκε.</div>
+		<div class="missing">{t('editor.notFound')}</div>
 	{/if}
 </div>
 

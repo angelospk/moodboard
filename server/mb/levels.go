@@ -36,11 +36,11 @@ func checkLevel(e *core.RecordRequestEvent) error {
 			return err
 		}
 		if e.Record.IsNew() && len(rs) >= migrations.MaxLevels {
-			return e.BadRequestError(fmt.Sprintf("Το πολύ %d επίπεδα.", migrations.MaxLevels), nil)
+			return e.BadRequestError(fmt.Sprintf(tr(e.Request, "Το πολύ %d επίπεδα.", "At most %d levels."), migrations.MaxLevels), nil)
 		}
 		for _, r := range rs {
 			if r.Id != e.Record.Id && strings.EqualFold(r.GetString("name"), name) {
-				return e.BadRequestError("Υπάρχει ήδη επίπεδο με αυτό το όνομα.", nil)
+				return e.BadRequestError(tr(e.Request, "Υπάρχει ήδη επίπεδο με αυτό το όνομα.", "A level with this name already exists."), nil)
 			}
 		}
 		e.App = tx
@@ -56,7 +56,7 @@ func checkLevelOwner(e *core.RecordRequestEvent) error {
 	if lid := e.Record.GetString("level"); lid != "" {
 		l, err := e.App.FindRecordById("levels", lid)
 		if err != nil || l.GetString("user_id") != e.Auth.Id {
-			return e.BadRequestError("Το επίπεδο δεν ανήκει στον χρήστη.", nil)
+			return e.BadRequestError(tr(e.Request, "Το επίπεδο δεν ανήκει στον χρήστη.", "The level does not belong to the user."), nil)
 		}
 	}
 	return e.Next()
