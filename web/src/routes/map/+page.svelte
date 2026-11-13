@@ -513,7 +513,7 @@
 			);
 		} catch (err) {
 			setItem(item);
-			board?.restore(item.id, from);
+			if (scope === boardScope) board?.restore(item.id, from);
 			toast({ text: errText(err, t('map.moveNotSaved')), tone: 'error' }, 6000);
 		}
 	}
