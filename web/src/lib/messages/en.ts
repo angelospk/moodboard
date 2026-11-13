@@ -39,6 +39,8 @@ export const en: Record<keyof typeof el, string> = {
 	'home.allProjects': '← All projects',
 	'home.allImages': 'All images',
 	'home.countOf': '{n} of {total}',
+	'home.groupByProject': 'Group by project',
+	'home.groupByProjectTitle': 'Show the images split by project',
 	'home.table': 'Grid',
 	'home.projectName': 'Project name',
 	'home.options': 'Options: {name}',

@@ -38,6 +38,8 @@ export const el = {
 	'home.allProjects': '← Όλα τα projects',
 	'home.allImages': 'Όλες οι εικόνες',
 	'home.countOf': '{n} από {total}',
+	'home.groupByProject': 'Ομαδοποίηση ανά project',
+	'home.groupByProjectTitle': 'Δείξε τις εικόνες χωρισμένες ανά project',
 	'home.table': 'Πίνακας',
 	'home.projectName': 'Όνομα project',
 	'home.options': 'Επιλογές: {name}',
