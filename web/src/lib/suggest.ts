@@ -46,6 +46,27 @@ export async function suggestLabels(pb: PocketBase, file: Blob): Promise<LabelSu
 	}
 }
 
+export type StoredSuggestion =
+	| { kind: 'ok'; level: string; tags: string[] }
+	| { kind: 'off' | 'limit' | 'failed' };
+
+/**
+ * Ask the server which level and tags fit an image the user already saved (the image page, the map
+ * panel). One model call; nothing is stored. `off` when the user or the server has AI off.
+ */
+export async function suggestStored(pb: PocketBase, id: string): Promise<StoredSuggestion> {
+	try {
+		const out = await pb.send<{ enabled?: boolean; level?: string; tags?: string[] }>(
+			`/api/mb/inspirations/${encodeURIComponent(id)}/suggest`,
+			{ method: 'POST', requestKey: null }
+		);
+		if (!out?.enabled) return { kind: 'off' };
+		return { kind: 'ok', level: out.level ?? '', tags: Array.isArray(out.tags) ? out.tags : [] };
+	} catch (e) {
+		return { kind: (e as { status?: number }).status === 429 ? 'limit' : 'failed' };
+	}
+}
+
 /** Save the user's choice: new images may be sent to the AI for level/tag suggestions. */
 export async function setAiEnabled(pb: PocketBase, userId: string, on: boolean): Promise<void> {
 	await pb.collection('users').update(userId, { ai_enabled: on });

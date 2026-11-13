@@ -44,6 +44,7 @@ func Register(app core.App) {
 		g.Bind(apis.RequireAuth("users"))
 		g.GET("/tags", handleTags)
 		g.POST("/suggest", handleSuggest)
+		g.POST("/inspirations/{id}/suggest", handleSuggestStored)
 		g.POST("/inspirations/{id}/note", handleAppendNote)
 		g.POST("/inspirations/{id}/copy", handleCopy)
 		g.POST("/positions", handleSavePositions)

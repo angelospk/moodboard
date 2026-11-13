@@ -1,27 +1,25 @@
 <script lang="ts">
 	import { t } from '#lib/i18n.js';
 	import type PocketBase from 'pocketbase';
-	import { embedStatus, setEmbedEnabled, type EmbedStatus } from '#lib/semantic.js';
+	import { embedStatus, type EmbedStatus } from '#lib/semantic.js';
+	import { setSmart, smart } from '#lib/smart.svelte.js';
 
 	// The user's consent for smart search: all their images (old ones too) go once to the AI to get
 	// an embedding. While it runs in the background, the button shows how far it is.
-	let { pb, on = $bindable(false) }: { pb: PocketBase; on?: boolean } = $props();
+	let { pb }: { pb: PocketBase } = $props();
 
 	let busy = $state(false);
 	let failed = $state(false);
 	let status = $state<EmbedStatus | null>(null);
+	const on = $derived(smart.embed);
 
 	async function toggle() {
-		const next = !on;
-		const id = pb.authStore.record?.id;
-		if (busy || !id) return;
-		// Turning it on sends every image to Google: ask once, in plain words.
-		if (next && !confirm(t('embed.consent'))) return;
+		if (busy) return;
 		busy = true;
 		failed = false;
 		try {
-			await setEmbedEnabled(pb, id, next);
-			on = next;
+			// Turning it on sends every image to Google: setSmart asks once, in plain words.
+			await setSmart('embed', !on);
 		} catch {
 			failed = true;
 		} finally {

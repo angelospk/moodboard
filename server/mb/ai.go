@@ -372,3 +372,42 @@ func handleSuggest(e *core.RequestEvent) error {
 	}
 	return e.JSON(http.StatusOK, map[string]any{"enabled": true, "level": level, "tags": tags})
 }
+
+// handleSuggestStored answers {enabled, level, tags} for an image the user already saved (the edit
+// page, the map panel), read from the stored file. Same limits and statuses as handleSuggest, plus
+// 404 when the image is not the caller's (checked before AI is, so it leaks nothing). It stores
+// nothing: the client decides what to do with the answer.
+func handleSuggestStored(e *core.RequestEvent) error {
+	r, err := ownedInspiration(e)
+	if err != nil {
+		return err
+	}
+	v, _ := labelers.Load(e.App)
+	l, _ := v.(*Labeler)
+	if l == nil || !e.Auth.GetBool("ai_enabled") {
+		return e.JSON(http.StatusOK, map[string]any{"enabled": false})
+	}
+	if !l.hasBudget(e.Auth.Id) {
+		return e.Error(http.StatusTooManyRequests, "daily limit reached", nil)
+	}
+	select {
+	case l.slots <- struct{}{}:
+		defer func() { <-l.slots }()
+	default:
+		return e.Error(http.StatusServiceUnavailable, "busy, try again", nil)
+	}
+	img, err := l.readImage(r)
+	if err != nil {
+		e.App.Logger().Warn("ai suggest: stored image unreadable", "inspiration", r.Id, "error", err.Error())
+		return e.Error(http.StatusBadGateway, "image not readable", nil)
+	}
+	level, tags, err := l.suggest(e.Auth.Id, img)
+	switch {
+	case errors.Is(err, errAILimit):
+		return e.Error(http.StatusTooManyRequests, "daily limit reached", nil)
+	case err != nil:
+		e.App.Logger().Warn("ai suggest failed", "inspiration", r.Id, "error", err.Error())
+		return e.Error(http.StatusBadGateway, "model failed", nil)
+	}
+	return e.JSON(http.StatusOK, map[string]any{"enabled": true, "level": level, "tags": tags})
+}

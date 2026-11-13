@@ -8,11 +8,15 @@
 		imageUrls,
 		listInspirationsByIds,
 		thumbUrl,
+		cleanSource,
 		updateInspiration,
+		updateMany,
 		type EditableFields
 	} from '#lib/inspirations.js';
-	import { duplicatesOf, knnSuggest, type KnnSuggestion } from '#lib/semantic.js';
+	import { duplicatesOf } from '#lib/semantic.js';
+	import { smart } from '#lib/smart.svelte.js';
 	import SimilarImages from '#lib/components/SimilarImages.svelte';
+	import SmartSuggest from '#lib/components/SmartSuggest.svelte';
 	import ChatSearch from '#lib/components/ChatSearch.svelte';
 	import TagInput from '#lib/components/TagInput.svelte';
 	import RegionEditor from '#lib/components/RegionEditor.svelte';
@@ -33,10 +37,12 @@
 	let regions = $state<Region[]>(item.regions.map((r) => ({ ...r })));
 	let active = $state<number | null>(null);
 
+	let source = $state({ url: item.source_url, title: item.source_title });
+
 	const project = $derived(data.projects.find((p) => p.id === projectId) ?? null);
-	const safeSource = $derived(item.source_url && /^https?:\/\//i.test(item.source_url) ? item.source_url : null);
+	const safeSource = $derived(source.url && /^https?:\/\//i.test(source.url) ? source.url : null);
 	const sourceLabel = $derived.by(() => {
-		if (item.source_title) return item.source_title;
+		if (source.title) return source.title;
 		try {
 			const u = new URL(safeSource ?? '');
 			return u.hostname.replace(/^www\./, '') + (u.pathname.length > 1 ? u.pathname : '');
@@ -45,20 +51,14 @@
 		}
 	});
 
-	// ---------- smart search: label suggestions from similar images, near-duplicates, chat links ----------
-	// The user's consent is read once; turning it on or off happens on the home page.
-	const embedOn = untrack(() => !!data.pb.authStore.record?.embed_enabled);
-	let knn = $state<KnnSuggestion | null>(null);
+	// ---------- smart search: near-duplicates, chat links (label ideas: SmartSuggest) ----------
 	let dups = $state<Inspiration[]>([]);
 	let dupUrls = $state<Record<string, string>>({});
 	let chatOpen = $state(false);
 
 	$effect(() => {
-		if (!embedOn) return;
+		if (!smart.embed) return;
 		let alive = true;
-		knnSuggest(data.pb, item.id)
-			.then((r) => alive && (knn = r.ready ? r : null))
-			.catch(() => {});
 		duplicatesOf(data.pb, item.id)
 			.then(async (ids) => {
 				if (!ids.length) return;
@@ -72,10 +72,6 @@
 		};
 	});
 
-	const knnTags = $derived(knn ? knn.tags.filter((x) => !tags.includes(x)) : []);
-	const knnLevel = $derived(
-		knn?.level && knn.level !== level && levelStore.list.some((l) => l.id === knn?.level) ? knn.level : null
-	);
 	const chatContext = $derived({
 		projectName: project?.name ?? null,
 		levelName: levelStore.list.find((l) => l.id === level)?.name ?? null,
@@ -89,6 +85,55 @@
 		if (tags.includes(tag)) return;
 		tags = [...tags, tag];
 		change('tags', tags);
+	}
+
+	// ---------- similar images picked together: one project, one common source ----------
+	let similar: SimilarImages | undefined = $state();
+	let picked = $state<string[]>([]);
+	let picking = $state(false);
+	let bulkProject = $state('');
+	let bulkSource = $state('');
+	let bulkBusy = $state(false);
+	let bulkMsg = $state('');
+
+	async function applyBulk(e: SubmitEvent) {
+		e.preventDefault();
+		if (bulkBusy || !picked.length) return;
+		const src = bulkSource.trim() ? cleanSource(bulkSource) : null;
+		if (bulkSource.trim() && !src) {
+			bulkMsg = t('bulk.badSource');
+			return;
+		}
+		if (!bulkProject && !src) return;
+		const fields: EditableFields = {};
+		if (bulkProject) fields.project_id = bulkProject === '-' ? null : bulkProject;
+		if (src) Object.assign(fields, { source_url: src, source_title: null });
+		bulkBusy = true;
+		bulkMsg = '';
+		// The other images are saved at once; this image goes through its own autosave, so the form
+		// and the saved row never disagree.
+		const out = await updateMany(data.pb, picked, fields);
+		if (fields.project_id !== undefined) {
+			projectId = fields.project_id ?? '';
+			change('project_id', fields.project_id);
+		}
+		if (src) {
+			source = { url: src, title: null };
+			change('source_url', src);
+			change('source_title', null);
+		}
+		bulkBusy = false;
+		const ok = out.ok.length + 1;
+		bulkMsg = out.failed.length ? t('bulk.partial', { ok, failed: out.failed.length }) : t('bulk.changed', { n: ok });
+		if (!out.failed.length) {
+			bulkProject = '';
+			bulkSource = '';
+			picking = false;
+			picked = [];
+			similar?.refresh();
+		} else {
+			picked = out.failed;
+		}
 	}
 
 	// ---------- autosave: the shared Autosaver (same engine as InspirationPanel) ----------
@@ -273,22 +318,17 @@
 					</div>
 				</div>
 
-				{#if knnTags.length || knnLevel}
-					<div class="field">
-						<span class="lbl">{t('knn.title')}</span>
-						<div class="chips">
-							{#if knnLevel}
-								<button type="button" class="chip soft" onclick={() => knnLevel && setLevel(knnLevel)}>
-									{levelStore.list.find((l) => l.id === knnLevel)?.name}
-								</button>
-							{/if}
-							{#each knnTags as tg (tg)}
-								<button type="button" class="chip soft" onclick={() => addTag(tg)}>+ {tg}</button>
-							{/each}
-						</div>
-						<p class="msg">{t('knn.hint')}</p>
-					</div>
-				{/if}
+				<SmartSuggest
+					pb={data.pb}
+					id={item.id}
+					{tags}
+					{level}
+					onaddtag={addTag}
+					onsetlevel={(l) => {
+						level = l;
+						change('level', l);
+					}}
+				/>
 
 				<label class="field">
 					<span class="lbl">Project</span>
@@ -305,7 +345,32 @@
 					</div>
 				{/if}
 
-				<SimilarImages pb={data.pb} id={item.id} enabled={embedOn} />
+				<SimilarImages bind:this={similar} pb={data.pb} id={item.id} selectable bind:selected={picked} bind:selecting={picking} />
+				{#if picking}
+					<form class="bulk" onsubmit={applyBulk}>
+						<p class="msg">{picked.length ? t('bulk.count', { n: picked.length }) : t('bulk.hint')}</p>
+						{#if picked.length}
+							<select bind:value={bulkProject} aria-label={t('bulk.moveTo')}>
+								<option value="">{t('bulk.moveTo')}</option>
+								{#each data.projects.filter((p) => !p.archived) as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+								<option value="-">{t('common.noProject')}</option>
+							</select>
+							<!-- type=text: the browser's URL check would refuse "pinterest.com/…"; cleanSource checks it. -->
+							<input
+								type="text"
+								inputmode="url"
+								bind:value={bulkSource}
+								placeholder={`${t('bulk.source')}: https://…`}
+								aria-label={t('bulk.source')}
+								maxlength="2000"
+							/>
+							<button type="submit" class="btn primary" disabled={bulkBusy || (!bulkProject && !bulkSource.trim())}>
+								{bulkBusy ? '…' : t('bulk.apply')}
+							</button>
+						{/if}
+					</form>
+				{/if}
+				{#if bulkMsg}<p class="msg" role="status">{bulkMsg}</p>{/if}
 
 				<div class="field">
 					<button type="button" class="btn" onclick={() => (chatOpen = true)}>{t('chat.button')}</button>
@@ -526,6 +591,26 @@
 		margin: 0;
 		font-size: 12.5px;
 		color: var(--muted);
+	}
+	.bulk {
+		display: grid;
+		gap: 8px;
+		padding: 10px 12px;
+		background: var(--sunk);
+		border: 1px solid var(--line);
+		border-radius: var(--r-ctl);
+	}
+	.bulk input {
+		width: 100%;
+		border: 1px solid var(--line-strong);
+		background: var(--raised);
+		border-radius: var(--r-ctl);
+		padding: 9px 11px;
+		font-size: 14px;
+		color: var(--text);
+	}
+	.bulk .btn {
+		justify-self: start;
 	}
 	.swatches {
 		display: flex;

@@ -6,6 +6,8 @@
 	// Board.svelte owns the canvas (simulation, pan/zoom, drag, drop, saved positions); this page owns
 	// the data, filters, selection, adding images, menus and toasts.
 	import { goto } from '$app/navigation';
+	import { searchByMeaning, SmartSearchError } from '#lib/semantic.js';
+	import { needSmart } from '#lib/smart.svelte.js';
 	import { page } from '$app/state';
 	import { onMount, tick, untrack } from 'svelte';
 	import type { Crop, Inspiration, Level } from '#lib/types.js';
@@ -105,11 +107,49 @@
 	);
 	const filtered = $derived(level ? inProject.filter((i) => i.level === level) : inProject);
 
+	// Search by meaning: the ids the server found for the last query, best first (needs consent).
+	let byMeaning = $state(false);
+	let meaningBusy = $state(false);
+	let meaning = $state<{ q: string; ids: string[] } | null>(null);
+
 	const matches = $derived.by(() => {
 		const q = search.trim().toLowerCase();
+		if (byMeaning) {
+			// Until Enter runs the query (or after the text changed), nothing is dimmed.
+			if (!meaning || meaning.q !== search.trim()) return null;
+			const shown = new Set(filtered.map((i) => i.id));
+			return new Set(meaning.ids.filter((id) => shown.has(id)));
+		}
 		if (!q) return null;
 		return new Set(filtered.filter((i) => searchText(i).includes(q)).map((i) => i.id));
 	});
+
+	async function toggleMeaning() {
+		if (!byMeaning && !(await needSmart('embed'))) return;
+		byMeaning = !byMeaning;
+		meaning = null;
+	}
+
+	async function runMeaning() {
+		const q = search.trim();
+		if (!q || meaningBusy) return;
+		if (!(await needSmart('embed'))) return;
+		meaningBusy = true;
+		try {
+			const scope = project !== 'all' && project !== 'none' ? project : '';
+			const out = await searchByMeaning(data.pb, q, scope);
+			if (!out.enabled) {
+				toast(t('search.meaningUnavailable'));
+				return;
+			}
+			meaning = { q, ids: out.results.map((h) => h.id) };
+			if (!meaning.ids.length) toast(t('search.meaningNone'));
+		} catch (e) {
+			toast({ text: e instanceof SmartSearchError && e.kind === 'limit' ? t('search.meaningLimit') : t('search.meaningFailed'), tone: 'error' }, 5000);
+		} finally {
+			meaningBusy = false;
+		}
+	}
 
 	const tagStats = $derived.by(() => {
 		const count = new Map<string, number>();
@@ -168,6 +208,21 @@
 		focusNote = !!opts.focus;
 		// The panel may now cover the card: pan it into view once the inset is known.
 		if (id) void tick().then(() => board?.reveal(id));
+	}
+
+	/** A similar image was pressed in the panel: open it here, switching project or level if needed. */
+	async function pickSimilar(id: string) {
+		const it = items.find((i) => i.id === id);
+		if (!it) return void goto(`/i/${id}`);
+		const shown = project === 'all' || (project === 'none' ? it.project_id === null : it.project_id === project);
+		if (!shown) {
+			const to = it.project_id ?? 'none';
+			highlight = null;
+			await goto(`/map?project=${encodeURIComponent(to)}`, { replace: true, reset: false });
+		}
+		if (level && it.level !== level) level = '';
+		await tick();
+		select(id);
 	}
 
 	function step(dir: -1 | 1) {
@@ -708,6 +763,10 @@
 		{colors}
 		{highlight}
 		ontoggletag={toggleTag}
+		{byMeaning}
+		{meaningBusy}
+		onmeaningtoggle={() => void toggleMeaning()}
+		onmeaning={() => void runMeaning()}
 	>
 		{#snippet actions()}
 			{#if project !== 'all' && project !== 'none'}
@@ -823,6 +882,7 @@
 					onprev={selIndex > 0 ? () => step(-1) : undefined}
 					onnext={selIndex >= 0 && selIndex < filtered.length - 1 ? () => step(1) : undefined}
 					onexpand={() => openView(selected?.id ?? null)}
+					onpick={pickSimilar}
 				/>
 			</div>
 		{/if}

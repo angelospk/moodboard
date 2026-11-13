@@ -381,7 +381,9 @@ export async function loadPositions(pb: PocketBase, scope: string): Promise<Reco
 	return out;
 }
 
-export type EditableFields = Partial<Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id' | 'crop' | 'suggestion'>>;
+export type EditableFields = Partial<
+	Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id' | 'crop' | 'suggestion' | 'source_url' | 'source_title'>
+>;
 
 /** Save edits to one inspiration and return the updated row. Throws when it is not the caller's. */
 export async function updateInspiration(pb: PocketBase, id: string, fields: EditableFields): Promise<Inspiration> {
@@ -390,11 +392,42 @@ export async function updateInspiration(pb: PocketBase, id: string, fields: Edit
 	if (fields.tags !== undefined) patch.tags = cleanTags(fields.tags);
 	if (fields.project_id !== undefined) patch.project_id = fields.project_id ?? '';
 	if (fields.level !== undefined) patch.level = fields.level ?? '';
+	if (fields.source_url !== undefined) patch.source_url = fields.source_url ?? '';
+	if (fields.source_title !== undefined) patch.source_title = fields.source_title?.trim() ?? '';
 	try {
 		return toInspiration(await pb.collection('inspirations').update(id, patch));
 	} catch (e) {
 		if ((e as { status?: number }).status === 404) throw new Error(t('err.imageNotFound'));
 		throw new Error(t('err.save', { msg: msg(e) }));
+	}
+}
+
+/** The same edit on several images at once. Each image is saved on its own: `failed` lists the ids
+ *  that could not be changed (not the caller's, deleted, offline); the others keep the change. */
+export async function updateMany(
+	pb: PocketBase,
+	ids: string[],
+	fields: EditableFields
+): Promise<{ ok: string[]; failed: string[] }> {
+	const results = await Promise.allSettled(ids.map((id) => updateInspiration(pb, id, fields)));
+	const out = { ok: [] as string[], failed: [] as string[] };
+	results.forEach((r, i) => (r.status === 'fulfilled' ? out.ok : out.failed).push(ids[i]));
+	return out;
+}
+
+/** A source address the user typed, as a safe http(s) URL: a bare host gets https://. Null when it
+ *  is not a web address (other schemes, spaces, empty). */
+export function cleanSource(text: string): string | null {
+	const s = text.trim();
+	if (!s) return null;
+	const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `https://${s}`;
+	try {
+		const u = new URL(withScheme);
+		if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+		if (!u.hostname.includes('.') || /\s/.test(s)) return null;
+		return withScheme;
+	} catch {
+		return null;
 	}
 }
 

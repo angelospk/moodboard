@@ -23,6 +23,13 @@
 		ontoggletag: (tag: string) => void;
 		/** Extra buttons at the start of the right side (the share menu). */
 		actions?: Snippet;
+		/** The search box looks for meaning (Enter runs it) instead of words. */
+		byMeaning: boolean;
+		meaningBusy: boolean;
+		/** The user pressed the meaning switch; the page asks for consent and flips byMeaning. */
+		onmeaningtoggle: () => void;
+		/** Enter in the search box while byMeaning is on. */
+		onmeaning: () => void;
 	}
 	let {
 		current,
@@ -37,7 +44,11 @@
 		colors,
 		highlight,
 		ontoggletag,
-		actions
+		actions,
+		byMeaning,
+		meaningBusy,
+		onmeaningtoggle,
+		onmeaning
 	}: Props = $props();
 
 	const active = $derived((search.trim() ? 1 : 0) + (level ? 1 : 0) + (highlight ? 1 : 0));
@@ -66,7 +77,30 @@
 {#snippet searchField(id: string)}
 	<label class="search" for={id}>
 		<Icon name="search" size={15} />
-		<input {id} type="search" placeholder={t('header.search')} autocomplete="off" bind:value={search} aria-label={t('header.search')} />
+		<input
+			{id}
+			type="search"
+			placeholder={byMeaning ? t('search.meaningShort') : t('header.search')}
+			autocomplete="off"
+			bind:value={search}
+			aria-label={t('header.search')}
+			onkeydown={(e) => {
+				if (byMeaning && e.key === 'Enter') {
+					e.preventDefault();
+					onmeaning();
+				}
+			}}
+		/>
+		<button
+			type="button"
+			class={['mode', byMeaning && 'on']}
+			aria-pressed={byMeaning}
+			title={t('search.meaningTitle')}
+			disabled={meaningBusy}
+			onclick={onmeaningtoggle}
+		>
+			{meaningBusy ? '…' : t('search.meaning')}
+		</button>
 	</label>
 {/snippet}
 
@@ -311,7 +345,7 @@
 		border-radius: var(--r-ctl);
 		background: var(--raised);
 		color: var(--faint);
-		width: 240px;
+		width: 280px;
 		transition: border-color 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 	.search:focus-within {
@@ -331,6 +365,28 @@
 	}
 	.search input::placeholder {
 		color: var(--faint);
+	}
+	.mode {
+		flex: none;
+		margin-right: -6px;
+		padding: 2px 8px;
+		border: 1px solid var(--line);
+		border-radius: var(--r-pill);
+		background: none;
+		font-size: 11.5px;
+		line-height: 1.4;
+		color: var(--muted);
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.mode:hover:not(:disabled) {
+		color: var(--text);
+		border-color: var(--line-strong);
+	}
+	.mode.on {
+		background: var(--text);
+		border-color: var(--text);
+		color: var(--bg);
 	}
 	.levels button {
 		min-height: 32px;
@@ -421,7 +477,7 @@
 
 	@media (max-width: 1080px) {
 		.search {
-			width: 180px;
+			width: 220px;
 		}
 	}
 	@media (max-width: 900px) {

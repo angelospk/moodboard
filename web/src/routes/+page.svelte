@@ -2,7 +2,7 @@
 	import { reloadData } from '#lib/reload.js';
 	import { goto, preloadCode } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount, untrack } from 'svelte';
+	import { onMount } from 'svelte';
 	import type { Inspiration, Level } from '#lib/types.js';
 	import { levelLabel, levelStore } from '#lib/levels.svelte.js';
 	import LevelManager from '#lib/components/LevelManager.svelte';
@@ -11,6 +11,7 @@
 	import EmbedSwitch from '#lib/components/EmbedSwitch.svelte';
 	import ProjectSummary from '#lib/components/ProjectSummary.svelte';
 	import { searchByMeaning, SmartSearchError } from '#lib/semantic.js';
+	import { needSmart, smart } from '#lib/smart.svelte.js';
 	import { groupByProject } from '#lib/grouping.js';
 	import { t, tn, timeAgo } from '#lib/i18n.js';
 	import {
@@ -27,8 +28,7 @@
 	const GROUP_KEY = 'moodboard:group-by-project';
 
 	let query = $state('');
-	/** Smart search: the user agreed, and the search box looks for meaning instead of words. */
-	let embedOn = $state(untrack(() => !!data.pb.authStore.record?.embed_enabled));
+	/** The search box looks for meaning instead of words (needs the smart search consent). */
 	let byMeaning = $state(false);
 	let meaningBusy = $state(false);
 	let meaningError = $state('');
@@ -222,12 +222,13 @@
 	});
 
 	const selectedProject = $derived(data.projects.find((p) => p.id === selected) ?? null);
-	const aiAllowed = $derived(embedOn || !!data.pb.authStore.record?.ai_enabled);
+	const aiAllowed = $derived(smart.embed || smart.ai);
 
 	async function runMeaning() {
 		const q = query.trim();
 		if (!q || meaningBusy) return;
-		if (!embedOn) {
+		// Asks for the consent right here when it is missing, instead of sending the user elsewhere.
+		if (!(await needSmart('embed'))) {
 			meaningError = t('search.meaningOff');
 			return;
 		}
@@ -238,7 +239,7 @@
 			const scope = selected !== 'all' && selected !== 'none' ? selected : '';
 			const out = await searchByMeaning(data.pb, q, scope);
 			if (!out.enabled) {
-				meaningError = t('search.meaningOff');
+				meaningError = t('search.meaningUnavailable');
 				return;
 			}
 			let ids = out.results.map((h) => h.id);
@@ -418,8 +419,8 @@
 		<a class="btn" href="/sources">{t('common.sources')}</a>
 		<button class="btn" type="button" onclick={() => (managingLevels = true)}>{t('common.levels')}</button>
 		<a class="btn primary new-image" href="/new">{t('common.newImagePlus')}</a>
-		<AiSwitch pb={data.pb} />
-		<EmbedSwitch pb={data.pb} bind:on={embedOn} />
+		<AiSwitch />
+		<EmbedSwitch pb={data.pb} />
 		<LanguageSwitch />
 		<button class="btn" type="button" disabled={loggingOut} onclick={logout}>
 			{loggingOut ? '…' : t('common.logout')}
@@ -706,9 +707,10 @@
 			class={['chip', byMeaning && 'on']}
 			aria-pressed={byMeaning}
 			title={t('search.meaningTitle')}
-			onclick={() => {
-				byMeaning = !byMeaning;
+			onclick={async () => {
 				meaningError = '';
+				if (!byMeaning && !(await needSmart('embed'))) return;
+				byMeaning = !byMeaning;
 				if (!byMeaning) meaning = null;
 			}}
 		>

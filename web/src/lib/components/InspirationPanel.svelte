@@ -9,6 +9,8 @@
 	import TagInput from '#lib/components/TagInput.svelte';
 	import RegionEditor from '#lib/components/RegionEditor.svelte';
 	import RegionList from '#lib/components/RegionList.svelte';
+	import SmartSuggest from '#lib/components/SmartSuggest.svelte';
+	import SimilarImages from '#lib/components/SimilarImages.svelte';
 	import { tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Autosaver, type SaveState } from '#lib/autosave.js';
@@ -34,6 +36,8 @@
 		onnext?: () => void;
 		/** Open the image full screen (view and crop). Undefined hides the button. */
 		onexpand?: () => void;
+		/** Open another image in this panel (a similar image was pressed). */
+		onpick?: (id: string) => void;
 	}
 	let {
 		pb,
@@ -49,7 +53,8 @@
 		onclose,
 		onprev,
 		onnext,
-		onexpand
+		onexpand,
+		onpick
 	}: Props = $props();
 
 	// Local editable copies. A change of `item` with the same id only refreshes fields the user has
@@ -311,6 +316,22 @@
 			</div>
 		</div>
 
+		<SmartSuggest
+			{pb}
+			id={item.id}
+			{tags}
+			{level}
+			onaddtag={(tg) => {
+				if (tags.includes(tg)) return;
+				tags = [...tags, tg];
+				change('tags', tags);
+			}}
+			onsetlevel={(l) => {
+				level = l;
+				change('level', l);
+			}}
+		/>
+
 		<div class="field">
 			<span class="lbl">{t('item.regions')}{regions.length ? ` · ${regions.length}` : ''}</span>
 			<RegionList bind:regions={() => regions, (v) => ((regions = v), change('regions', v))} bind:active />
@@ -322,6 +343,8 @@
 				<a class="src" href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 			</div>
 		{/if}
+
+		<SimilarImages {pb} id={item.id} {onpick} />
 
 		{#if actionError}<p class="banner" role="alert">{actionError}</p>{/if}
 	</div>
