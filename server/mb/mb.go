@@ -34,8 +34,10 @@ func Register(app core.App) {
 		}
 		return e.Next()
 	})
+	bindThumbs(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		se.Router.BindFunc(thumbOnDemand)
 		g := se.Router.Group("/api/mb")
 		g.Bind(apis.RequireAuth("users"))
 		g.GET("/tags", handleTags)

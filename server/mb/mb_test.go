@@ -39,6 +39,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(app.Cleanup)
+	t.Cleanup(mb.WaitThumbs) // runs before app.Cleanup: no thumbnail writes into a removed dir
 	mb.Register(app)
 	r, err := apis.NewRouter(app)
 	if err != nil {
@@ -53,6 +54,7 @@ func newEnv(t *testing.T) *env {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	mb.WaitThumbs() // the startup backfill
 	return &env{t: t, app: app, mux: mux}
 }
 

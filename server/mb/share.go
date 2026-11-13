@@ -117,8 +117,9 @@ func handlePublicFile(e *core.RequestEvent) error {
 	name := r.GetString("image")
 	key := r.BaseFilesPath() + "/" + name
 	if e.Request.URL.Query().Get("thumb") == shareThumb {
-		thumb := r.BaseFilesPath() + "/thumbs_" + name + "/" + shareThumb + "_" + name
-		if ok, _ := fsys.Exists(thumb); ok || fsys.CreateThumb(key, thumb, shareThumb) == nil {
+		thumb := thumbKeyOf(r)
+		_, _ = ensureThumb(e.App, r, e.Request.Context().Done())
+		if ok, _ := fsys.Exists(thumb); ok {
 			key, name = thumb, shareThumb+"_"+name
 		}
 	}
