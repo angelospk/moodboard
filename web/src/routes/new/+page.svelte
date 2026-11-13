@@ -6,6 +6,7 @@
 	import { levelStore } from '#lib/levels.svelte.js';
 	import { checkImage, createInspiration } from '#lib/inspirations.js';
 	import TagInput from '#lib/components/TagInput.svelte';
+	import { suggestLabels } from '#lib/suggest.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -19,6 +20,23 @@
 	let busy = $state(false);
 	let error = $state('');
 
+	let aiBusy = $state(false);
+	let aiRun = 0;
+
+	/** AI prefill (when the user switched it on): never overwrites what the user already set. */
+	async function prefill(f: File) {
+		const run = ++aiRun;
+		aiBusy = true;
+		try {
+			const s = await suggestLabels(data.pb, f);
+			if (!s || file !== f) return;
+			if (!level && levelStore.list.some((l) => l.id === s.level)) level = s.level as Level;
+			if (!tags.length) tags = s.tags;
+		} finally {
+			if (run === aiRun) aiBusy = false;
+		}
+	}
+
 	function accept(f: File | null) {
 		error = '';
 		if (!f) return;
@@ -31,6 +49,7 @@
 		file = f;
 		if (preview) URL.revokeObjectURL(preview);
 		preview = URL.createObjectURL(f);
+		void prefill(f);
 	}
 
 	function onPick(e: Event) {
@@ -152,7 +171,7 @@
 			</label>
 
 			<div class="wide field">
-				<label for="tags">Tags <em>{t('new.tagsLimit')}</em></label>
+				<label for="tags">Tags <em>{t('new.tagsLimit')}</em>{#if aiBusy} <em>✦ {t('ai.filling')}</em>{/if}</label>
 				<TagInput id="tags" bind:tags suggestions={data.tags} placeholder={t('new.tagsPlaceholder')} />
 			</div>
 		</div>

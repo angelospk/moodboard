@@ -250,6 +250,13 @@ export const en: Record<keyof typeof el, string> = {
 	'panel.fullPage': 'Full page',
 
 	'quick.pickFirst': 'Choose an image first.',
+	'ai.filling': 'AI is suggesting…',
+	'ai.label': 'AI',
+	'ai.on': 'on',
+	'ai.off': 'off',
+	'ai.title': 'Automatic level and tag suggestions for new images',
+	'ai.failed': 'The change was not saved. Try again.',
+	'ai.consent': 'When you add a new image, it is sent to Google (Gemini) to suggest a level and tags. The fields fill in by themselves and you can change them. Images you already have are not analysed. You can turn this off at any time. Turn it on?',
 	'quick.change': 'Change',
 	'quick.pick': 'Paste, drag or choose an image',
 

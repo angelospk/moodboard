@@ -6,6 +6,7 @@
 	import { levelStore } from '#lib/levels.svelte.js';
 	import { checkImage, cleanTags, createInspiration } from '#lib/inspirations.js';
 	import TagInput from './TagInput.svelte';
+	import { suggestLabels } from '#lib/suggest.js';
 
 	interface Props {
 		pb: PocketBase;
@@ -54,6 +55,22 @@
 	let projectId = $state(start.projectId ?? '');
 	let busy = $state(false);
 	let error = $state('');
+	let aiBusy = $state(false);
+	let aiRun = 0;
+
+	/** AI prefill (when the user switched it on): never overwrites what the user already set. */
+	async function prefill(f: File) {
+		const run = ++aiRun;
+		aiBusy = true;
+		try {
+			const s = await suggestLabels(pb, f);
+			if (!s || image !== f) return;
+			if (!level && levelStore.list.some((l) => l.id === s.level)) level = s.level as Level;
+			if (!tags.length) tags = cleanTags(s.tags);
+		} finally {
+			if (run === aiRun) aiBusy = false;
+		}
+	}
 
 	onMount(() => {
 		const d = dialog;
@@ -61,7 +78,10 @@
 		// A preloaded image needs its preview URL only on the client.
 		if (image && !preview) preview = URL.createObjectURL(image);
 		// Focus the note when an image is already there, else the picker/close button.
-		if (start.file) noteEl?.focus();
+		if (start.file) {
+			noteEl?.focus();
+			void prefill(start.file);
+		}
 
 		const onPaste = (e: ClipboardEvent) => {
 			const items = e.clipboardData?.items;
@@ -96,6 +116,7 @@
 		image = f;
 		if (preview) URL.revokeObjectURL(preview);
 		preview = URL.createObjectURL(f);
+		void prefill(f);
 	}
 
 	function onPick(e: Event) {
@@ -212,7 +233,7 @@
 		</label>
 
 		<div class="field">
-			<span>Tags <em>{t('new.tagsLimit')}</em></span>
+			<span>Tags <em>{t('new.tagsLimit')}</em>{#if aiBusy} <em>✦ {t('ai.filling')}</em>{/if}</span>
 			<TagInput bind:tags {suggestions} placeholder={t('tags.placeholder')} />
 		</div>
 

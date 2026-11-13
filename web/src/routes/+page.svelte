@@ -6,6 +6,7 @@
 	import { levelLabel, levelStore } from '#lib/levels.svelte.js';
 	import LevelManager from '#lib/components/LevelManager.svelte';
 	import LanguageSwitch from '#lib/components/LanguageSwitch.svelte';
+	import AiSwitch from '#lib/components/AiSwitch.svelte';
 	import { t, tn, timeAgo } from '#lib/i18n.js';
 	import {
 		createProject as createProjectRow,
@@ -325,6 +326,7 @@
 		<a class="btn" href="/sources">{t('common.sources')}</a>
 		<button class="btn" type="button" onclick={() => (managingLevels = true)}>{t('common.levels')}</button>
 		<a class="btn primary new-image" href="/new">{t('common.newImagePlus')}</a>
+		<AiSwitch pb={data.pb} />
 		<LanguageSwitch />
 		<button class="btn" type="button" disabled={loggingOut} onclick={logout}>
 			{loggingOut ? '…' : t('common.logout')}
