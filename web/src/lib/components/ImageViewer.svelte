@@ -4,6 +4,8 @@
 	// (fractions of the image); the file stays whole, and cards on the map show just that part.
 	import type { Crop, Region } from '#lib/types.js';
 	import { svgPoints } from '#lib/shape.js';
+	import { thumbUrl } from '#lib/inspirations.js';
+	import { Prefetcher } from '#lib/prefetch.js';
 	interface Props {
 		src: string | null;
 		alt?: string;
@@ -28,9 +30,23 @@
 		position?: { n: number; of: number };
 		/** Choose another tag (null = every image). Undefined hides the chips. */
 		ontag?: (tag: string | null) => void;
+		/** Urls of the images the arrows lead to, most likely first (see neighborUrls). They download
+		 *  quietly once this image has loaded. */
+		neighbors?: string[];
 	}
-	let { src, alt = '', sourceUrl = null, crop, regions = [], oncrop, onedit, onclose, onprev, onnext, tags = [], tag = null, position, ontag }: Props = $props();
+	let { src, alt = '', sourceUrl = null, crop, regions = [], oncrop, onedit, onclose, onprev, onnext, tags = [], tag = null, position, ontag, neighbors = [] }: Props = $props();
 	const showTags = $derived(!!ontag && tags.length > 0);
+
+	// The image fades in when it has loaded. Until then the 480 px thumbnail (already in the browser from
+	// the card) shows blurred, but only if the full image takes longer than a moment.
+	let loadedSrc = $state('');
+	const ready = $derived(!!src && loadedSrc === src);
+	const placeholder = $derived(src ? thumbUrl(src) : null);
+	const prefetcher = new Prefetcher();
+	$effect(() => () => prefetcher.stop());
+	$effect(() => {
+		if (ready) prefetcher.warm(neighbors);
+	});
 
 	const MIN = 0.02;
 	type Handle = 'move' | 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se' | 'new';
@@ -244,7 +260,7 @@
 				onpointercancel={up}
 				role="presentation"
 			>
-				<img {src} {alt} draggable="false" />
+				<img {src} {alt} draggable="false" class:ready onload={() => (loadedSrc = src ?? '')} onerror={() => (loadedSrc = src ?? '')} />
 				{#if editing}
 					<div class="crop" style={rect(box)} onpointerdown={(e) => down(e, 'move')} role="presentation">
 						<span class="third v1"></span><span class="third v2"></span>
@@ -283,6 +299,9 @@
 					{/each}
 				{/if}
 			</div>
+			{#if !ready && placeholder && placeholder !== src}
+				<img class="ph" src={placeholder} alt="" aria-hidden="true" draggable="false" />
+			{/if}
 		{:else}
 			<p class="missing">{t('viewer.unavailable')}</p>
 		{/if}
@@ -494,6 +513,28 @@
 		max-height: calc(100vh - 136px);
 		object-fit: contain;
 		border-radius: var(--r-img);
+		opacity: 0;
+	}
+	.stage img.ready {
+		opacity: 1;
+		transition: opacity 140ms ease-out;
+	}
+	/* The blurred thumbnail under a slow image: it appears only after 150 ms, so a cached image never flashes it. */
+	.ph {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 64px;
+		width: calc(100% - 128px);
+		height: 100%;
+		object-fit: contain;
+		filter: blur(8px);
+		opacity: 0;
+		pointer-events: none;
+		animation: ph-in 160ms ease-out 150ms forwards;
+	}
+	@keyframes ph-in {
+		to { opacity: 0.85; }
 	}
 	.stage.editing {
 		cursor: crosshair;
@@ -584,6 +625,7 @@
 	}
 	@media (max-width: 640px) {
 		.frame { padding: 0 8px; }
+		.ph { left: 8px; width: calc(100% - 16px); }
 		.stage img { max-width: calc(100vw - 16px); max-height: calc(100vh - 180px); }
 		.hastags .stage img { max-height: calc(100vh - 220px); }
 		.tagbar { justify-content: flex-start; }

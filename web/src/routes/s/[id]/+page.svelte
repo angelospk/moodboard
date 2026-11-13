@@ -10,6 +10,7 @@
 	import PocketBase, { BaseAuthStore } from 'pocketbase';
 	import { PB_URL } from '#lib/pb.js';
 	import { publicImageUrl } from '#lib/share.js';
+	import { neighborUrls } from '#lib/prefetch.js';
 	import { hostOf } from '#lib/sources.js';
 	import type { Inspiration } from '#lib/types.js';
 	import type { PageProps } from './$types';
@@ -135,6 +136,7 @@
 				tags={viewTags}
 				tag={viewTag}
 				position={{ n: viewIndex + 1, of: viewList.length }}
+				neighbors={neighborUrls(viewList, viewIndex, urlOf)}
 				ontag={pickViewTag}
 				onclose={() => (viewId = null)}
 				onprev={viewIndex > 0 ? () => viewStep(-1) : undefined}

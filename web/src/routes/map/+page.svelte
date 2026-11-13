@@ -23,6 +23,7 @@
 	import type { RecordModel, RecordSubscription } from 'pocketbase';
 	import InspirationPanel from '#lib/components/InspirationPanel.svelte';
 	import ImageViewer from '#lib/components/ImageViewer.svelte';
+	import { neighborUrls } from '#lib/prefetch.js';
 	import Board, { type BoardContext, type Spot } from './Board.svelte';
 	import BoardHeader from './BoardHeader.svelte';
 	import TagChips from './TagChips.svelte';
@@ -836,6 +837,7 @@
 				tags={viewTags}
 				tag={viewTag}
 				position={{ n: viewIndex + 1, of: viewList.length }}
+				neighbors={neighborUrls(viewList, viewIndex, urlOf)}
 				ontag={pickViewTag}
 				oncrop={(c) => void saveCrop(viewItem, c)}
 				onedit={() => {
