@@ -30,6 +30,7 @@
 		groupKey,
 		layoutTargets,
 		rectCollide,
+		sameLayout,
 		separateFrom,
 		ZONE_PAD,
 		zoneBox,
@@ -69,7 +70,6 @@
 		onpick: (spot: Spot) => void;
 		/** A card was dropped inside another zone; `from` is where it was before the drag. */
 		onrezone: (item: Inspiration, tag: string, from: Placement) => void;
-		onzoneadd: (tag: string, spot: Spot) => void;
 		ontoast: (msg: string) => void;
 	}
 
@@ -95,7 +95,6 @@
 		onfiles,
 		onpick,
 		onrezone,
-		onzoneadd,
 		ontoast
 	}: Props = $props();
 
@@ -242,6 +241,8 @@
 		}
 
 		const old = byId;
+		// Only row content changed (a save's answer, a live echo): keep the cards still.
+		const settled = !fresh && sameLayout(old, list);
 		const next: CardNode[] = list.map((item) => {
 			const id = `i:${item.id}`;
 			const prev = old.get(id);
@@ -303,7 +304,7 @@
 				fitPending = true;
 				reheat(0.3);
 			});
-		} else {
+		} else if (!settled) {
 			if (added) fitPending = true;
 			reheat(0.5);
 		}
@@ -665,13 +666,6 @@
 		return centreSpot();
 	}
 
-	/** A free spot just below a zone's cards. */
-	export function zoneSpot(tag: string): Spot {
-		const b = zoneBoxes.get(tag);
-		if (!b) return { ...centreSpot(), zone: tag };
-		return { x: b.x + ZONE_PAD + size / 2, y: b.y + b.h + CARD_GAP + estimateH() / 2 - ZONE_PAD, zone: tag };
-	}
-
 	// ------------------------------------------------------------- Dragging
 
 	let drag: {
@@ -785,7 +779,6 @@
 
 	function zoneDown(e: PointerEvent, tag: string) {
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
-		if ((e.target as HTMLElement).closest('.zadd')) return;
 		e.stopPropagation();
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		if (e.pointerType === 'touch') {
@@ -1099,15 +1092,6 @@
 					onpointercancel={zoneUp}
 				>
 					<span class="zlabel">{z.tag}<span class="zcount">&nbsp;·&nbsp;{z.count}</span></span>
-					<button
-						type="button"
-						class="zadd"
-						aria-label={t('board.newInTag', { tag: z.tag })}
-						title={t('board.newInTag', { tag: z.tag })}
-						onclick={() => onzoneadd(z.tag, zoneSpot(z.tag))}
-					>
-						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
-					</button>
 				</div>
 			</div>
 		{/each}
@@ -1284,8 +1268,8 @@
 		align-items: center;
 		gap: 0.3em;
 		/* Labels stay about 12px on screen, up to the room the zone's top padding leaves. */
-		font-size: min(24px, calc(12px / var(--k, 1)));
-		padding: 0.95em 0 0 1.2em;
+		font-size: min(20px, calc(12px / var(--k, 1)));
+		padding: 0.6em 0 0 1.2em;
 		pointer-events: auto;
 		cursor: grab;
 	}
@@ -1306,42 +1290,6 @@
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
 		opacity: 0.75;
-	}
-	.zadd {
-		display: inline-grid;
-		place-items: center;
-		width: 1.8em;
-		height: 1.8em;
-		margin: -0.4em 0;
-		padding: 0;
-		border: 0;
-		border-radius: 999px;
-		background: transparent;
-		color: color-mix(in srgb, var(--z) 72%, var(--text));
-		opacity: 0;
-		transition:
-			opacity 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
-			background-color 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
-	}
-	.zadd svg {
-		width: 1.1em;
-		height: 1.1em;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.6;
-		stroke-linecap: round;
-	}
-	.zhead:hover .zadd,
-	.zadd:focus-visible {
-		opacity: 1;
-	}
-	.zadd:hover {
-		background: color-mix(in srgb, var(--z) 16%, transparent);
-	}
-	@media (hover: none) {
-		.zadd {
-			opacity: 0.8;
-		}
 	}
 
 	/* ------------------------------------------------------------ cards */
@@ -1738,7 +1686,6 @@
 		.zone,
 		.node,
 		.card,
-		.zadd,
 		.region,
 		.cap.float {
 			transition: none;

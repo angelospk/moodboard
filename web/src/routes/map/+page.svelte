@@ -29,7 +29,7 @@
 	import Toasts, { type Toast } from './Toasts.svelte';
 	import Icon from './Icon.svelte';
 	import ShareMenu from './ShareMenu.svelte';
-	import { CARD_GAP, isTyping, searchText, zoneColors } from './board.js';
+	import { CARD_GAP, isTyping, searchText, viewerList, zoneColors } from './board.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -410,11 +410,34 @@
 
 	/** Full-screen viewer: the expand button on a card or on the panel image, or Space on the selected one. */
 	let viewId = $state<string | null>(null);
-	const viewIndex = $derived(viewId ? filtered.findIndex((i) => i.id === viewId) : -1);
-	const viewItem = $derived(viewIndex >= 0 ? filtered[viewIndex] : null);
+	/** The viewer steps only through the images of this tag; null = every image. */
+	let viewTag = $state<string | null>(null);
+	const viewList = $derived(viewerList(filtered, viewTag));
+	const viewIndex = $derived(viewId ? viewList.findIndex((i) => i.id === viewId) : -1);
+	const viewItem = $derived(viewIndex >= 0 ? viewList[viewIndex] : null);
+	const viewTags = $derived(tagStats.map((s) => ({ ...s, color: colors.get(s.tag)?.dark })));
+	// The shown image left the list (its tag removed, deleted, filtered out): show it among every
+	// image when it still exists, else close the viewer so the map keys work again.
+	$effect(() => {
+		if (!viewId || viewIndex >= 0) return;
+		if (viewTag !== null && filtered.some((i) => i.id === viewId)) viewTag = null;
+		else viewId = null;
+	});
 	function viewStep(dir: -1 | 1) {
-		const next = filtered[viewIndex + dir];
+		const next = viewList[viewIndex + dir];
 		if (next) viewId = next.id;
+	}
+	/** Open the viewer on an image, limited to its zone tag (its first tag). */
+	function openView(id: string | null) {
+		viewTag = (id && items.find((i) => i.id === id)?.tags?.[0]) || null;
+		viewId = id;
+	}
+	/** Another tag chip: stay on the image when it has the tag, else go to the tag's first image. */
+	function pickViewTag(tag: string | null) {
+		const list = viewerList(filtered, tag);
+		if (!list.length) return;
+		viewTag = tag;
+		if (!list.some((i) => i.id === viewId)) viewId = list[0].id;
 	}
 
 	/** The card shows the new crop at once; if the server refuses, the old one comes back. */
@@ -572,7 +595,7 @@
 		if (e.code === 'KeyN') pickFiles(null);
 		else if (e.code === 'KeyF') board?.fit();
 		else if (e.code === 'KeyL') void board?.autoLayout();
-		else if (e.code === 'Space' && selected && !uploading.has(selected.id)) viewId = selected.id;
+		else if (e.code === 'Space' && selected && !uploading.has(selected.id)) openView(selected.id);
 		else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && selected && t?.getAttribute('type') !== 'range') {
 			step(e.key === 'ArrowLeft' ? -1 : 1);
 		} else return;
@@ -715,7 +738,7 @@
 				{rightInset}
 				{uploading}
 				onselect={(id) => (uploading.has(id) ? toast(t('map.stillUploading')) : select(id))}
-				onexpand={(id) => (uploading.has(id) ? toast(t('map.stillUploading')) : (viewId = id))}
+				onexpand={(id) => (uploading.has(id) ? toast(t('map.stillUploading')) : openView(id))}
 				onbackground={() => {
 					if (selectedId) select(null);
 				}}
@@ -723,7 +746,6 @@
 				onfiles={(files, spot) => void addFiles(files, spot)}
 				onpick={(spot) => pickFiles(spot)}
 				onrezone={(item, tag, from) => void rezone(item, tag, from)}
-				onzoneadd={(_tag, spot) => pickFiles(spot)}
 				ontoast={(msg) => toast({ text: msg, tone: 'error' }, 5000)}
 			/>
 
@@ -795,7 +817,7 @@
 					onclose={() => select(null)}
 					onprev={selIndex > 0 ? () => step(-1) : undefined}
 					onnext={selIndex >= 0 && selIndex < filtered.length - 1 ? () => step(1) : undefined}
-					onexpand={() => (viewId = selected?.id ?? null)}
+					onexpand={() => openView(selected?.id ?? null)}
 				/>
 			</div>
 		{/if}
@@ -807,6 +829,10 @@
 				sourceUrl={viewItem.source_url}
 				crop={viewItem.crop}
 				regions={viewItem.regions}
+				tags={viewTags}
+				tag={viewTag}
+				position={{ n: viewIndex + 1, of: viewList.length }}
+				ontag={pickViewTag}
 				oncrop={(c) => void saveCrop(viewItem, c)}
 				onedit={() => {
 					const id = viewItem.id;
@@ -815,7 +841,7 @@
 				}}
 				onclose={() => (viewId = null)}
 				onprev={viewIndex > 0 ? () => viewStep(-1) : undefined}
-				onnext={viewIndex < filtered.length - 1 ? () => viewStep(1) : undefined}
+				onnext={viewIndex < viewList.length - 1 ? () => viewStep(1) : undefined}
 			/>
 		{/if}
 	</div>

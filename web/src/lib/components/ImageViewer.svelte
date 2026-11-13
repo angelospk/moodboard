@@ -20,8 +20,17 @@
 		/** Undefined hides the arrow. */
 		onprev?: () => void;
 		onnext?: () => void;
+		/** Tag chips over the image: the arrows step only through the chosen tag's images. */
+		tags?: { tag: string; count: number; color?: string }[];
+		/** The chosen tag; null = every image. */
+		tag?: string | null;
+		/** Where the image is in the list the arrows step through. */
+		position?: { n: number; of: number };
+		/** Choose another tag (null = every image). Undefined hides the chips. */
+		ontag?: (tag: string | null) => void;
 	}
-	let { src, alt = '', sourceUrl = null, crop, regions = [], oncrop, onedit, onclose, onprev, onnext }: Props = $props();
+	let { src, alt = '', sourceUrl = null, crop, regions = [], oncrop, onedit, onclose, onprev, onnext, tags = [], tag = null, position, ontag }: Props = $props();
+	const showTags = $derived(!!ontag && tags.length > 0);
 
 	const MIN = 0.02;
 	type Handle = 'move' | 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se' | 'new';
@@ -161,7 +170,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="viewer" role="dialog" aria-modal="true" aria-label={t('viewer.aria')}>
+<div class="viewer" class:hastags={showTags} role="dialog" aria-modal="true" aria-label={t('viewer.aria')}>
 	<header>
 		<div class="meta">
 			{#if host}
@@ -192,6 +201,30 @@
 			</button>
 		</div>
 	</header>
+
+	{#if showTags}
+		<nav class="tagbar" class:off={editing} aria-label={t('viewer.tags')}>
+			<button type="button" class="vchip" class:on={tag === null} aria-pressed={tag === null} onclick={() => ontag?.(null)} disabled={editing}>
+				{t('viewer.allTags')}
+			</button>
+			{#each tags as c (c.tag)}
+				<button
+					type="button"
+					class="vchip"
+					class:on={tag === c.tag}
+					aria-pressed={tag === c.tag}
+					style:--c={c.color}
+					onclick={() => ontag?.(c.tag)}
+					disabled={editing}
+				>
+					<i class="dot" aria-hidden="true"></i>{c.tag}<span class="n">{c.count}</span>
+				</button>
+			{/each}
+			{#if position && position.of > 1}
+				<span class="pos" aria-live="polite">{position.n} / {position.of}</span>
+			{/if}
+		</nav>
+	{/if}
 
 	<div class="frame">
 		{#if onprev && !editing}
@@ -375,6 +408,73 @@
 		font-size: 12px;
 		opacity: 0.8;
 	}
+	.viewer.hastags {
+		grid-template-rows: auto auto 1fr auto;
+	}
+	.tagbar {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+		justify-content: safe center;
+		overflow-x: auto;
+		scrollbar-width: none;
+		padding: 0 16px 10px;
+		transition: opacity 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.tagbar.off {
+		opacity: 0.3;
+	}
+	.vchip {
+		--c: rgb(236 232 224);
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 30px;
+		padding: 0 12px;
+		border-radius: 999px;
+		border: 1px solid rgb(236 232 224 / 0.16);
+		background: rgb(236 232 224 / 0.06);
+		color: rgb(236 232 224 / 0.8);
+		font: inherit;
+		font-size: 13px;
+		white-space: nowrap;
+		cursor: pointer;
+		transition:
+			background-color 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
+			border-color 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
+			color 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.vchip:hover:not(:disabled) {
+		background: rgb(236 232 224 / 0.12);
+		color: rgb(236 232 224);
+	}
+	.vchip.on {
+		background: color-mix(in srgb, var(--c) 28%, transparent);
+		border-color: color-mix(in srgb, var(--c) 80%, transparent);
+		color: rgb(250 248 244);
+	}
+	.vchip:focus-visible {
+		outline: 2px solid rgb(236 232 224 / 0.8);
+		outline-offset: 2px;
+	}
+	.vchip .dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--c);
+	}
+	.vchip .n {
+		font-variant-numeric: tabular-nums;
+		opacity: 0.6;
+	}
+	.pos {
+		flex: none;
+		margin-left: 6px;
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+		color: rgb(236 232 224 / 0.55);
+	}
 	.frame {
 		position: relative;
 		display: grid;
@@ -479,9 +579,14 @@
 	.missing {
 		color: rgb(236 232 224 / 0.7);
 	}
+	.hastags .stage img {
+		max-height: calc(100vh - 176px);
+	}
 	@media (max-width: 640px) {
 		.frame { padding: 0 8px; }
 		.stage img { max-width: calc(100vw - 16px); max-height: calc(100vh - 180px); }
+		.hastags .stage img { max-height: calc(100vh - 220px); }
+		.tagbar { justify-content: flex-start; }
 		.nav { display: none; }
 		footer { flex-direction: column; align-items: stretch; }
 		.actions { justify-content: flex-end; flex-wrap: wrap; }

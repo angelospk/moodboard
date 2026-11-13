@@ -6,7 +6,7 @@
 	import TagChips from '../../map/TagChips.svelte';
 	import Icon from '../../map/Icon.svelte';
 	import ImageViewer from '#lib/components/ImageViewer.svelte';
-	import { zoneColors } from '../../map/board.js';
+	import { viewerList, zoneColors } from '../../map/board.js';
 	import PocketBase, { BaseAuthStore } from 'pocketbase';
 	import { PB_URL } from '#lib/pb.js';
 	import { publicImageUrl } from '#lib/share.js';
@@ -38,12 +38,26 @@
 	const noop = () => {};
 
 	// A click on a card opens it full screen (a visitor cannot edit, so there is no panel).
+	// The arrows step only through the opened card's zone tag, until the visitor picks another chip.
 	let viewId = $state<string | null>(null);
-	const viewIndex = $derived(viewId ? items.findIndex((i) => i.id === viewId) : -1);
-	const viewItem = $derived(viewIndex >= 0 ? items[viewIndex] : null);
+	let viewTag = $state<string | null>(null);
+	const viewList = $derived(viewerList(items, viewTag));
+	const viewIndex = $derived(viewId ? viewList.findIndex((i) => i.id === viewId) : -1);
+	const viewItem = $derived(viewIndex >= 0 ? viewList[viewIndex] : null);
+	const viewTags = $derived(tagStats.map((s) => ({ ...s, color: colors.get(s.tag)?.dark })));
 	function viewStep(dir: -1 | 1) {
-		const next = items[viewIndex + dir];
+		const next = viewList[viewIndex + dir];
 		if (next) viewId = next.id;
+	}
+	function openView(id: string) {
+		viewTag = items.find((i) => i.id === id)?.tags?.[0] ?? null;
+		viewId = id;
+	}
+	function pickViewTag(tag: string | null) {
+		const list = viewerList(items, tag);
+		if (!list.length) return;
+		viewTag = tag;
+		if (!list.some((i) => i.id === viewId)) viewId = list[0].id;
 	}
 </script>
 
@@ -102,13 +116,12 @@
 				seed={data.board?.positions ?? {}}
 				canSave={false}
 				rightInset={0}
-				onselect={(id) => ((selectedId = id), (viewId = id))}
+				onselect={(id) => ((selectedId = id), openView(id))}
 				onbackground={() => (selectedId = null)}
 				oncontext={noop}
 				onfiles={noop}
 				onpick={noop}
 				onrezone={noop}
-				onzoneadd={noop}
 				ontoast={noop}
 			/>
 		{/if}
@@ -119,9 +132,13 @@
 				sourceUrl={viewItem.source_url}
 				crop={viewItem.crop}
 				regions={viewItem.regions}
+				tags={viewTags}
+				tag={viewTag}
+				position={{ n: viewIndex + 1, of: viewList.length }}
+				ontag={pickViewTag}
 				onclose={() => (viewId = null)}
 				onprev={viewIndex > 0 ? () => viewStep(-1) : undefined}
-				onnext={viewIndex < items.length - 1 ? () => viewStep(1) : undefined}
+				onnext={viewIndex < viewList.length - 1 ? () => viewStep(1) : undefined}
 			/>
 		{/if}
 		{#if selected?.source_url && sourceHost}

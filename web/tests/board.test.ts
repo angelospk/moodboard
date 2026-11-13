@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ZONE_GAP, layoutTargets, separateFrom, zoneBox, type CardNode, type Rect } from '../src/routes/map/board';
+import { ZONE_GAP, layoutTargets, sameLayout, separateFrom, viewerList, zoneBox, type CardNode, type Rect } from '../src/routes/map/board';
+import type { Inspiration } from '../src/lib/types';
 
 const overlaps = (a: Rect, b: Rect, gap = ZONE_GAP) =>
 	a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y;
@@ -90,5 +91,36 @@ describe('layoutTargets with a zone the user moved', () => {
 		const free = { ...b[1], x: targets.get('i:3')!.x, y: targets.get('i:3')!.y };
 		const box = { x: free.x! - free.w / 2, y: free.y! - free.h / 2, w: free.w, h: free.h };
 		expect(overlaps(box, zoneBox(a)!, 0)).toBe(false);
+	});
+});
+
+describe('viewerList', () => {
+	const it3 = (id: string, tags: string[]) => ({ id, tags }) as unknown as Inspiration;
+	const all = [it3('1', ['entry', 'wood']), it3('2', ['wood']), it3('3', []), it3('4', ['x', 'entry'])];
+
+	it('keeps every image that has the tag, first or not, in board order', () => {
+		expect(viewerList(all, 'entry').map((i) => i.id)).toEqual(['1', '4']);
+	});
+
+	it('null means every image', () => {
+		expect(viewerList(all, null)).toBe(all);
+	});
+});
+
+describe('sameLayout', () => {
+	const row = (id: string, tags: string[]) => ({ id, tags }) as unknown as Inspiration;
+	const old = new Map([
+		['i:1', { zone: 'a' }],
+		['i:2', { zone: null }]
+	]) as unknown as Map<string, CardNode>;
+
+	it('is true when only row fields change', () => {
+		expect(sameLayout(old, [row('1', ['a', 'b']), row('2', [])])).toBe(true);
+	});
+
+	it('is false when a card changes zone, appears or goes', () => {
+		expect(sameLayout(old, [row('1', ['b', 'a']), row('2', [])])).toBe(false);
+		expect(sameLayout(old, [row('1', ['a'])])).toBe(false);
+		expect(sameLayout(old, [row('1', ['a']), row('3', [])])).toBe(false);
 	});
 });

@@ -356,3 +356,20 @@ export function isTyping(target: EventTarget | null): boolean {
 	if (!input) return false;
 	return !['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'file', 'color'].includes(input.type);
 }
+
+/** The images the full-screen viewer steps through: those with the tag (anywhere in their tags),
+ *  in board order. null = every image. */
+export function viewerList(items: Inspiration[], tag: string | null): Inspiration[] {
+	return tag === null ? items : items.filter((i) => i.tags?.includes(tag));
+}
+
+/** True when the new rows put the same cards in the same zones: only their content changed, so
+ *  the layout needs no new simulation run. */
+export function sameLayout(old: Map<string, Pick<CardNode, 'zone'>>, list: Inspiration[]): boolean {
+	if (old.size !== list.length) return false;
+	for (const item of list) {
+		const prev = old.get(`i:${item.id}`);
+		if (!prev || prev.zone !== (item.tags?.[0] ?? null)) return false;
+	}
+	return true;
+}
