@@ -115,10 +115,33 @@
 				name: row.name ?? '',
 				description: row.description ?? '',
 				created_at: row.created_at,
+				archived: !!row.archived,
 			}));
+			if (!projectId) projectId = await recentProjectId(rows);
 		} catch (error) {
 			errorMessage = msg(error);
 		}
+	}
+
+	/** The project the user worked in last: the newer of (project of the latest image, newest project),
+	 *  skipping archived ones. Empty when there is none. */
+	async function recentProjectId(rows: { id: string; created_at?: string; archived?: boolean }[]) {
+		const live = rows.filter((r) => !r.archived);
+		let best = live.reduce<(typeof live)[number] | null>(
+			(a, r) => (!a || (r.created_at ?? '') > (a.created_at ?? '') ? r : a),
+			null,
+		);
+		try {
+			const page = await pb
+				.collection('inspirations')
+				.getList(1, 1, { sort: '-created_at', fields: 'project_id,created_at' });
+			const last = page.items[0];
+			const owner = live.find((r) => r.id === last?.project_id);
+			if (last && owner && (last.created_at ?? '') >= (best?.created_at ?? '')) best = owner;
+		} catch {
+			// no images yet or offline: the newest project stands
+		}
+		return best?.id ?? '';
 	}
 
 	async function signIn() {
@@ -244,6 +267,9 @@
 		tags = [];
 		level = '';
 		projectId = '';
+		void recentProjectId(projects).then((id) => {
+			if (!projectId) projectId = id;
+		});
 		errorMessage = '';
 		savedId = '';
 		creatingProject = false;

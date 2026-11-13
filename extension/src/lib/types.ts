@@ -11,6 +11,7 @@ export interface Project {
 	name: string;
 	description: string;
 	created_at: string;
+	archived?: boolean;
 }
 
 export const MIME_EXT: Record<string, string> = {
