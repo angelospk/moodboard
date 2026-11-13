@@ -105,7 +105,7 @@ func TestPublicBoardDefaults(t *testing.T) {
 		if w.Code != 200 || !strings.HasPrefix(w.Body.String(), "\x89PNG") {
 			t.Fatalf("%s: want png, got %d", u, w.Code)
 		}
-		if cc := w.Header().Get("Cache-Control"); cc != "private, max-age=300" {
+		if cc := w.Header().Get("Cache-Control"); cc != "private, max-age=60" {
 			t.Fatalf("image Cache-Control %q", cc)
 		}
 	}

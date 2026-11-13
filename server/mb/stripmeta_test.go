@@ -218,7 +218,7 @@ func TestPublicBoardServesJPEGWithoutLocation(t *testing.T) {
 	if _, err := jpeg.Decode(bytes.NewReader(body)); err != nil {
 		t.Fatalf("public original does not decode: %v", err)
 	}
-	if cc := w.Header().Get("Cache-Control"); cc != "private, max-age=300" {
+	if cc := w.Header().Get("Cache-Control"); cc != "private, max-age=60" {
 		t.Fatalf("Cache-Control %q", cc)
 	}
 	// A PNG original is served as before.

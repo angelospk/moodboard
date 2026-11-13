@@ -99,7 +99,7 @@ connects to (no private hosts, no redirects).
 `worker/` is a Cloudflare Worker on `moodboard-api.haroldpoi.dev/api/mb/public/*`. For a public board
 image (`/files/{id}`, optionally `?thumb=480x0`) it asks the VPS once, lets Cloudflare resize the image
 to 1600 px (480 px for a thumbnail), convert it to AVIF/WebP and drop all metadata (`cf.image`,
-`metadata: none`), and keeps the result at the edge for 5 minutes. A 404 from the VPS (private or
+`metadata: none`), and keeps the result at the edge for 60 seconds (a browser gets only the time that is left, and the VPS sends the same `max-age=60`, so a board turned private disappears within about a minute or two). A 404 from the VPS (private or
 unknown board) is never cached. If resizing fails, the Worker serves the plain VPS file, which strips
 metadata too (`server/mb/stripmeta.go`). Everything else on that path passes through unchanged. The
 Worker is not CI-deployed: `cd worker && npm ci && npm test && npx wrangler deploy`. To switch it off,

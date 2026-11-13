@@ -131,9 +131,9 @@ func handlePublicFile(e *core.RequestEvent) error {
 			key = thumb
 		}
 	}
-	// Browsers may reuse the file for 5 minutes without asking, so turning the board private stops
-	// it within 5 minutes. The board JSON stays no-store and stops at once.
-	e.Response.Header().Set("Cache-Control", "private, max-age=300")
+	// Browsers may reuse the file for 1 minute without asking, so turning the board private stops
+	// it within a minute (the Cloudflare Worker in worker/ keeps the same 1 minute). The board JSON stays no-store and stops at once.
+	e.Response.Header().Set("Cache-Control", "private, max-age=60")
 	e.Response.Header().Del("X-Frame-Options")
 	// An original image (not the re-encoded thumbnail) may hold GPS, camera data or a second picture:
 	// serve JPEG, PNG and WebP without it. The format comes from the file's first bytes, not its name.
