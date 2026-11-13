@@ -158,6 +158,14 @@ export function layoutTargets(groups: Group[], aspect = 1.6): Map<string, { x: n
 		}
 	}
 
+	// A zone the user moved (every card pinned) stays where it is; free zones keep clear of it.
+	const taken: Rect[] = [];
+	for (const g of groups) {
+		if (g.key === groupKey(null) || !g.nodes.length || !g.nodes.every((n) => n.fx != null && n.fy != null)) continue;
+		const r = zoneBox(g.nodes);
+		if (r) taken.push(r);
+	}
+
 	const out = new Map<string, { x: number; y: number }>();
 	boxes.forEach((b, i) => {
 		let bx = placed[i].x;
@@ -167,6 +175,12 @@ export function layoutTargets(groups: Group[], aspect = 1.6): Map<string, { x: n
 		if (pinned.length && pinned.length * 2 >= b.g.nodes.length) {
 			bx = Math.min(...pinned.map((n) => (n.fx as number) - n.w / 2)) - ZONE_PAD;
 			by = Math.max(...pinned.map((n) => (n.fy as number) + n.h / 2)) + CARD_GAP - ZONE_PAD_TOP;
+		}
+		if (taken.length) {
+			const d = separateFrom({ x: bx, y: by, w: b.w, h: b.h }, taken);
+			bx += d.dx;
+			by += d.dy;
+			taken.push({ x: bx, y: by, w: b.w, h: b.h });
 		}
 		for (const [id, s] of b.slots) out.set(id, { x: bx + ZONE_PAD + s.x, y: by + ZONE_PAD_TOP + s.y });
 	});
@@ -284,6 +298,46 @@ export function zoneBox(nodes: CardNode[], skipId: string | null = null) {
 		w: maxX - minX + ZONE_PAD * 2,
 		h: maxY - minY + ZONE_PAD + ZONE_PAD_TOP
 	};
+}
+
+export interface Rect {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
+/**
+ * How far to move `box` so it keeps `gap` free space from every box in `others`. Each overlap is
+ * resolved by the shortest shift that does not land on another box; if every way is blocked, the
+ * shortest one wins. At most a few rounds, so a crowded board cannot loop.
+ */
+export function separateFrom(box: Rect, others: Rect[], gap = ZONE_GAP): { dx: number; dy: number } {
+	const hits = (r: Rect, o: Rect) =>
+		r.x < o.x + o.w + gap && r.x + r.w + gap > o.x && r.y < o.y + o.h + gap && r.y + r.h + gap > o.y;
+	let dx = 0;
+	let dy = 0;
+	for (let round = 0; round < 8; round++) {
+		const cur = { ...box, x: box.x + dx, y: box.y + dy };
+		const o = others.find((x) => hits(cur, x));
+		if (!o) break;
+		const ways = [
+			{ dx: o.x - gap - (cur.x + cur.w), dy: 0 },
+			{ dx: o.x + o.w + gap - cur.x, dy: 0 },
+			{ dx: 0, dy: o.y - gap - (cur.y + cur.h) },
+			{ dx: 0, dy: o.y + o.h + gap - cur.y }
+		].sort((a, b) => Math.abs(a.dx + a.dy) - Math.abs(b.dx + b.dy));
+		const free = ways.find((w) => !others.some((x) => hits({ ...cur, x: cur.x + w.dx, y: cur.y + w.dy }, x)));
+		const way = free ?? ways[0];
+		dx += way.dx;
+		dy += way.dy;
+	}
+	// Still blocked (the ways cycled): go to the right of everything, which is always clear.
+	if (others.some((x) => hits({ ...box, x: box.x + dx, y: box.y + dy }, x))) {
+		const right = Math.max(...others.map((x) => x.x + x.w));
+		return { dx: right + gap - box.x, dy: 0 };
+	}
+	return { dx, dy };
 }
 
 /** Lowercase text of everything a search can match on one inspiration. */

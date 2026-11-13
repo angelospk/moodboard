@@ -30,6 +30,7 @@
 		groupKey,
 		layoutTargets,
 		rectCollide,
+		separateFrom,
 		ZONE_PAD,
 		zoneBox,
 		type CardNode,
@@ -696,6 +697,11 @@
 
 	/** End a drag without a drop target: a moved card stays pinned where it is. */
 	function cancelDrag() {
+		const zd = zdrag;
+		if (zd) {
+			zdrag = null;
+			if (zd.moved) endZoneDrag(zd.tag);
+		}
 		const d = drag;
 		if (!d) return;
 		drag = null;
@@ -764,6 +770,88 @@
 		const target = dropZone;
 		dropZone = null;
 		if (target) onrezone(n.item, target, d.from);
+		refreshAnchors();
+		drawZones();
+		reheat(0.25);
+	}
+
+	// Dragging a zone by its label moves all its cards together and pins them where they land.
+	let zdrag: { tag: string; id: number; startX: number; startY: number; lastX: number; lastY: number; moved: boolean } | null = null;
+
+	function zoneDown(e: PointerEvent, tag: string) {
+		if (e.pointerType === 'mouse' && e.button !== 0) return;
+		if ((e.target as HTMLElement).closest('.zadd')) return;
+		e.stopPropagation();
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		if (e.pointerType === 'touch') {
+			pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+			if (pointers.size >= 2) {
+				startPinch();
+				return;
+			}
+		}
+		zdrag = { tag, id: e.pointerId, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, moved: false };
+	}
+
+	function zoneMove(e: PointerEvent) {
+		lastClient = { x: e.clientX, y: e.clientY };
+		if (pinch && pointers.has(e.pointerId)) {
+			onStageMove(e);
+			return;
+		}
+		const d = zdrag;
+		if (!d || e.pointerId !== d.id) return;
+		if (!d.moved) {
+			if (Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) < 5) return;
+			d.moved = true;
+			autoFit = false;
+			zoneEls.get(d.tag)?.classList.add('moving');
+		}
+		const dx = (e.clientX - d.lastX) / view.k;
+		const dy = (e.clientY - d.lastY) / view.k;
+		d.lastX = e.clientX;
+		d.lastY = e.clientY;
+		for (const n of members.get(d.tag) ?? []) {
+			n.x = (n.x ?? 0) + dx;
+			n.y = (n.y ?? 0) + dy;
+			n.fx = n.x;
+			n.fy = n.y;
+			const el = nodeEls.get(n.id);
+			if (el) placeNode(n, el);
+		}
+		drawZones();
+		// Free cards of other zones step aside from the pinned ones while it moves.
+		reheat(0.2);
+	}
+
+	function zoneUp(e: PointerEvent) {
+		const el = e.currentTarget as HTMLElement;
+		if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
+		if (pointers.delete(e.pointerId)) {
+			if (pointers.size < 2) pinch = null;
+			panFrom = null;
+			panPointer = null;
+		}
+		const d = zdrag;
+		if (!d || e.pointerId !== d.id) return;
+		zdrag = null;
+		if (d.moved) endZoneDrag(d.tag);
+	}
+
+	/** Drop: keep the zone clear of the others, then pin every card of it and save the spots. */
+	function endZoneDrag(tag: string) {
+		zoneEls.get(tag)?.classList.remove('moving');
+		const list = members.get(tag) ?? [];
+		const box = zoneBox(list);
+		if (box) {
+			const others = [...zoneBoxes].filter(([t]) => t !== tag).map(([, b]) => b);
+			const { dx, dy } = separateFrom(box, others);
+			for (const n of list) {
+				n.x = (n.x ?? 0) + dx;
+				n.y = (n.y ?? 0) + dy;
+			}
+		}
+		for (const n of list) pin(n);
 		refreshAnchors();
 		drawZones();
 		reheat(0.25);
@@ -997,7 +1085,14 @@
 				data-zone={z.tag}
 				{@attach registerZone(z.tag)}
 			>
-				<div class="zhead">
+				<div
+					class="zhead"
+					role="presentation"
+					onpointerdown={(e) => zoneDown(e, z.tag)}
+					onpointermove={zoneMove}
+					onpointerup={zoneUp}
+					onpointercancel={zoneUp}
+				>
 					<span class="zlabel">{z.tag}<span class="zcount">&nbsp;·&nbsp;{z.count}</span></span>
 					<button
 						type="button"
@@ -1187,7 +1282,13 @@
 		font-size: min(24px, calc(12px / var(--k, 1)));
 		padding: 0.95em 0 0 1.2em;
 		pointer-events: auto;
-		cursor: default;
+		cursor: grab;
+	}
+	.zhead:active {
+		cursor: grabbing;
+	}
+	.zone:global(.moving) {
+		border-color: color-mix(in srgb, var(--z) 75%, transparent);
 	}
 	.zlabel {
 		font-weight: 600;
