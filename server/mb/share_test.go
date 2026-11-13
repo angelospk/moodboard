@@ -187,3 +187,37 @@ func (e *env) raw(method, url string) *httptest.ResponseRecorder {
 	e.mux.ServeHTTP(w, httptest.NewRequest(method, url, nil))
 	return w
 }
+
+// Images also live in a public bucket under /mbinspirations/<id>/<stored file name>. A viewer of a
+// public board must never learn the stored file name, or they could bypass the metadata cleaning
+// and keep the link after the board goes private.
+func TestPublicBoardNeverRevealsStoredFileName(t *testing.T) {
+	f := newShareFixture(t)
+	e := f.e
+	rec, err := e.app.FindRecordById("inspirations", f.insA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := rec.GetString("image")
+	if stored == "" {
+		t.Fatal("fixture image has no stored name")
+	}
+	f.set(t, map[string]any{"public": true})
+	mustLack(t, f.view(t, 200), stored, "mbinspirations")
+	for _, u := range []string{
+		"/api/mb/public/" + f.projA + "/files/" + f.insA,
+		"/api/mb/public/" + f.projA + "/files/" + f.insA + "?thumb=480x0",
+	} {
+		w := e.raw("GET", u)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d", u, w.Code)
+		}
+		for k, vs := range w.Header() {
+			for _, v := range vs {
+				if strings.Contains(v, stored) || strings.Contains(v, "480x0_") {
+					t.Fatalf("%s: header %s leaks the stored name: %q", u, k, v)
+				}
+			}
+		}
+	}
+}

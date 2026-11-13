@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"path"
 	"strconv"
 
 	"github.com/pocketbase/dbx"
@@ -55,8 +56,9 @@ func handlePublicBoard(e *core.RequestEvent) error {
 	nodes := map[string]bool{} // layout keys that may show: this board's cards and shown tags
 	for _, r := range rows {
 		item := map[string]any{
-			"id":         r.Id,
-			"image":      r.GetString("image"),
+			"id": r.Id,
+			// Not the stored file name: with the public image bucket it is the key to the original.
+			"image":      r.Id,
 			"crop":       r.Get("crop"),
 			"note":       "",
 			"tags":       []string{},
@@ -120,11 +122,13 @@ func handlePublicFile(e *core.RequestEvent) error {
 	defer fsys.Close()
 	name := r.GetString("image")
 	key := r.BaseFilesPath() + "/" + name
+	// The download name is neutral: the stored name is the key to the original in the image bucket.
+	download := "image" + path.Ext(name)
 	if e.Request.URL.Query().Get("thumb") == shareThumb {
 		thumb := thumbKeyOf(r)
 		_, _ = ensureThumb(e.App, r, e.Request.Context().Done())
 		if ok, _ := fsys.Exists(thumb); ok {
-			key, name = thumb, shareThumb+"_"+name
+			key = thumb
 		}
 	}
 	// Browsers may reuse the file for 5 minutes without asking, so turning the board private stops
@@ -138,7 +142,7 @@ func handlePublicFile(e *core.RequestEvent) error {
 			return err
 		}
 	}
-	if err := fsys.Serve(e.Response, e.Request, key, name); err != nil {
+	if err := fsys.Serve(e.Response, e.Request, key, download); err != nil {
 		return publicNotFound(e)
 	}
 	return nil
