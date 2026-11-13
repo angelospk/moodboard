@@ -35,8 +35,8 @@
 	let { data }: PageProps = $props();
 
 	const LS_KEY = 'moodboard:map';
-	const SIZE_MIN = 80;
-	const SIZE_MAX = 360;
+	const SIZE_MIN = 140;
+	const SIZE_MAX = 520;
 	const PANEL_W = 400;
 	const MOBILE = 640;
 	const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/avif';
