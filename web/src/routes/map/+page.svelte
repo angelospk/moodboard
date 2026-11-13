@@ -408,8 +408,14 @@
 		toast(t('map.imageDeleted'));
 	}
 
-	/** Full-screen viewer of the selected image (Space, or the button on the panel image). */
-	let viewing = $state(false);
+	/** Full-screen viewer: the expand button on a card or on the panel image, or Space on the selected one. */
+	let viewId = $state<string | null>(null);
+	const viewIndex = $derived(viewId ? filtered.findIndex((i) => i.id === viewId) : -1);
+	const viewItem = $derived(viewIndex >= 0 ? filtered[viewIndex] : null);
+	function viewStep(dir: -1 | 1) {
+		const next = filtered[viewIndex + dir];
+		if (next) viewId = next.id;
+	}
 
 	/** The card shows the new crop at once; if the server refuses, the old one comes back. */
 	/** Crop saves of one row run one after another, so the server ends with the last crop chosen. */
@@ -543,7 +549,7 @@
 	// -------------------------------------------------------------- Keyboard
 
 	function onKey(e: KeyboardEvent) {
-		if (viewing) return; // the full-screen viewer handles its own keys
+		if (viewId) return; // the full-screen viewer handles its own keys
 		if (e.key === 'Escape') {
 			// First Esc leaves the field (e.g. the note focused after adding); the next one closes.
 			if (isTyping(e.target)) {
@@ -566,7 +572,7 @@
 		if (e.code === 'KeyN') pickFiles(null);
 		else if (e.code === 'KeyF') board?.fit();
 		else if (e.code === 'KeyL') void board?.autoLayout();
-		else if (e.code === 'Space' && selected && !uploading.has(selected.id)) viewing = true;
+		else if (e.code === 'Space' && selected && !uploading.has(selected.id)) viewId = selected.id;
 		else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && selected && t?.getAttribute('type') !== 'range') {
 			step(e.key === 'ArrowLeft' ? -1 : 1);
 		} else return;
@@ -709,6 +715,7 @@
 				{rightInset}
 				{uploading}
 				onselect={(id) => (uploading.has(id) ? toast(t('map.stillUploading')) : select(id))}
+				onexpand={(id) => (uploading.has(id) ? toast(t('map.stillUploading')) : (viewId = id))}
 				onbackground={() => {
 					if (selectedId) select(null);
 				}}
@@ -788,22 +795,27 @@
 					onclose={() => select(null)}
 					onprev={selIndex > 0 ? () => step(-1) : undefined}
 					onnext={selIndex >= 0 && selIndex < filtered.length - 1 ? () => step(1) : undefined}
-					onexpand={() => (viewing = true)}
+					onexpand={() => (viewId = selected?.id ?? null)}
 				/>
 			</div>
 		{/if}
 
-		{#if viewing && selected}
+		{#if viewItem}
 			<ImageViewer
-				src={urlOf(selected)}
-				alt={selected.note || t('item.alt')}
-				sourceUrl={selected.source_url}
-				crop={selected.crop}
-				regions={selected.regions}
-				oncrop={(c) => void saveCrop(selected!, c)}
-				onclose={() => (viewing = false)}
-				onprev={selIndex > 0 ? () => step(-1) : undefined}
-				onnext={selIndex >= 0 && selIndex < filtered.length - 1 ? () => step(1) : undefined}
+				src={urlOf(viewItem)}
+				alt={viewItem.note || t('item.alt')}
+				sourceUrl={viewItem.source_url}
+				crop={viewItem.crop}
+				regions={viewItem.regions}
+				oncrop={(c) => void saveCrop(viewItem, c)}
+				onedit={() => {
+					const id = viewItem.id;
+					viewId = null;
+					select(id);
+				}}
+				onclose={() => (viewId = null)}
+				onprev={viewIndex > 0 ? () => viewStep(-1) : undefined}
+				onnext={viewIndex < filtered.length - 1 ? () => viewStep(1) : undefined}
 			/>
 		{/if}
 	</div>

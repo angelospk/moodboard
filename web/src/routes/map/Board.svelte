@@ -59,6 +59,8 @@
 		/** Screen px on the right covered by the panel (fit and centre avoid it). */
 		rightInset: number;
 		onselect: (id: string) => void;
+		/** Open the full-screen viewer for a card without selecting it. Undefined hides the card's button. */
+		onexpand?: (id: string) => void;
 		onbackground: () => void;
 		oncontext: (c: BoardContext) => void;
 		onfiles: (files: File[], spot: Spot) => void;
@@ -86,6 +88,7 @@
 		canSave,
 		rightInset,
 		onselect,
+		onexpand,
 		onbackground,
 		oncontext,
 		onfiles,
@@ -1068,7 +1071,23 @@
 						{#if item.suggestion}
 							<span class="sugg" title={t('board.suggTitle')}>✦</span>
 						{/if}
-						{#if regions.length && !showBoxes}
+						{#if onexpand && url}
+								<button
+									type="button"
+									class="expand"
+									aria-label={t('board.expand')}
+									title={t('board.expand')}
+									onpointerdown={(e) => e.stopPropagation()}
+									onkeydown={(e) => e.stopPropagation()}
+									onclick={(e) => {
+										e.stopPropagation();
+										onexpand(item.id);
+									}}
+								>
+									<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></svg>
+								</button>
+							{/if}
+							{#if regions.length && !showBoxes}
 							<span class="rcount" title={t('board.regionsTitle', { n: regions.length })}>
 								{regions.length}
 							</span>
@@ -1428,6 +1447,51 @@
 		line-height: 1;
 		border-radius: 999px;
 		box-shadow: 0 0 0 1px var(--line);
+	}
+	/* Full-screen button: top-right of the picture, on hover or focus; always there on touch screens.
+	   It keeps a steady size on screen at any zoom (--k is the zoom). */
+	.expand {
+		position: absolute;
+		top: 6px;
+		right: 6px;
+		z-index: 3;
+		display: grid;
+		place-items: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border-radius: var(--r-ctl);
+		border: 1px solid var(--line);
+		background: color-mix(in srgb, var(--raised) 92%, transparent);
+		color: var(--text);
+		cursor: pointer;
+		opacity: 0;
+		transform: scale(clamp(0.8, calc(1 / var(--k, 1)), 2.2));
+		transform-origin: top right;
+		transition: opacity 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.node:hover .expand,
+	.node:focus-within .expand,
+	.node.sel .expand,
+	.expand:focus-visible {
+		opacity: 0.95;
+	}
+	.expand:hover {
+		opacity: 1;
+	}
+	@media (hover: none) {
+		.expand {
+			opacity: 0.85;
+		}
+	}
+	.expand svg {
+		width: 14px;
+		height: 14px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	.rcount {
 		position: absolute;

@@ -5,6 +5,7 @@
 	import Board from '../../map/Board.svelte';
 	import TagChips from '../../map/TagChips.svelte';
 	import Icon from '../../map/Icon.svelte';
+	import ImageViewer from '#lib/components/ImageViewer.svelte';
 	import { zoneColors } from '../../map/board.js';
 	import PocketBase, { BaseAuthStore } from 'pocketbase';
 	import { PB_URL } from '#lib/pb.js';
@@ -35,6 +36,15 @@
 	/** Only http(s) sources become links (a javascript: URL would run here). */
 	const sourceHost = $derived(hostOf(selected?.source_url));
 	const noop = () => {};
+
+	// A click on a card opens it full screen (a visitor cannot edit, so there is no panel).
+	let viewId = $state<string | null>(null);
+	const viewIndex = $derived(viewId ? items.findIndex((i) => i.id === viewId) : -1);
+	const viewItem = $derived(viewIndex >= 0 ? items[viewIndex] : null);
+	function viewStep(dir: -1 | 1) {
+		const next = items[viewIndex + dir];
+		if (next) viewId = next.id;
+	}
 </script>
 
 <svelte:head>
@@ -92,7 +102,7 @@
 				seed={data.board?.positions ?? {}}
 				canSave={false}
 				rightInset={0}
-				onselect={(id) => (selectedId = selectedId === id ? null : id)}
+				onselect={(id) => ((selectedId = id), (viewId = id))}
 				onbackground={() => (selectedId = null)}
 				oncontext={noop}
 				onfiles={noop}
@@ -100,6 +110,18 @@
 				onrezone={noop}
 				onzoneadd={noop}
 				ontoast={noop}
+			/>
+		{/if}
+		{#if viewItem}
+			<ImageViewer
+				src={urlOf(viewItem)}
+				alt={viewItem.note || t('item.alt')}
+				sourceUrl={viewItem.source_url}
+				crop={viewItem.crop}
+				regions={viewItem.regions}
+				onclose={() => (viewId = null)}
+				onprev={viewIndex > 0 ? () => viewStep(-1) : undefined}
+				onnext={viewIndex < items.length - 1 ? () => viewStep(1) : undefined}
 			/>
 		{/if}
 		{#if selected?.source_url && sourceHost}

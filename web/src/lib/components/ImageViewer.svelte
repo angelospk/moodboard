@@ -12,14 +12,16 @@
 		crop: Crop | null;
 		/** What the user marked: shown over the image (boxes and freeform shapes) with their notes. */
 		regions?: Region[];
-		/** Save a new crop (null = whole image). */
-		oncrop: (crop: Crop | null) => void;
+		/** Save a new crop (null = whole image). Undefined (a public visitor) hides the crop tool. */
+		oncrop?: (crop: Crop | null) => void;
+		/** Leave the viewer and open the editor for this image. Undefined hides the button. */
+		onedit?: () => void;
 		onclose: () => void;
 		/** Undefined hides the arrow. */
 		onprev?: () => void;
 		onnext?: () => void;
 	}
-	let { src, alt = '', sourceUrl = null, crop, regions = [], oncrop, onclose, onprev, onnext }: Props = $props();
+	let { src, alt = '', sourceUrl = null, crop, regions = [], oncrop, onedit, onclose, onprev, onnext }: Props = $props();
 
 	const MIN = 0.02;
 	type Handle = 'move' | 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se' | 'new';
@@ -60,7 +62,7 @@
 
 	function save() {
 		const full = box.x <= 0.001 && box.y <= 0.001 && box.w >= 0.998 && box.h >= 0.998;
-		oncrop(full ? null : round(box));
+		oncrop?.(full ? null : round(box));
 		editing = false;
 	}
 
@@ -136,7 +138,7 @@
 		} else if (editing && e.key === 'Enter') {
 			e.preventDefault();
 			save();
-		} else if (!editing && e.code === 'KeyC' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+		} else if (!editing && oncrop && e.code === 'KeyC' && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			// e.code, so it also works with a Greek keyboard layout.
 			e.preventDefault();
 			startCrop();
@@ -173,7 +175,13 @@
 					{t('viewer.marksCount', { n: regions.length })}
 				</button>
 			{/if}
-			{#if !editing}
+			{#if !editing && onedit}
+				<button type="button" class="tool" title={t('viewer.editTitle')} onclick={onedit}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5l.7-3L10.8 3a1.4 1.4 0 0 1 2 0l.2.2a1.4 1.4 0 0 1 0 2L5.5 12.8z M9.5 4.5l2 2" /></svg>
+					{t('viewer.edit')}
+				</button>
+			{/if}
+			{#if !editing && oncrop}
 				<button type="button" class="tool" title={t('viewer.crop')} onclick={startCrop} disabled={!src}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5v10.5h10.5M1.5 4h10.5v10.5" /></svg>
 					{t('viewer.cropLabel')}

@@ -467,26 +467,27 @@
 		--re-max-h: min(52vh, 440px);
 	}
 
-	/* Over the image's top-right corner; above the region drawing layer. */
+	/* On the tool row above the image (the well's padding is 12px), same look as the Πλαίσιο / Ελεύθερο buttons. */
 	.expand {
 		position: absolute;
-		top: 18px;
-		right: 18px;
+		top: 12px;
+		right: 12px;
 		z-index: 2;
 		display: grid;
 		place-items: center;
-		width: 32px;
-		height: 32px;
+		box-sizing: border-box;
+		width: 30px;
+		height: 30px;
+		padding: 0;
 		border-radius: var(--r-ctl);
 		border: 1px solid var(--line);
-		background: color-mix(in srgb, var(--raised) 88%, transparent);
-		color: var(--text);
+		background: var(--surface);
+		color: var(--muted);
 		cursor: pointer;
-		opacity: 0.85;
-		transition: opacity 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+		transition: color 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 	.expand:hover {
-		opacity: 1;
+		color: var(--text);
 	}
 	.expand svg {
 		width: 16px;
