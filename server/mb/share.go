@@ -1,7 +1,10 @@
 package mb
 
 import (
+	"io"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -127,6 +130,23 @@ func handlePublicFile(e *core.RequestEvent) error {
 	// it within 5 minutes. The board JSON stays no-store and stops at once.
 	e.Response.Header().Set("Cache-Control", "private, max-age=300")
 	e.Response.Header().Del("X-Frame-Options")
+	// A JPEG original may hold GPS and camera data: stream it without that (thumbnails are re-encoded
+	// and have none).
+	if ext := strings.ToLower(path.Ext(name)); key == r.BaseFilesPath()+"/"+r.GetString("image") && (ext == ".jpg" || ext == ".jpeg") {
+		rd, err := fsys.GetReader(key)
+		if err != nil {
+			return publicNotFound(e)
+		}
+		defer rd.Close()
+		clean, err := StripJPEGMeta(rd)
+		if err != nil {
+			return publicNotFound(e)
+		}
+		e.Response.Header().Set("Content-Type", "image/jpeg")
+		e.Response.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(e.Response, clean)
+		return nil
+	}
 	if err := fsys.Serve(e.Response, e.Request, key, name); err != nil {
 		return publicNotFound(e)
 	}

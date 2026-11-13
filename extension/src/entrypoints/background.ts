@@ -75,7 +75,7 @@ function guessMimeFromPath(url: string): string {
 	return '';
 }
 
-/** Capture the visible area of a tab as a PNG data URL. */
+/** Capture the visible area of a tab as a JPEG data URL (quality 92): a PNG screenshot is often 5-8 MB. */
 async function captureTab(
 	tab: { id?: number; url?: string; title?: string; windowId?: number } | undefined,
 ): Promise<CaptureResult> {
@@ -83,8 +83,8 @@ async function captureTab(
 	const tabTitle = tab?.title ?? null;
 	if (tab?.windowId == undefined) return { ok: false, error: t('bg.noTab') };
 	try {
-		const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-		await setPending({ dataUrl, mime: 'image/png', sourceUrl: tabUrl, sourceTitle: tabTitle });
+		const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
+		await setPending({ dataUrl, mime: 'image/jpeg', sourceUrl: tabUrl, sourceTitle: tabTitle });
 		return { ok: true };
 	} catch (error) {
 		// Screenshots are blocked on some pages (chrome://, the extension UI, some stores).

@@ -238,6 +238,7 @@ func (l *Labeler) ask(img aiImage, levels, known []string) (aiAnswer, error) {
 		"level: the one level that fits best, exactly as written. Levels: " + strings.Join(levels, ", ") + ".\n" +
 		"tags: at most 5 short, lowercase tags (one or two words, same language as the user's tags). " +
 		"Reuse a tag from the user's list when it fits; add a new one only when none does. " +
+		"Never use a level name as a tag. " +
 		"The user's tags, most used first: " + strings.Join(known, ", ") + "."
 	levelSchema := map[string]any{"type": "string"}
 	if len(levels) > 0 {

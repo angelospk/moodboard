@@ -144,9 +144,10 @@ func TestAISuggestsLabelsForOptedInUser(t *testing.T) {
 		base64.StdEncoding.EncodeToString(png1x1), // the image itself
 		"image/png",
 		"Κτίριο", "Εσωτερικό", // the user's levels
-		"beton",              // the user's own tags
-		"application/json",   // JSON mode
-		"responseJsonSchema", // schema keeps the answer parseable
+		"beton",                           // the user's own tags
+		"application/json",                // JSON mode
+		"responseJsonSchema",              // schema keeps the answer parseable
+		"Never use a level name as a tag", // the model must not repeat the level as a tag
 	} {
 		if !strings.Contains(call.body, want) {
 			t.Fatalf("request body misses %q:\n%s", want, call.body)
