@@ -4,7 +4,7 @@
 	import { levelStore } from '#lib/levels.svelte.js';
 	import Icon from './Icon.svelte';
 	import TagChips from './TagChips.svelte';
-	import type { ZoneColor } from './board.js';
+	import type { ZoneBy, ZoneColor } from './board.js';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -30,6 +30,9 @@
 		onmeaningtoggle: () => void;
 		/** Enter in the search box while byMeaning is on. */
 		onmeaning: () => void;
+		/** Zones by tag or by project (the filters sheet shows the switch); undefined hides it. */
+		zoneBy?: ZoneBy;
+		onzones?: (by: ZoneBy) => void;
 	}
 	let {
 		current,
@@ -48,7 +51,9 @@
 		byMeaning,
 		meaningBusy,
 		onmeaningtoggle,
-		onmeaning
+		onmeaning,
+		zoneBy,
+		onzones
 	}: Props = $props();
 
 	const active = $derived((search.trim() ? 1 : 0) + (level ? 1 : 0) + (highlight ? 1 : 0));
@@ -178,6 +183,15 @@
 				</button>
 			{/each}
 		</div>
+		{#if zoneBy && onzones}
+			<p class="slabel">{t('map.zones')}</p>
+			<div class="levelchips">
+				<button type="button" class="chip" class:on={zoneBy === 'tag'} onclick={() => onzones('tag')}>{t('map.zonesTags')}</button>
+				<button type="button" class="chip" class:on={zoneBy === 'project'} onclick={() => onzones('project')}>
+					{t('map.zonesProjects')}
+				</button>
+			</div>
+		{/if}
 		{#if tags.length}
 			<p class="slabel">Tags</p>
 			<TagChips {tags} {colors} {highlight} ontoggle={ontoggletag} wrap />
