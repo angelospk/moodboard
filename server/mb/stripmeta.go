@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"io"
 )
 
@@ -150,7 +151,13 @@ func exifOrientation(p []byte) int {
 	if !bytes.HasPrefix(p, []byte("Exif\x00\x00")) {
 		return 0
 	}
-	t := p[6:]
+	return tiffOrientation(p[6:])
+}
+
+// tiffOrientation reads the Orientation tag from a bare TIFF block (what PNG eXIf and WebP EXIF
+// hold; WebP writers sometimes put the "Exif\0\0" prefix in front, which is skipped).
+func tiffOrientation(t []byte) int {
+	t = bytes.TrimPrefix(t, []byte("Exif\x00\x00"))
 	if len(t) < 8 {
 		return 0
 	}
@@ -186,11 +193,15 @@ func exifOrientation(p []byte) int {
 	return 0
 }
 
-// minimalExif is an APP1 segment holding only the Orientation tag (big-endian).
+// minimalTIFF is a TIFF block holding only the Orientation tag (big-endian), 26 bytes.
+func minimalTIFF(o int) []byte {
+	return append([]byte("MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00"),
+		byte(o), 0, 0, 0, 0, 0, 0)
+}
+
+// minimalExif is a JPEG APP1 segment holding only the Orientation tag.
 func minimalExif(o int) []byte {
-	return append([]byte{0xFF, 0xE1, 0x00, 0x22},
-		append([]byte("Exif\x00\x00MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00"),
-			byte(o), 0, 0, 0, 0, 0, 0)...)
+	return append([]byte{0xFF, 0xE1, 0x00, 0x22}, append([]byte("Exif\x00\x00"), minimalTIFF(o)...)...)
 }
 
 // ---- PNG ----
@@ -218,6 +229,9 @@ func stripPNG(b []byte) ([]byte, error) {
 		if pngKeep[typ] || typ[0] >= 'A' && typ[0] <= 'Z' {
 			out = append(out, b[i:i+12+n]...)
 		}
+		if typ == "IHDR" { // a kept rotation goes right after IHDR, before IDAT
+			out = append(out, pngRotationChunk(b, i+12+n)...)
+		}
 		i += 12 + n
 		if typ == "IEND" { // anything after IEND is not served
 			return out, nil
@@ -234,6 +248,8 @@ func stripWebP(b []byte) ([]byte, error) {
 	}
 	end := size + 8
 	body := []byte("WEBP")
+	orientation := 0
+	vp8x := -1 // offset of the VP8X chunk inside body
 	i := 12
 	for i < end {
 		if i+8 > end {
@@ -248,17 +264,69 @@ func stripWebP(b []byte) ([]byte, error) {
 		chunk := b[i : i+total]
 		i += total
 		switch fourcc {
-		case "EXIF", "XMP ":
+		case "EXIF":
+			if orientation == 0 {
+				orientation = tiffOrientation(chunk[8 : 8+n])
+			}
+			continue
+		case "XMP ":
 			continue
 		case "VP8X":
 			if n >= 1 {
 				chunk = append([]byte{}, chunk...)
-				chunk[8] &^= 0x08 | 0x04 // clear the EXIF and XMP flags
+				vp8x = len(body)
 			}
 		}
 		body = append(body, chunk...)
 	}
+	if vp8x >= 0 {
+		body[vp8x+8] &^= 0x08 | 0x04 // clear the EXIF and XMP flags ...
+		if orientation >= 2 && orientation <= 8 {
+			body = append(body, riffChunk("EXIF", minimalTIFF(orientation))...) // ... then keep only the rotation
+			body[vp8x+8] |= 0x08
+		}
+	}
 	out := append([]byte("RIFF\x00\x00\x00\x00"), body...)
 	binary.LittleEndian.PutUint32(out[4:8], uint32(len(body)))
 	return out, nil
+}
+
+// pngRotationChunk looks ahead from `from` for an eXIf chunk and returns a minimal one with only
+// its Orientation (2..8), or nothing.
+func pngRotationChunk(b []byte, from int) []byte {
+	for i := from; i+12 <= len(b); {
+		n := int(binary.BigEndian.Uint32(b[i : i+4]))
+		if n > len(b) || i+12+n > len(b) {
+			return nil
+		}
+		typ := string(b[i+4 : i+8])
+		if typ == "eXIf" {
+			if r := tiffOrientation(b[i+8 : i+8+n]); r >= 2 && r <= 8 {
+				data := minimalTIFF(r)
+				var c bytes.Buffer
+				_ = binary.Write(&c, binary.BigEndian, uint32(len(data)))
+				c.WriteString("eXIf")
+				c.Write(data)
+				_ = binary.Write(&c, binary.BigEndian, crc32.ChecksumIEEE(append([]byte("eXIf"), data...)))
+				return c.Bytes()
+			}
+			return nil
+		}
+		if typ == "IDAT" || typ == "IEND" {
+			return nil
+		}
+		i += 12 + n
+	}
+	return nil
+}
+
+// riffChunk builds one RIFF chunk: fourcc, little-endian size, payload, padding to an even size.
+func riffChunk(fourcc string, payload []byte) []byte {
+	c := append([]byte(fourcc), 0, 0, 0, 0)
+	binary.LittleEndian.PutUint32(c[4:], uint32(len(payload)))
+	c = append(c, payload...)
+	if len(payload)%2 == 1 {
+		c = append(c, 0)
+	}
+	return c
 }

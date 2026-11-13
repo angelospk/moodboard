@@ -152,11 +152,14 @@ var cleanSlots = make(chan struct{}, 2)
 func serveClean(e *core.RequestEvent, fsys *filesystem.System, key string) (bool, error) {
 	rd, err := fsys.GetReader(key)
 	if err != nil {
-		return false, nil
+		return true, publicNotFound(e) // fail closed: never fall back to serving the file unfiltered
 	}
 	defer rd.Close()
 	head := make([]byte, 12)
-	n, _ := io.ReadFull(rd, head)
+	n, err := io.ReadFull(rd, head)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return true, publicNotFound(e)
+	}
 	if !IsStrippable(head[:n]) {
 		return false, nil
 	}

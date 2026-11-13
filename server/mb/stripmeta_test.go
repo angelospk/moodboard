@@ -362,7 +362,7 @@ func riffChunk(fourcc string, payload []byte) []byte {
 }
 
 func TestStripImageMetaWebP(t *testing.T) {
-	vp8x := []byte{0x08 | 0x04 | 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0} // EXIF + XMP + ICC flags, 1x1
+	vp8x := []byte{0x08 | 0x04 | 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0} // EXIF + XMP + ICC flags, 1x1
 	image := []byte("VP8L-image-bytes")
 	body := append([]byte("WEBP"), riffChunk("VP8X", vp8x)...)
 	body = append(body, riffChunk("ICCP", []byte("icc"))...)
@@ -384,7 +384,7 @@ func TestStripImageMetaWebP(t *testing.T) {
 		t.Fatalf("RIFF size %d, want %d", size, len(out)-8)
 	}
 	flags := out[12+8] // first payload byte of the first chunk (VP8X)
-	if flags&(0x08|0x04) != 0 || flags&0x10 == 0 {
+	if flags&(0x08|0x04) != 0 || flags&0x20 == 0 {
 		t.Fatalf("VP8X flags %08b: EXIF and XMP bits must clear, ICC must stay", flags)
 	}
 }
@@ -408,5 +408,52 @@ func TestPublicBoardCleansByContentNotExtension(t *testing.T) {
 			t.Fatalf("%s: %d", name, w.Code)
 		}
 		secretFree(t, name, w.Body.Bytes())
+	}
+}
+
+func TestStripImageMetaPNGAndWebPKeepRotation(t *testing.T) {
+	// PNG: the eXIf chunk holds a bare TIFF block (no "Exif\0\0" prefix) with Orientation 6 and a secret.
+	tiff := exifPayload(6, false, "SECRET-PNG-GPS")[6:]
+	const sigAndIHDR = 8 + 12 + 13
+	p := append([]byte{}, png1x1[:sigAndIHDR]...)
+	p = append(p, pngChunk("eXIf", tiff)...)
+	p = append(p, png1x1[sigAndIHDR:]...)
+	out := strip(t, p)
+	secretFree(t, "png rotation", out)
+	want := pngChunk("eXIf", keptOrientation(6)[6:])
+	if !bytes.Contains(out, want) {
+		t.Fatalf("PNG must keep a minimal eXIf with orientation 6")
+	}
+	if _, err := png.Decode(bytes.NewReader(out)); err != nil {
+		t.Fatalf("must decode: %v", err)
+	}
+
+	// WebP: EXIF chunk with the "Exif\0\0" prefix (some writers add it), Orientation 8.
+	vp8x := []byte{0x08, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	body := append([]byte("WEBP"), riffChunk("VP8X", vp8x)...)
+	body = append(body, riffChunk("VP8L", []byte("image"))...)
+	body = append(body, riffChunk("EXIF", exifPayload(8, true, "SECRET-WEBP-GPS"))...)
+	file := append([]byte("RIFF\x00\x00\x00\x00"), body...)
+	binary.LittleEndian.PutUint32(file[4:], uint32(len(body)))
+	wout := strip(t, file)
+	secretFree(t, "webp rotation", wout)
+	if !bytes.Contains(wout, riffChunk("EXIF", keptOrientation(8)[6:])) {
+		t.Fatalf("WebP must keep a minimal EXIF chunk with orientation 8")
+	}
+	if wout[12+8]&0x08 == 0 {
+		t.Fatalf("the EXIF flag must stay set when an EXIF chunk is kept")
+	}
+	if int(binary.LittleEndian.Uint32(wout[4:8])) != len(wout)-8 {
+		t.Fatalf("RIFF size wrong")
+	}
+	// No rotation in the EXIF: no EXIF chunk and a cleared flag.
+	body2 := append([]byte("WEBP"), riffChunk("VP8X", vp8x)...)
+	body2 = append(body2, riffChunk("VP8L", []byte("image"))...)
+	body2 = append(body2, riffChunk("EXIF", exifPayload(1, false, "SECRET-WEBP-GPS"))...)
+	file2 := append([]byte("RIFF\x00\x00\x00\x00"), body2...)
+	binary.LittleEndian.PutUint32(file2[4:], uint32(len(body2)))
+	w2 := strip(t, file2)
+	if bytes.Contains(w2, []byte("EXIF")) || w2[12+8]&0x08 != 0 {
+		t.Fatalf("orientation 1: no EXIF chunk, flag cleared")
 	}
 }
