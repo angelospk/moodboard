@@ -5,6 +5,9 @@ import "time"
 // CleanupOAuth exposes the hourly cleanup to the tests.
 var CleanupOAuth = cleanupOAuth
 
+// Hamming exposes the hash distance to the tests.
+var Hamming = hamming
+
 // WaitThumbs waits for the background thumbnails of uploads.
 var WaitThumbs = thumbJobs.Wait
 
@@ -21,3 +24,6 @@ func SetStoreLimit(n int64) {
 	maxStoreBytes = n
 	storeAt = time.Time{}
 }
+
+// SetIndexBuildHook runs fn after the index query and before the index is cached (nil = none).
+func SetIndexBuildHook(fn func()) { idxBuildHook = fn }

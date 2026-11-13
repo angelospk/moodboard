@@ -67,6 +67,12 @@ lasts one hour.
 | `POST /api/mb/inspirations/{id}/copy` | duplicate an inspiration and its file into a project |
 | `POST /api/mb/positions` | upsert node positions of one map |
 | `POST /api/mb/positions/delete` | forget positions (one scope or all) |
+| `GET /api/mb/search?q=&project=&limit=` | search by meaning (needs `embed_enabled`) |
+| `GET /api/mb/embed/status` | consent, how many images have a vector, model, dimension |
+| `GET /api/mb/inspirations/{id}/similar?scope=project\|all` | images most like this one |
+| `GET /api/mb/inspirations/{id}/knn-suggest` | tags and level voted by the nearest labeled images (no LLM) |
+| `GET /api/mb/duplicates?project=&id=` | near-duplicate pairs from a 64-bit image hash |
+| `POST /api/mb/projects/{id}/summary-draft` | Gemini Flash drafts a project description (2-3 readings where unsure); the web app saves the picked text into `projects.description` |
 
 **Public boards** (`server/mb/share.go`, no account): when a project has `public` on, anyone with
 `/s/<project id>` sees it. `GET /api/mb/public/{project}` returns the board (name, description,
@@ -82,7 +88,8 @@ when its `updated_at` is newer, so a late echo of an older save cannot undo a ne
 
 **MCP.** `POST https://moodboard-api.haroldpoi.dev/mcp` (streamable HTTP, stateless) with
 `Authorization: Bearer <token>`. Tools: `list_projects`, `list_levels`, `search_inspirations`,
-`get_inspiration`, `save_inspiration`, `suggest_labels`, `add_note`. Levels are passed by name.
+`get_inspiration`, `save_inspiration`, `suggest_labels`, `add_note`, `semantic_search`,
+`similar_inspirations`. Levels are passed by name.
 
 - **claude.ai:** Settings → Connectors → «Add custom connector» → URL
   `https://moodboard-api.haroldpoi.dev/mcp`. Claude opens our sign-in page; use your Moodboard
@@ -93,6 +100,23 @@ when its `updated_at` is newer, so a late echo of an older save cannot undo a ne
 
 `save_inspiration` downloads only public https images and checks the address it actually
 connects to (no private hosts, no redirects).
+
+## Search by meaning
+
+A user who switches on «Έξυπνη αναζήτηση» (`users.embed_enabled`, separate from `ai_enabled`) lets the
+server send every image, old ones too, once to Google Gemini (`gemini-embedding-2`, the 480 px
+thumbnail). The vector (base64 float32) goes into the superuser-only collection `image_features`.
+Search is a brute-force dot product over a per-user in-memory index (`server/mb/semantic.go`); the
+index drops itself on any change. The same row keeps the local features (no API): dominant colors
+(`inspirations.colors`) and a 64-bit dHash for near duplicates. Backfill runs on consent, on server
+start and hourly; a changed model or dimension re-embeds by itself. With a free-tier key Google may
+use the data: use a paid key before you switch it on for private images.
+
+| Env | Default | Meaning |
+|---|---|---|
+| `MB_EMBED_DIM` | 768 | vector size (768 gave the best image-neighbour purity on a 24-image test) |
+| `MB_EMBED_MODEL` | `gemini-embedding-2` | embedding model |
+| `MB_EMBED_DAILY_LIMIT` | 5000 | image embeds per user per UTC day (300 search queries per day) |
 
 ## Public images Worker
 

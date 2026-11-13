@@ -244,38 +244,41 @@ func (l *Labeler) ask(img aiImage, levels, known []string) (aiAnswer, error) {
 	if len(levels) > 0 {
 		levelSchema["enum"] = levels
 	}
+	text, err := l.generateJSON([]any{
+		map[string]any{"text": prompt},
+		map[string]any{"inline_data": map[string]any{"mime_type": img.mime, "data": img.b64}},
+	}, map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"level": levelSchema,
+			"tags":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": aiMaxTags},
+		},
+		"required": []string{"level", "tags"},
+	})
+	if err != nil {
+		return aiAnswer{}, err
+	}
+	var ans aiAnswer
+	if err := json.Unmarshal([]byte(text), &ans); err != nil {
+		return aiAnswer{}, fmt.Errorf("answer is not JSON: %w", err)
+	}
+	return ans, nil
+}
+
+// generateJSON sends one user turn (text and image parts) to the model and returns the text of its
+// answer, which the response schema forces to be JSON.
+func (l *Labeler) generateJSON(parts []any, schema map[string]any) (string, error) {
 	body, _ := json.Marshal(map[string]any{
-		"contents": []any{map[string]any{"parts": []any{
-			map[string]any{"text": prompt},
-			map[string]any{"inline_data": map[string]any{"mime_type": img.mime, "data": img.b64}},
-		}}},
+		"contents": []any{map[string]any{"parts": parts}},
 		"generationConfig": map[string]any{
-			"responseMimeType": "application/json",
-			"responseJsonSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"level": levelSchema,
-					"tags":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": aiMaxTags},
-				},
-				"required": []string{"level", "tags"},
-			},
+			"responseMimeType":   "application/json",
+			"responseJsonSchema": schema,
 		},
 	})
 	url := strings.TrimRight(l.cfg.BaseURL, "/") + "/v1beta/models/" + l.cfg.Model + ":generateContent"
-
-	var out []byte
-	var err error
-	for attempt := 0; attempt < 2; attempt++ {
-		if attempt > 0 {
-			time.Sleep(l.cfg.RetryDelay)
-		}
-		var retry bool
-		if out, retry, err = l.post(url, body); err == nil || !retry {
-			break
-		}
-	}
+	out, err := geminiPostRetry(l.client, l.cfg.Key, url, body, l.cfg.RetryDelay)
 	if err != nil {
-		return aiAnswer{}, err
+		return "", err
 	}
 	var resp struct {
 		Candidates []struct {
@@ -287,23 +290,33 @@ func (l *Labeler) ask(img aiImage, levels, known []string) (aiAnswer, error) {
 		} `json:"candidates"`
 	}
 	if err := json.Unmarshal(out, &resp); err != nil || len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		return aiAnswer{}, errors.New("no candidate in the answer")
+		return "", errors.New("no candidate in the answer")
 	}
-	var ans aiAnswer
-	if err := json.Unmarshal([]byte(resp.Candidates[0].Content.Parts[0].Text), &ans); err != nil {
-		return aiAnswer{}, fmt.Errorf("answer is not JSON: %w", err)
-	}
-	return ans, nil
+	return resp.Candidates[0].Content.Parts[0].Text, nil
 }
 
-// post sends one request. retry is true for a network error, 429 and 5xx.
-func (l *Labeler) post(url string, body []byte) (out []byte, retry bool, err error) {
+// geminiPostRetry sends a request and, after a network error, 429 or 5xx, one more time after delay.
+func geminiPostRetry(client *http.Client, key, url string, body []byte, delay time.Duration) (out []byte, err error) {
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			time.Sleep(delay)
+		}
+		var retry bool
+		if out, retry, err = geminiPost(client, key, url, body); err == nil || !retry {
+			break
+		}
+	}
+	return out, err
+}
+
+// geminiPost sends one request. retry is true for a network error, 429 and 5xx.
+func geminiPost(client *http.Client, key, url string, body []byte) (out []byte, retry bool, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", l.cfg.Key) // header, not ?key=, so it never lands in a log
-	res, err := l.client.Do(req)
+	req.Header.Set("x-goog-api-key", key) // header, not ?key=, so it never lands in a log
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, true, errors.New("request failed") // the error text can hold the URL; keep it short
 	}

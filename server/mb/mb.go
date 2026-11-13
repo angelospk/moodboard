@@ -36,6 +36,7 @@ func Register(app core.App) {
 		return e.Next()
 	})
 	bindThumbs(app)
+	bindSemantic(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.Router.BindFunc(thumbOnDemand)
@@ -47,6 +48,8 @@ func Register(app core.App) {
 		g.POST("/inspirations/{id}/copy", handleCopy)
 		g.POST("/positions", handleSavePositions)
 		g.POST("/positions/delete", handleDeletePositions)
+		bindSemanticRoutes(g)
+		bindSummaryRoutes(g)
 		bindShare(se)
 		bindMCP(se)
 		bindOAuth(se)

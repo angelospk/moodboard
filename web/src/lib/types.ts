@@ -52,6 +52,8 @@ export interface Inspiration {
 	regions: Region[];
 	/** Pending AI suggestion, or null. */
 	suggestion: Suggestion | null;
+	/** Dominant colors as #rrggbb, most common first (the server computes them). */
+	colors: string[];
 	created_at: string;
 	updated_at: string;
 }

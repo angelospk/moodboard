@@ -67,9 +67,14 @@ export function toInspiration(r: RecordModel): Inspiration {
 		level: r.level || null,
 		regions: Array.isArray(r.regions) ? r.regions : [],
 		suggestion: toSuggestion(r.suggestion),
+		colors: toColors(r.colors),
 		created_at: r.created_at,
 		updated_at: r.updated_at
 	};
+}
+
+function toColors(v: unknown): string[] {
+	return Array.isArray(v) ? v.filter((c): c is string => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)).map((c) => c.toLowerCase()) : [];
 }
 
 function toSuggestion(v: unknown): Suggestion | null {
@@ -110,6 +115,11 @@ export async function createProject(pb: PocketBase, userId: string, name: string
 	}
 }
 
+/** Save a project's description (what unites its images; the public board shows it). */
+export async function setProjectDescription(pb: PocketBase, id: string, description: string): Promise<Project> {
+	return toProject(await pb.collection('projects').update(id, { description: description.trim() }));
+}
+
 /** Rename a project. A name another project already has is refused. */
 export async function renameProject(pb: PocketBase, id: string, name: string): Promise<Project> {
 	try {
@@ -141,6 +151,16 @@ export async function deleteProject(pb: PocketBase, id: string): Promise<void> {
 export async function listInspirations(pb: PocketBase): Promise<Inspiration[]> {
 	const rows = await pb.collection('inspirations').getFullList({ sort: '-created_at,id' });
 	return rows.map(toInspiration);
+}
+
+/** The inspirations with these ids, in the order of `ids` (ids that are not the user's are left out). */
+export async function listInspirationsByIds(pb: PocketBase, ids: string[]): Promise<Inspiration[]> {
+	if (!ids.length) return [];
+	const rows = await pb.collection('inspirations').getFullList({
+		filter: ids.map((id) => `id = "${id.replace(/[^\w-]/g, '')}"`).join(' || ')
+	});
+	const byId = new Map(rows.map((r) => [r.id, toInspiration(r)]));
+	return ids.flatMap((id) => byId.get(id) ?? []);
 }
 
 /** One inspiration, or null when it does not exist or is not the user's. */

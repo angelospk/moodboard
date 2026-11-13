@@ -1,9 +1,19 @@
 <script lang="ts">
 	import { t } from '#lib/i18n.js';
 	import { beforeNavigate, goto } from '$app/navigation';
-	import type { Level, Region } from '#lib/types.js';
+	import type { Inspiration, Level, Region } from '#lib/types.js';
 	import { levelStore } from '#lib/levels.svelte.js';
-	import { deleteInspiration, updateInspiration, type EditableFields } from '#lib/inspirations.js';
+	import {
+		deleteInspiration,
+		imageUrls,
+		listInspirationsByIds,
+		thumbUrl,
+		updateInspiration,
+		type EditableFields
+	} from '#lib/inspirations.js';
+	import { duplicatesOf, knnSuggest, type KnnSuggestion } from '#lib/semantic.js';
+	import SimilarImages from '#lib/components/SimilarImages.svelte';
+	import ChatSearch from '#lib/components/ChatSearch.svelte';
 	import TagInput from '#lib/components/TagInput.svelte';
 	import RegionEditor from '#lib/components/RegionEditor.svelte';
 	import RegionList from '#lib/components/RegionList.svelte';
@@ -34,6 +44,52 @@
 			return safeSource ?? '';
 		}
 	});
+
+	// ---------- smart search: label suggestions from similar images, near-duplicates, chat links ----------
+	// The user's consent is read once; turning it on or off happens on the home page.
+	const embedOn = untrack(() => !!data.pb.authStore.record?.embed_enabled);
+	let knn = $state<KnnSuggestion | null>(null);
+	let dups = $state<Inspiration[]>([]);
+	let dupUrls = $state<Record<string, string>>({});
+	let chatOpen = $state(false);
+
+	$effect(() => {
+		if (!embedOn) return;
+		let alive = true;
+		knnSuggest(data.pb, item.id)
+			.then((r) => alive && (knn = r.ready ? r : null))
+			.catch(() => {});
+		duplicatesOf(data.pb, item.id)
+			.then(async (ids) => {
+				if (!ids.length) return;
+				const rows = await listInspirationsByIds(data.pb, ids);
+				const urls = await imageUrls(data.pb, rows);
+				if (alive) [dups, dupUrls] = [rows, urls];
+			})
+			.catch(() => {});
+		return () => {
+			alive = false;
+		};
+	});
+
+	const knnTags = $derived(knn ? knn.tags.filter((x) => !tags.includes(x)) : []);
+	const knnLevel = $derived(
+		knn?.level && knn.level !== level && levelStore.list.some((l) => l.id === knn?.level) ? knn.level : null
+	);
+	const chatContext = $derived({
+		projectName: project?.name ?? null,
+		levelName: levelStore.list.find((l) => l.id === level)?.name ?? null,
+		tags,
+		note,
+		colors: item.colors,
+		sourceUrl: safeSource
+	});
+
+	function addTag(tag: string) {
+		if (tags.includes(tag)) return;
+		tags = [...tags, tag];
+		change('tags', tags);
+	}
 
 	// ---------- autosave: the shared Autosaver (same engine as InspirationPanel) ----------
 	let status = $state<SaveState>('idle');
@@ -155,6 +211,32 @@
 			<div class="body">
 				{#if failure}<p class="banner" role="alert">{failure}</p>{/if}
 
+				{#if dups.length}
+					<div class="field">
+						<span class="lbl">{t('dup.title')}</span>
+						<p class="msg">{t('dup.body')}</p>
+						<ul class="mini">
+							{#each dups as d (d.id)}
+								<li>
+									<!-- A full load: this page keeps its editor state per page load (see `item`). -->
+									<a href={`/i/${d.id}`} data-sveltekit-reload aria-label={d.note ? d.note.slice(0, 60) : t('item.alt')}>
+										{#if dupUrls[d.image_path]}<img src={thumbUrl(dupUrls[d.image_path])} alt="" loading="lazy" decoding="async" />{/if}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+
+				{#if item.colors.length}
+					<div class="field">
+						<span class="lbl">{t('colors.title')}</span>
+						<div class="swatches">
+							{#each item.colors as c (c)}<span class="sw" style:background={c} title={c} role="img" aria-label={c}></span>{/each}
+						</div>
+					</div>
+				{/if}
+
 				<div class="field">
 					<span class="lbl">{t('item.regions')}{regions.length ? ` · ${regions.length}` : ''}</span>
 					<RegionList bind:regions={() => regions, (v) => ((regions = v), change('regions', v))} bind:active />
@@ -191,6 +273,23 @@
 					</div>
 				</div>
 
+				{#if knnTags.length || knnLevel}
+					<div class="field">
+						<span class="lbl">{t('knn.title')}</span>
+						<div class="chips">
+							{#if knnLevel}
+								<button type="button" class="chip soft" onclick={() => knnLevel && setLevel(knnLevel)}>
+									{levelStore.list.find((l) => l.id === knnLevel)?.name}
+								</button>
+							{/if}
+							{#each knnTags as tg (tg)}
+								<button type="button" class="chip soft" onclick={() => addTag(tg)}>+ {tg}</button>
+							{/each}
+						</div>
+						<p class="msg">{t('knn.hint')}</p>
+					</div>
+				{/if}
+
 				<label class="field">
 					<span class="lbl">Project</span>
 					<select bind:value={() => projectId, (v) => ((projectId = v), change('project_id', v || null))}>
@@ -205,6 +304,12 @@
 						<a class="src" href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 					</div>
 				{/if}
+
+				<SimilarImages pb={data.pb} id={item.id} enabled={embedOn} />
+
+				<div class="field">
+					<button type="button" class="btn" onclick={() => (chatOpen = true)}>{t('chat.button')}</button>
+				</div>
 			</div>
 
 			<footer>
@@ -216,6 +321,10 @@
 		</aside>
 	</main>
 </div>
+
+{#if chatOpen}
+	<ChatSearch context={chatContext} onclose={() => (chatOpen = false)} />
+{/if}
 
 <style>
 	.page {
@@ -411,6 +520,45 @@
 	.btn:disabled {
 		opacity: 0.55;
 		cursor: default;
+	}
+
+	.msg {
+		margin: 0;
+		font-size: 12.5px;
+		color: var(--muted);
+	}
+	.swatches {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+	.sw {
+		width: 28px;
+		height: 28px;
+		border-radius: 6px;
+		border: 1px solid var(--line-strong);
+	}
+	.mini {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+	.mini a {
+		display: block;
+		width: 72px;
+		height: 72px;
+		overflow: hidden;
+		border-radius: var(--r-ctl);
+		background: var(--sunk);
+	}
+	.mini img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
 	}
 
 	/* Desktop: image fills the left, the form is a 400px column with its own scroll. */

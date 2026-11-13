@@ -2,12 +2,15 @@
 	import { reloadData } from '#lib/reload.js';
 	import { goto, preloadCode } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import type { Inspiration, Level } from '#lib/types.js';
 	import { levelLabel, levelStore } from '#lib/levels.svelte.js';
 	import LevelManager from '#lib/components/LevelManager.svelte';
 	import LanguageSwitch from '#lib/components/LanguageSwitch.svelte';
 	import AiSwitch from '#lib/components/AiSwitch.svelte';
+	import EmbedSwitch from '#lib/components/EmbedSwitch.svelte';
+	import ProjectSummary from '#lib/components/ProjectSummary.svelte';
+	import { searchByMeaning, SmartSearchError } from '#lib/semantic.js';
 	import { t, tn, timeAgo } from '#lib/i18n.js';
 	import {
 		createProject as createProjectRow,
@@ -22,6 +25,13 @@
 	const LAST_PROJECT_KEY = 'moodboard:last-project';
 
 	let query = $state('');
+	/** Smart search: the user agreed, and the search box looks for meaning instead of words. */
+	let embedOn = $state(untrack(() => !!data.pb.authStore.record?.embed_enabled));
+	let byMeaning = $state(false);
+	let meaningBusy = $state(false);
+	let meaningError = $state('');
+	/** The last meaning search: its text and the ids it found, best first. */
+	let meaning = $state<{ q: string; ids: string[] } | null>(null);
 	let level = $state<Level | ''>('');
 	let newProject = $state('');
 	let creating = $state(false);
@@ -156,6 +166,15 @@
 	const gridCards = $derived(cards.filter((c) => c.key !== resumeCard?.key));
 
 	const filtered = $derived.by(() => {
+		if (byMeaning && meaning) {
+			const byId = new Map(data.inspirations.map((i) => [i.id, i]));
+			return meaning.ids.flatMap((id) => {
+				const i = byId.get(id);
+				// The ranking covers the whole library (or the project it was asked in); keep to the project shown now.
+				const inSelected = selected === 'none' ? i?.project_id === null : selected === 'all' || i?.project_id === selected;
+				return i && inSelected && (!level || i.level === level) ? [i] : [];
+			});
+		}
 		const q = query.trim().toLowerCase();
 		return data.inspirations.filter((i) => {
 			if (selected === 'none' ? i.project_id !== null : selected !== 'all' && i.project_id !== selected) {
@@ -177,6 +196,46 @@
 		const p = data.projects.find((x) => x.id === selected);
 		return p ? { key: p.id, name: p.name, images: [], count: 0, tags: [], lastChange: '' } : null;
 	});
+
+	const selectedProject = $derived(data.projects.find((p) => p.id === selected) ?? null);
+	const aiAllowed = $derived(embedOn || !!data.pb.authStore.record?.ai_enabled);
+
+	async function runMeaning() {
+		const q = query.trim();
+		if (!q || meaningBusy) return;
+		if (!embedOn) {
+			meaningError = t('search.meaningOff');
+			return;
+		}
+		meaningBusy = true;
+		meaningError = '';
+		try {
+			// A project page looks only inside that project; "no project" has no project to ask for.
+			const scope = selected !== 'all' && selected !== 'none' ? selected : '';
+			const out = await searchByMeaning(data.pb, q, scope);
+			if (!out.enabled) {
+				meaningError = t('search.meaningOff');
+				return;
+			}
+			let ids = out.results.map((h) => h.id);
+			if (selected === 'none') {
+				const orphans = new Set((groups.get('none') ?? []).map((i) => i.id));
+				ids = ids.filter((id) => orphans.has(id));
+			}
+			meaning = { q, ids };
+			if (!ids.length) meaningError = t('search.meaningNone');
+		} catch (e) {
+			meaningError = e instanceof SmartSearchError && e.kind === 'limit' ? t('search.meaningLimit') : t('search.meaningFailed');
+		} finally {
+			meaningBusy = false;
+		}
+	}
+
+	function clearMeaning() {
+		meaning = null;
+		meaningError = '';
+		query = '';
+	}
 
 	const orphanCount = $derived((groups.get('none') ?? []).length);
 
@@ -331,6 +390,7 @@
 		<button class="btn" type="button" onclick={() => (managingLevels = true)}>{t('common.levels')}</button>
 		<a class="btn primary new-image" href="/new">{t('common.newImagePlus')}</a>
 		<AiSwitch pb={data.pb} />
+		<EmbedSwitch pb={data.pb} bind:on={embedOn} />
 		<LanguageSwitch />
 		<button class="btn" type="button" disabled={loggingOut} onclick={logout}>
 			{loggingOut ? '…' : t('common.logout')}
@@ -437,6 +497,17 @@
 				<span class="sec-meta">{tn('common.images', filtered.length)}</span>
 				{#if manageError && selectedCard && editing === selectedCard.key}<span class="err">{manageError}</span>{/if}
 			</div>
+			{#if selectedProject}
+				{#key selectedProject.id}
+					<ProjectSummary
+						pb={data.pb}
+						projectId={selectedProject.id}
+						description={selectedProject.description}
+						{aiAllowed}
+						onsaved={() => void reloadData()}
+					/>
+				{/key}
+			{/if}
 			{@render filters()}
 			{@render imageGrid()}
 		</section>
@@ -591,15 +662,48 @@
 	<div class="filters">
 		<input
 			type="search"
-			placeholder={t('home.searchPlaceholder')}
+			placeholder={byMeaning ? t('search.meaningPlaceholder') : t('home.searchPlaceholder')}
 			bind:value={query}
 			aria-label={t('home.search')}
+			onkeydown={(e) => {
+				if (byMeaning && e.key === 'Enter') {
+					e.preventDefault();
+					void runMeaning();
+				}
+			}}
 		/>
+		<button
+			type="button"
+			class={['chip', byMeaning && 'on']}
+			aria-pressed={byMeaning}
+			title={t('search.meaningTitle')}
+			onclick={() => {
+				byMeaning = !byMeaning;
+				meaningError = '';
+				if (!byMeaning) meaning = null;
+			}}
+		>
+			⌕ {t('search.meaning')}
+		</button>
 		<select bind:value={level} aria-label={t('common.level')}>
 			<option value="">{t('home.allLevels')}</option>
 			{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
 		</select>
 	</div>
+	{#if byMeaning}
+		<p class="mhint" aria-live="polite">
+			{#if meaningBusy}
+				{t('search.meaningBusy')}
+			{:else if meaningError}
+				<span class="err">{meaningError}</span>
+			{:else if meaning}
+				{t('search.meaningResults', { q: meaning.q })}
+				<button type="button" class="clear" onclick={clearMeaning}>{t('search.meaningClear')}</button>
+			{:else}
+				{t('search.meaningTitle')}
+			{/if}
+		</p>
+	{/if}
 {/snippet}
 
 {#snippet imageGrid()}
@@ -835,6 +939,9 @@
 
 	.filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 	.filters input[type='search'] { flex: 1 1 220px; min-width: 0; }
+	.mhint { margin: -6px 0 12px; font-size: 0.82rem; color: var(--muted); }
+	.mhint .err { color: var(--accent); }
+	.mhint .clear { border: 0; background: none; padding: 0 4px; text-decoration: underline; text-underline-offset: 3px; font-size: inherit; color: var(--text); }
 	.filters select { flex: 0 1 auto; max-width: 100%; }
 	.empty { color: var(--muted); padding: 32px 0; }
 	.empty a { color: var(--accent); margin-left: 4px; }

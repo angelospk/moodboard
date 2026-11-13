@@ -27,6 +27,10 @@ func main() {
 	if key := os.Getenv("GEMINI_API_KEY"); key != "" && len(os.Args) > 1 && os.Args[1] == "serve" {
 		limit, _ := strconv.Atoi(os.Getenv("MB_AI_DAILY_LIMIT"))
 		mb.EnableAI(app, mb.AIConfig{Key: key, Model: os.Getenv("MB_AI_MODEL"), DailyLimit: limit})
+		// Search by meaning and similar images: one embedding per image, only for users who agreed.
+		dim, _ := strconv.Atoi(os.Getenv("MB_EMBED_DIM"))
+		elimit, _ := strconv.Atoi(os.Getenv("MB_EMBED_DAILY_LIMIT"))
+		mb.EnableEmbeddings(app, mb.EmbedConfig{Key: key, Model: os.Getenv("MB_EMBED_MODEL"), Dim: dim, DailyLimit: elimit})
 	}
 
 	app.RootCmd.AddCommand(&cobra.Command{

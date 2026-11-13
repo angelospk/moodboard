@@ -77,13 +77,19 @@ func bindThumbs(app core.App) {
 			if _, err := ensureThumb(a, r, stop); err != nil {
 				a.Logger().Warn("thumbnail after upload failed", "record", r.Id, "error", err)
 			}
+			if _, err := ensureFeatures(a, r, stop); err != nil {
+				a.Logger().Warn("features after upload failed", "record", r.Id, "error", err)
+			}
 		})
 		return e.Next()
 	}
 	app.OnRecordAfterCreateSuccess("inspirations").BindFunc(after)
 	app.OnRecordAfterUpdateSuccess("inspirations").BindFunc(after)
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		run(func() { BackfillThumbs(se.App, 2*time.Second, stop) })
+		run(func() {
+			BackfillThumbs(se.App, 2*time.Second, stop)
+			BackfillFeatures(se.App, 200*time.Millisecond, stop)
+		})
 		return se.Next()
 	})
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {

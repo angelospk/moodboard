@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"regexp"
 	"slices"
@@ -60,6 +61,16 @@ type (
 		Limit     int      `json:"limit,omitempty" jsonschema:"1..100, default 20"`
 		Unlabeled bool     `json:"unlabeled,omitempty" jsonschema:"Only inspirations with no level or no tags and no pending suggestion"`
 	}
+	semanticArgs struct {
+		Query   string `json:"query" jsonschema:"What to look for, in any language: a mood, a material, a scene (up to 500 characters)"`
+		Project string `json:"project,omitempty" jsonschema:"Project name or id; leave out to search all projects"`
+		Limit   int    `json:"limit,omitempty" jsonschema:"1..50, default 12"`
+	}
+	similarArgs struct {
+		ID    string `json:"id" jsonschema:"Inspiration id"`
+		Scope string `json:"scope,omitempty" jsonschema:"project (default: the image's own project) or all"`
+		Limit int    `json:"limit,omitempty" jsonschema:"1..50, default 12"`
+	}
 	idArgs struct {
 		ID string `json:"id" jsonschema:"Inspiration id"`
 	}
@@ -111,6 +122,40 @@ func NewMCPServer(app core.App, user *core.Record) *mcp.Server {
 				return nil, nil, err
 			}
 			return jsonResult(rows)
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "semantic_search", Title: "Search by meaning", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: ptr(true)},
+		Description: "Find saved inspirations by what they look like, not by their words: \"warm minimal living room\", \"rough concrete\". Best match first, each with a score (about 0.3 to 1). Works only for a user who agreed to embeddings in the web app, and once their images are analysed. Costs one model call. Use search_inspirations for exact words in notes and titles."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a semanticArgs) (*mcp.CallToolResult, any, error) {
+			if q := strings.TrimSpace(a.Query); q == "" || utf8.RuneCountInString(q) > 500 {
+				return nil, nil, errors.New("query must be 1..500 characters")
+			}
+			project := ""
+			if a.Project != "" {
+				p, err := resolveProject(app, uid, a.Project, false)
+				if err != nil {
+					return nil, nil, err
+				}
+				project = p.Id
+			}
+			hits, err := searchByMeaning(app, user, strings.TrimSpace(a.Query), project, clampLimit(a.Limit, 12, 50))
+			if err != nil {
+				return nil, nil, err
+			}
+			return jsonResult(hitRows(app, uid, hits))
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "similar_inspirations", Title: "Similar inspirations", Annotations: ro,
+		Description: "Find images that look like one inspiration, best first, each with a score. Needs no model call. Empty with ready=false while the image is not analysed yet."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a similarArgs) (*mcp.CallToolResult, any, error) {
+			ready, hits, err := similarTo(app, uid, a.ID, a.Scope == "all", clampLimit(a.Limit, 12, 50))
+			if err == errNotFound {
+				return nil, nil, fmt.Errorf("inspiration not found: %s", a.ID)
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			return jsonResult(map[string]any{"ready": ready, "results": hitRows(app, uid, hits)})
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "get_inspiration", Title: "Get inspiration", Annotations: ro,
@@ -421,4 +466,27 @@ func suggestLabels(app core.App, uid string, a suggestArgs) (*core.Record, error
 	// Write only this field, so an autosave from the web app between the read and the save is kept.
 	r.IgnoreUnchangedFields(true)
 	return r, app.Save(r)
+}
+
+func clampLimit(n, def, max int) int {
+	if n < 1 {
+		return def
+	}
+	return min(n, max)
+}
+
+// hitRows is the MCP view of search hits: the usual inspiration row plus the score.
+func hitRows(app core.App, uid string, hits []hit) []map[string]any {
+	lv := levelNames(app, uid)
+	out := make([]map[string]any, 0, len(hits))
+	for _, h := range hits {
+		r, err := app.FindRecordById("inspirations", h.ID)
+		if err != nil {
+			continue
+		}
+		row := publicRow(r, "", lv)
+		row["score"] = math.Round(h.Score*1000) / 1000
+		out = append(out, row)
+	}
+	return out
 }
