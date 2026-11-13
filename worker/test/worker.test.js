@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptsType, handle, parseTarget } from '../src/index.js';
+import { acceptsType, handle, parseTarget, STALE } from '../src/index.js';
 
 const FILE = 'https://moodboard-api.haroldpoi.dev/api/mb/public/proj1/files/ins1';
 const ENV = { ORIGIN: 'https://moodboard-api.haroldpoi.dev' };
@@ -10,7 +10,8 @@ function fakeCache() {
 	return {
 		m,
 		match: async (req) => m.get(req.url)?.clone(),
-		put: async (req, res) => void m.set(req.url, res.clone())
+		put: async (req, res) => void m.set(req.url, res.clone()),
+		delete: async (req) => m.delete(req.url)
 	};
 }
 const ctx = () => {
@@ -101,8 +102,10 @@ describe('handle', () => {
 		clock.t += 45_000; // 45 s old
 		const aged = await handle(get(FILE, { accept: 'image/webp' }), ENV, ctx(), deps);
 		expect(aged.headers.get('cache-control')).toBe('private, max-age=15');
-		clock.t += 20_000; // 65 s old: expired, goes to the origin again
-		await handle(get(FILE, { accept: 'image/webp' }), ENV, ctx(), deps);
+		clock.t += 20_000; // 65 s old: past TTL, so the origin is asked again (the old copy is only a stand-in, see below)
+		const c2 = ctx();
+		await handle(get(FILE, { accept: 'image/webp' }), ENV, c2, deps);
+		await c2.done();
 		expect(calls).toHaveLength(2);
 	});
 
@@ -258,5 +261,166 @@ describe('public board JSON', () => {
 			await c.done();
 		}
 		expect(calls).toHaveLength(2);
+	});
+});
+
+describe('stale while revalidate', () => {
+	const BOARD = 'https://moodboard-api.haroldpoi.dev/api/mb/public/proj1';
+	const json = (name) => () =>
+		new Response(`{"project":{"name":"${name}"}}`, { status: 200, headers: { 'content-type': 'application/json' } });
+	const fetchOf = (...answers) => setup(answers.map((a) => (typeof a === 'string' ? json(a) : a)));
+	const run = async (req, deps) => {
+		const c = ctx();
+		const res = await handle(req, ENV, c, deps);
+		const text = await res.clone().text();
+		await c.done();
+		return { res, text };
+	};
+
+	it('stores copies with a max-age as long as STALE, or the Cache API would drop them at TTL', async () => {
+		const { deps } = fetchOf('old');
+		await run(get(BOARD), deps);
+		const img = setup(ok('image/webp'));
+		await run(get(FILE, { accept: 'image/webp' }), img.deps);
+		for (const stored of [...deps.cache.m.values(), ...img.deps.cache.m.values()]) {
+			expect(stored.headers.get('cache-control')).toBe(`public, max-age=${STALE}`);
+		}
+	});
+
+	it('serves an old board at once, refreshes it in the background, and the next visitor gets the new one', async () => {
+		const { calls, clock, deps } = fetchOf('old', 'new');
+		await run(get(BOARD), deps);
+		clock.t += 600_000; // 10 min old: past TTL, inside STALE
+		const stale = await run(get(BOARD), deps);
+		expect(stale.text).toContain('old');
+		expect(stale.res.headers.get('cache-control')).toBe('private, max-age=0'); // the browser must ask again
+		expect(calls).toHaveLength(2); // the refresh
+		const next = await run(get(BOARD), deps);
+		expect(next.text).toContain('new');
+		expect(next.res.headers.get('cache-control')).toBe('private, max-age=60');
+		expect(calls).toHaveLength(2);
+	});
+
+	it('drops the old board when the refresh says 404, so the next visitor gets 404 (made private)', async () => {
+		const { calls, clock, deps } = fetchOf('old', new Response('{"message":"x"}', { status: 404 }));
+		await run(get(BOARD), deps);
+		clock.t += 600_000;
+		expect((await run(get(BOARD), deps)).text).toContain('old'); // the one stale answer
+		expect(deps.cache.m.size).toBe(0);
+		const next = await run(get(BOARD), deps);
+		expect(next.res.status).toBe(404);
+		expect(calls).toHaveLength(3);
+	});
+
+	it('keeps the old copy (marked as served) when the refresh fails with a server error or a network error', async () => {
+		for (const failure of [new Response('down', { status: 502 }), () => Promise.reject(new Error('net'))]) {
+			const { clock, deps } = fetchOf('old', failure);
+			await run(get(BOARD), deps);
+			clock.t += 600_000;
+			expect((await run(get(BOARD), deps)).text).toContain('old');
+			expect(deps.cache.m.size).toBe(1);
+			expect([...deps.cache.m.values()][0].headers.get('x-stale-served')).toBe('1');
+		}
+	});
+
+	it('does not serve a board older than STALE: it asks the VPS first', async () => {
+		const { calls, clock, deps } = fetchOf('old', new Response('', { status: 404 }));
+		await run(get(BOARD), deps);
+		clock.t += (STALE + 1) * 1000;
+		const res = await run(get(BOARD), deps);
+		expect(res.res.status).toBe(404);
+		expect(calls).toHaveLength(2);
+	});
+
+	it('starts one refresh for many visitors of the same old board', async () => {
+		const { calls, clock, deps } = fetchOf('old', 'new');
+		await run(get(BOARD), deps);
+		clock.t += 600_000;
+		const c = ctx();
+		await Promise.all([handle(get(BOARD), ENV, c, deps), handle(get(BOARD), ENV, c, deps), handle(get(BOARD), ENV, c, deps)]);
+		await c.done();
+		expect(calls).toHaveLength(2);
+	});
+
+	it('serves an old image at once, then refreshes it; a 404 removes it', async () => {
+		const { calls, clock, deps } = setup([ok('image/webp'), new Response('', { status: 404 })]);
+		await run(get(FILE, { accept: 'image/webp' }), deps);
+		clock.t += 600_000;
+		const stale = await run(get(FILE, { accept: 'image/webp' }), deps);
+		expect(stale.text).toBe('IMG');
+		expect(stale.res.headers.get('cache-control')).toBe('private, max-age=0');
+		expect(calls).toHaveLength(2);
+		expect(calls[1].init.cf.image.width).toBe(1600);
+		expect(deps.cache.m.size).toBe(0);
+		const next = await run(get(FILE, { accept: 'image/webp' }), deps);
+		expect(next.res.status).toBe(404);
+	});
+
+	it('an old image is replaced by the refresh when it succeeds', async () => {
+		const fresh = () => new Response('IMG2', { status: 200, headers: { 'content-type': 'image/webp' } });
+		const { clock, deps } = setup([ok('image/webp'), fresh]);
+		await run(get(FILE, { accept: 'image/webp' }), deps);
+		clock.t += 600_000;
+		expect((await run(get(FILE, { accept: 'image/webp' }), deps)).text).toBe('IMG');
+		expect((await run(get(FILE, { accept: 'image/webp' }), deps)).text).toBe('IMG2');
+	});
+});
+
+describe('an old copy is served once', () => {
+	const BOARD = 'https://moodboard-api.haroldpoi.dev/api/mb/public/proj1';
+	const json = (name) => () => new Response(`{"project":{"name":"${name}"}}`, { status: 200, headers: { 'content-type': 'application/json' } });
+	const run = async (req, deps) => {
+		const c = ctx();
+		const res = await handle(req, ENV, c, deps);
+		const text = await res.clone().text();
+		await c.done();
+		return { res, text };
+	};
+
+	it('does not serve a board again when its refresh failed: the next visitor waits for the origin', async () => {
+		const { calls, clock, deps } = setup([json('old'), new Response('down', { status: 502 })]);
+		await run(get(BOARD), deps);
+		clock.t += 600_000;
+		expect((await run(get(BOARD), deps)).text).toContain('old'); // the one stale answer; its refresh gets 502
+		const next = await run(get(BOARD), deps);
+		expect(next.res.status).toBe(502); // asked the origin itself, did not serve the old copy
+		expect(next.text).not.toContain('old');
+		expect(calls).toHaveLength(3);
+	});
+
+	it('does not serve an image again when its refresh failed', async () => {
+		const { calls, clock, deps } = setup([ok('image/webp'), new Response('down', { status: 502 }), ok('image/png')]);
+		await run(get(FILE, { accept: 'image/webp' }), deps);
+		clock.t += 600_000;
+		expect((await run(get(FILE, { accept: 'image/webp' }), deps)).res.headers.get('cache-control')).toBe('private, max-age=0');
+		calls.length = 0;
+		const next = await run(get(FILE, { accept: 'image/webp' }), deps);
+		expect(next.res.headers.get('cache-control')).not.toBe('private, max-age=0');
+		expect(calls.length).toBeGreaterThan(0); // went to the origin
+	});
+
+	it('a successful refresh makes the copy fresh again, with no mark left', async () => {
+		const { clock, deps } = setup([json('old'), json('new')]);
+		await run(get(BOARD), deps);
+		clock.t += 600_000;
+		await run(get(BOARD), deps);
+		expect([...deps.cache.m.values()][0].headers.get('x-stale-served')).toBeNull();
+		expect((await run(get(BOARD), deps)).text).toContain('new');
+	});
+
+	it('still refreshes when writing the served marker fails (a 404 then removes the copy)', async () => {
+		const { calls, clock, deps } = setup([json('old'), new Response('{"message":"x"}', { status: 404 })]);
+		await run(get(BOARD), deps);
+		clock.t += 600_000;
+		const real = deps.cache.put;
+		let fail = true;
+		deps.cache.put = async (...a) => {
+			if (fail) { fail = false; throw new Error('cache write failed'); }
+			return real(...a);
+		};
+		expect((await run(get(BOARD), deps)).text).toContain('old');
+		expect(calls).toHaveLength(2); // the refresh ran although the marker write threw
+		expect(deps.cache.m.size).toBe(0);
+		expect((await run(get(BOARD), deps)).res.status).toBe(404);
 	});
 });

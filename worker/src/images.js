@@ -18,10 +18,12 @@ function listed(accept, type) {
 }
 
 /** The output format for an Accept header. Cloudflare's format 'auto' keeps a PNG source as PNG
- *  (measured: 125 KB instead of 8 KB), so the format is chosen here. A missing header gets WebP. */
-export function pickFormat(accept) {
+ *  (measured: 125 KB instead of 8 KB), so the format is chosen here. A missing header gets WebP.
+ *  `avif: false` never picks AVIF (the public images use WebP: it encodes faster on a cold request). */
+export function pickFormat(accept, { avif = true } = {}) {
 	if (!accept) return 'webp';
-	return listed(accept, 'image/avif') ? 'avif' : listed(accept, 'image/webp') ? 'webp' : 'jpeg';
+	if (avif && listed(accept, 'image/avif')) return 'avif';
+	return listed(accept, 'image/webp') ? 'webp' : 'jpeg';
 }
 
 const FILE_PATH = /^\/mbinspirations\/[a-z0-9]+\/[^/]+$/;

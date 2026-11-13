@@ -97,15 +97,34 @@ connects to (no private hosts, no redirects).
 ## Public images Worker
 
 `worker/` is a Cloudflare Worker on `moodboard-api.haroldpoi.dev/api/mb/public/*`. For a public board
-image (`/files/{id}`, optionally `?thumb=480x0`) it asks the VPS once, lets Cloudflare resize the image
-to 1600 px (480 px for a thumbnail), convert it to AVIF/WebP and drop all metadata (`cf.image`,
-`metadata: none`), and keeps the result at the edge for 60 seconds (a browser gets only the time that is left, and the VPS sends the same `max-age=60`, so a board turned private disappears within about a minute; measured on the live route: 404 after 51 s. The VPS answer is `private`, which keeps Cloudflare from keeping its own copy for the documented one-hour minimum). A 404 from the VPS (private or
-unknown board) is never cached. If resizing fails, the Worker serves the plain VPS file, which strips
-metadata too (`server/mb/stripmeta.go`). Everything else on that path passes through unchanged. The
-Worker is not CI-deployed: `cd worker && npm ci && npm test && npx wrangler deploy`. To switch it off,
-delete the `routes` entry in `worker/wrangler.jsonc` and deploy again. Free plan limits (Cloudflare docs,
-Nov 2026): 100,000 Worker requests a day, 5,000 unique image transformations a month (no charge above it;
-new sizes then fall back to the plain file).
+image (`/files/{id}`, optionally `?thumb=480x0`) it makes a WebP at 1600 px (480 px for a thumbnail) with
+`cf.image` (`metadata: none` drops GPS and camera data) and keeps it at the edge.
+
+**Cold path (measured 0.4-0.9 s, was 1.6-14.8 s).** The Worker asks the backend only for the storage key
+(`GET .../files/{id}/src`, header `X-MB-Resolve`; the backend checks public/private on every call and
+answers 404 without the secret), then resizes the file straight from the image bucket
+(`env.IMAGES`), so the 1-7 MB original never crosses the home connection. The key never reaches the
+visitor, and the raw bucket file is never served: the answer must carry Cloudflare's `cf-resized`
+header, else the old path runs (backend streams the cleaned file, then Cloudflare resizes it). The
+same fallback covers a missing or different secret (the resolver's 404 is not trusted: the old route
+decides), a resolver error or a 1.5 s timeout. Setup: the same random
+value in `MB_RESOLVE_SECRET` (`~/.local/share/moodboard/ai.env`, read by the backend) and in the Worker
+(`cd worker && npx wrangler secret put RESOLVE_SECRET`), then `server/deploy.sh` and `npx wrangler deploy`.
+
+**Freshness and revocation.** A copy is fresh for 60 s (the browser gets only the time that is left).
+A copy between 60 s and 1 hour old is served at once with `max-age=0` while one refresh runs in the
+background: a 200 replaces it, a 404 deletes it, another error keeps it but marks it as served, so the
+next request asks the backend itself. After a board is turned private, an edge location therefore shows it
+only to the requests that arrive during that one refresh (about a second), and only when a copy younger
+than 1 hour exists; measured on a temporary board: 200 at 61 s, 404 from 71 s. Older than 1 hour, the
+backend is asked first. A 404 is never cached.
+`server/warm-public.sh` (user timer `moodboard-warm.timer`, every 20 minutes) requests every public
+board and image so the copy near the backend stays under an hour old and a first visitor finds it warm.
+Everything else on that path passes through unchanged. The Worker is not CI-deployed:
+`cd worker && npm ci && npm test && npx wrangler deploy`. To switch it off, delete the `routes` entry
+in `worker/wrangler.jsonc` and deploy again. Free plan limits (Cloudflare docs, Nov 2026): 100,000
+Worker requests a day, 5,000 unique image transformations a month (no charge above it; new sizes then
+fall back to the plain file).
 
 Images live in the R2 bucket `moodboard-images` (`images.haroldpoi.dev/mbinspirations/<id>/<file>`),
 readable by anyone who knows the path. A public board never shows the stored file name (JSON field

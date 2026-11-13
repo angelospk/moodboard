@@ -21,6 +21,8 @@ func main() {
 	app := pocketbase.New()
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{Automigrate: false})
 	mb.Register(app)
+	// The Cloudflare Worker's secret for the storage-key route of public images (empty = route off).
+	mb.EnableResolver(os.Getenv("MB_RESOLVE_SECRET"))
 	// Automatic labels need GEMINI_API_KEY (from the systemd EnvironmentFile) and run only under `serve`.
 	if key := os.Getenv("GEMINI_API_KEY"); key != "" && len(os.Args) > 1 && os.Args[1] == "serve" {
 		limit, _ := strconv.Atoi(os.Getenv("MB_AI_DAILY_LIMIT"))

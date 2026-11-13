@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"moodboard/server/mb"
 )
 
 // shareFixture: alice owns boards A and B (one image each, plus one in no project); bob is another user.
@@ -219,5 +221,98 @@ func TestPublicBoardNeverRevealsStoredFileName(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// The Cloudflare Worker asks for the storage key of a public image, so it can resize the file from the
+// image bucket without the bytes crossing the home connection. Only a caller with the shared secret
+// gets it; a visitor never does (the key is the way to the original, which still holds its metadata).
+func (e *env) rawWith(method, url string, headers map[string]string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(method, url, nil)
+	for k, v := range headers {
+		r.Header.Set(k, v)
+	}
+	e.mux.ServeHTTP(w, r)
+	return w
+}
+
+func TestPublicImageResolver(t *testing.T) {
+	f := newShareFixture(t)
+	e := f.e
+	f.set(t, map[string]any{"public": true})
+	mb.WaitThumbs()
+	rec, err := e.app.FindRecordById("inspirations", f.insA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := rec.GetString("image")
+	url := "/api/mb/public/" + f.projA + "/files/" + f.insA + "/src"
+	good := map[string]string{"X-MB-Resolve": "s3cret"}
+
+	// Not enabled: nothing matches, not even an empty header.
+	mb.EnableResolver("")
+	for _, h := range []map[string]string{nil, {"X-MB-Resolve": ""}, good} {
+		if w := e.rawWith("GET", url, h); w.Code != 404 {
+			t.Fatalf("resolver off, headers %v: %d", h, w.Code)
+		}
+	}
+
+	mb.EnableResolver("s3cret")
+	t.Cleanup(func() { mb.EnableResolver("") })
+	for _, h := range []map[string]string{nil, {"X-MB-Resolve": "wrong"}, {"X-MB-Resolve": "s3cre"}, {"X-MB-Resolve": "s3cret2"}} {
+		if w := e.rawWith("GET", url, h); w.Code != 404 {
+			t.Fatalf("bad secret, headers %v: %d", h, w.Code)
+		}
+	}
+	if w := e.rawWith("GET", url+"?secret=s3cret", nil); w.Code != 404 {
+		t.Fatalf("the secret must not work as a query parameter: %d", w.Code)
+	}
+
+	w := e.rawWith("GET", url, good)
+	if w.Code != 200 {
+		t.Fatalf("resolve: %d %s", w.Code, w.Body.String())
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("Cache-Control %q", cc)
+	}
+	var got struct{ Key, Thumb string }
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if want := "mbinspirations/" + f.insA + "/" + name; got.Key != want {
+		t.Fatalf("key %q, want %q", got.Key, want)
+	}
+	if want := "mbinspirations/" + f.insA + "/thumbs_" + name + "/480x0_" + name; got.Thumb != want {
+		t.Fatalf("thumb %q, want %q", got.Thumb, want)
+	}
+
+	// A missing thumbnail is reported as empty, and the request does not make one.
+	e.dropThumb(rec)
+	w = e.rawWith("GET", url, good)
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if w.Code != 200 || got.Thumb != "" || e.thumbExists(rec) {
+		t.Fatalf("missing thumb: %d thumb %q exists %v", w.Code, got.Thumb, e.thumbExists(rec))
+	}
+
+	// The normal image route is untouched by the secret and never shows the key.
+	if w := e.rawWith("GET", "/api/mb/public/"+f.projA+"/files/"+f.insA, good); w.Code != 200 || strings.Contains(w.Body.String(), "mbinspirations") {
+		t.Fatalf("normal route with the secret: %d", w.Code)
+	}
+
+	// Private board, a card of another board, a card with no board, an unknown card: all 404.
+	for _, u := range []string{
+		"/api/mb/public/" + f.projA + "/files/" + f.insB + "/src",
+		"/api/mb/public/" + f.projA + "/files/" + f.insX + "/src",
+		"/api/mb/public/" + f.projA + "/files/nope/src",
+		"/api/mb/public/" + f.projB + "/files/" + f.insB + "/src",
+	} {
+		if w := e.rawWith("GET", u, good); w.Code != 404 {
+			t.Fatalf("%s: %d", u, w.Code)
+		}
+	}
+	f.set(t, map[string]any{"public": false})
+	if w := e.rawWith("GET", url, good); w.Code != 404 {
+		t.Fatalf("after the board went private: %d", w.Code)
 	}
 }

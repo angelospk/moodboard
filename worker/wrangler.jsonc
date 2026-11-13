@@ -5,6 +5,6 @@
 	"compatibility_date": "2026-11-01",
 	"workers_dev": true,
 	"routes": [{ "pattern": "moodboard-api.haroldpoi.dev/api/mb/public/*", "zone_name": "haroldpoi.dev" }],
-	"vars": { "ORIGIN": "https://moodboard-api.haroldpoi.dev" },
+	"vars": { "ORIGIN": "https://moodboard-api.haroldpoi.dev", "IMAGES": "https://images.haroldpoi.dev" },
 	"observability": { "enabled": true }
 }

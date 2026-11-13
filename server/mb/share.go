@@ -2,10 +2,12 @@ package mb
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"io"
 	"net/http"
 	"path"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -22,6 +24,7 @@ const shareThumb = "480x0"
 func bindShare(se *core.ServeEvent) {
 	se.Router.GET("/api/mb/public/{project}", handlePublicBoard)
 	se.Router.GET("/api/mb/public/{project}/files/{id}", handlePublicFile)
+	se.Router.GET("/api/mb/public/{project}/files/{id}/src", handlePublicSrc)
 }
 
 // publicProject returns the project when it exists and is public; nil otherwise.
@@ -105,14 +108,58 @@ func handlePublicBoard(e *core.RequestEvent) error {
 	})
 }
 
-// handlePublicFile serves one image of a public board (?thumb=480x0 for the card thumbnail).
-func handlePublicFile(e *core.RequestEvent) error {
+// publicImage returns the inspiration of the request's public board that has an image; nil otherwise.
+func publicImage(e *core.RequestEvent) *core.Record {
 	p := publicProject(e.App, e.Request.PathValue("project"))
 	if p == nil {
-		return publicNotFound(e)
+		return nil
 	}
 	r, err := e.App.FindRecordById("inspirations", e.Request.PathValue("id"))
 	if err != nil || r.GetString("project_id") != p.Id || r.GetString("user_id") != p.GetString("user_id") || r.GetString("image") == "" {
+		return nil
+	}
+	return r
+}
+
+// resolveSecret is the shared secret of the Cloudflare Worker (env MB_RESOLVE_SECRET); empty = off.
+var resolveSecret atomic.Value
+
+// EnableResolver turns the storage-key route on with this secret ("" turns it off).
+func EnableResolver(secret string) { resolveSecret.Store(secret) }
+
+// handlePublicSrc tells the Cloudflare Worker where an image of a public board is stored, so the Worker
+// can resize it from the image bucket and the bytes never cross the home connection. The key is the way
+// to the original (it still holds GPS and camera data), so only a caller with the shared secret gets it:
+// a visitor, a wrong secret, a secret in the URL and a server without a secret all get the plain 404.
+// The board check runs on every call, so a board turned private stops here at once.
+func handlePublicSrc(e *core.RequestEvent) error {
+	secret, _ := resolveSecret.Load().(string)
+	got := e.Request.Header.Get("X-MB-Resolve")
+	if secret == "" || subtle.ConstantTimeCompare([]byte(got), []byte(secret)) != 1 {
+		return publicNotFound(e)
+	}
+	r := publicImage(e)
+	if r == nil {
+		return publicNotFound(e)
+	}
+	fsys, err := e.App.NewFilesystem()
+	if err != nil {
+		return e.InternalServerError("", err)
+	}
+	defer fsys.Close()
+	// The thumbnail only if it exists: making one here would wait for the decode slot.
+	thumb := thumbKeyOf(r)
+	if ok, _ := fsys.Exists(thumb); !ok {
+		thumb = ""
+	}
+	e.Response.Header().Set("Cache-Control", "no-store")
+	return e.JSON(http.StatusOK, map[string]string{"key": r.BaseFilesPath() + "/" + r.GetString("image"), "thumb": thumb})
+}
+
+// handlePublicFile serves one image of a public board (?thumb=480x0 for the card thumbnail).
+func handlePublicFile(e *core.RequestEvent) error {
+	r := publicImage(e)
+	if r == nil {
 		return publicNotFound(e)
 	}
 	fsys, err := e.App.NewFilesystem()
