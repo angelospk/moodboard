@@ -94,6 +94,23 @@ when its `updated_at` is newer, so a late echo of an older save cannot undo a ne
 `save_inspiration` downloads only public https images and checks the address it actually
 connects to (no private hosts, no redirects).
 
+## Public images Worker
+
+`worker/` is a Cloudflare Worker on `moodboard-api.haroldpoi.dev/api/mb/public/*`. For a public board
+image (`/files/{id}`, optionally `?thumb=480x0`) it asks the VPS once, lets Cloudflare resize the image
+to 1600 px (480 px for a thumbnail), convert it to AVIF/WebP and drop all metadata (`cf.image`,
+`metadata: none`), and keeps the result at the edge for 5 minutes. A 404 from the VPS (private or
+unknown board) is never cached. If resizing fails, the Worker serves the plain VPS file, which strips
+metadata too (`server/mb/stripmeta.go`). Everything else on that path passes through unchanged. The
+Worker is not CI-deployed: `cd worker && npm ci && npm test && npx wrangler deploy`. To switch it off,
+delete the `routes` entry in `worker/wrangler.jsonc` and deploy again. Free plan limits (Cloudflare docs,
+Nov 2026): 100,000 Worker requests a day, 5,000 unique image transformations a month (no charge above it;
+new sizes then fall back to the plain file).
+
+Images live in the R2 bucket `moodboard-images` (`images.haroldpoi.dev/mbinspirations/<id>/<file>`),
+readable by anyone who knows the path. A public board never shows the stored file name (JSON field
+and download name are neutral), because that name is the key to the original there.
+
 ## Develop
 
 Requirements: Go 1.27+, Node 22.
