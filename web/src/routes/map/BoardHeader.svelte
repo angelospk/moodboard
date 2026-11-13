@@ -85,7 +85,7 @@
 			bind:value={search}
 			aria-label={t('header.search')}
 			onkeydown={(e) => {
-				if (byMeaning && e.key === 'Enter') {
+				if (byMeaning && e.key === 'Enter' && !e.isComposing) {
 					e.preventDefault();
 					onmeaning();
 				}

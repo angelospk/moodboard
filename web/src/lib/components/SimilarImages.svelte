@@ -50,10 +50,13 @@
 		const s = scope;
 		const imageId = id;
 		void again;
-		if (!enabled) return;
+		selected = [];
+		if (!enabled) {
+			selecting = false;
+			return;
+		}
 		const mine = ++latest;
 		phase = 'loading';
-		selected = [];
 		(async () => {
 			try {
 				const r = await similarTo(pb, imageId, s);

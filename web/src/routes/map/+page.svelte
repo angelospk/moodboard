@@ -110,13 +110,13 @@
 	// Search by meaning: the ids the server found for the last query, best first (needs consent).
 	let byMeaning = $state(false);
 	let meaningBusy = $state(false);
-	let meaning = $state<{ q: string; ids: string[] } | null>(null);
+	let meaning = $state<{ q: string; scope: string; ids: string[] } | null>(null);
 
 	const matches = $derived.by(() => {
 		const q = search.trim().toLowerCase();
 		if (byMeaning) {
 			// Until Enter runs the query (or after the text changed), nothing is dimmed.
-			if (!meaning || meaning.q !== search.trim()) return null;
+			if (!meaning || meaning.q !== search.trim() || meaning.scope !== project) return null;
 			const shown = new Set(filtered.map((i) => i.id));
 			return new Set(meaning.ids.filter((id) => shown.has(id)));
 		}
@@ -136,13 +136,15 @@
 		if (!(await needSmart('embed'))) return;
 		meaningBusy = true;
 		try {
-			const scope = project !== 'all' && project !== 'none' ? project : '';
-			const out = await searchByMeaning(data.pb, q, scope);
+			const asked = project;
+			const out = await searchByMeaning(data.pb, q, asked !== 'all' && asked !== 'none' ? asked : '');
+			// The user moved to another project meanwhile: these results are for the old one.
+			if (asked !== project) return;
 			if (!out.enabled) {
 				toast(t('search.meaningUnavailable'));
 				return;
 			}
-			meaning = { q, ids: out.results.map((h) => h.id) };
+			meaning = { q, scope: asked, ids: out.results.map((h) => h.id) };
 			if (!meaning.ids.length) toast(t('search.meaningNone'));
 		} catch (e) {
 			toast({ text: e instanceof SmartSearchError && e.kind === 'limit' ? t('search.meaningLimit') : t('search.meaningFailed'), tone: 'error' }, 5000);

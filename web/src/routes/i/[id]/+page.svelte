@@ -110,9 +110,8 @@
 		if (src) Object.assign(fields, { source_url: src, source_title: null });
 		bulkBusy = true;
 		bulkMsg = '';
-		// The other images are saved at once; this image goes through its own autosave, so the form
-		// and the saved row never disagree.
-		const out = await updateMany(data.pb, picked, fields);
+		// This image goes through its own autosave (queued first, so a later edit of the form wins),
+		// so the form and the saved row never disagree; the other images are saved at the same time.
 		if (fields.project_id !== undefined) {
 			projectId = fields.project_id ?? '';
 			change('project_id', fields.project_id);
@@ -122,10 +121,12 @@
 			change('source_url', src);
 			change('source_title', null);
 		}
+		const [out, selfSaved] = await Promise.all([updateMany(data.pb, picked, fields), saver.flush()]);
 		bulkBusy = false;
-		const ok = out.ok.length + 1;
-		bulkMsg = out.failed.length ? t('bulk.partial', { ok, failed: out.failed.length }) : t('bulk.changed', { n: ok });
-		if (!out.failed.length) {
+		const ok = out.ok.length + (selfSaved ? 1 : 0);
+		const failed = out.failed.length + (selfSaved ? 0 : 1);
+		bulkMsg = failed ? t('bulk.partial', { ok, failed }) : t('bulk.changed', { n: ok });
+		if (!failed) {
 			bulkProject = '';
 			bulkSource = '';
 			picking = false;
