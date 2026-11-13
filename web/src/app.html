@@ -14,9 +14,43 @@
 				if (/^#[0-9a-f]{6}$/i.test(a.dc)) r.style.setProperty('--canvas-dark', a.dc);
 			} catch (e) {}
 		</script>
+		<style>
+			/* The boot screen: shown until the first page has its data (the root layout removes it). */
+			:root { color-scheme: light dark; }
+			:root[data-theme='light'] { color-scheme: light; }
+			:root[data-theme='dark'] { color-scheme: dark; }
+			body { margin: 0; background: light-dark(var(--canvas-light, #f4f1eb), var(--canvas-dark, #161513)); }
+			#boot {
+				position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px;
+				font: 15px/1.4 system-ui, sans-serif; color: light-dark(#6d675e, #a39d92);
+				opacity: 0; animation: boot-in 0.2s 0.15s forwards;
+			}
+			#boot i {
+				width: 26px; height: 26px; border-radius: 50%;
+				border: 2.5px solid light-dark(#e3ddd3, #2e2b27); border-top-color: light-dark(#b4532a, #e07a4c);
+				animation: boot-spin 0.8s linear infinite;
+			}
+			@keyframes boot-in { to { opacity: 1; } }
+			@keyframes boot-spin { to { transform: rotate(1turn); } }
+			@media (prefers-reduced-motion: reduce) { #boot i { animation-duration: 2.4s; } }
+		</style>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<div id="boot" role="status" aria-live="polite">
+			<i aria-hidden="true"></i>
+			<span id="boot-text">Φόρτωση…</span>
+		</div>
+		<script>
+			try {
+				var l = [localStorage.getItem('moodboard:lang')].concat(navigator.languages || []);
+				for (var k = 0; k < l.length; k++) {
+					var b = (l[k] || '').toLowerCase().split('-')[0];
+					if (b === 'el') break;
+					if (b === 'en') { document.getElementById('boot-text').textContent = 'Loading…'; break; }
+				}
+			} catch (e) {}
+		</script>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
