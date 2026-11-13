@@ -76,8 +76,8 @@ describe('handle', () => {
 		expect(res.headers.get('access-control-allow-origin')).toBe('*'); // public images, like the API answers
 		expect(calls).toHaveLength(1);
 		expect(calls[0].url).toBe(FILE);
-		// Cloudflare picks the format from the Accept header we forward.
-		expect(calls[0].init.cf.image).toEqual({ width: 1600, fit: 'scale-down', format: 'auto', quality: 85, metadata: 'none' });
+		// The format follows the Accept header ('auto' would keep a PNG as PNG).
+		expect(calls[0].init.cf.image).toEqual({ width: 1600, fit: 'scale-down', format: 'avif', quality: 85, metadata: 'none' });
 		expect(calls[0].init.headers.accept).toBe('image/avif,image/webp');
 		expect(deps.cache.m.size).toBe(1);
 		expect([...deps.cache.m.keys()][0]).toContain('w=1600');

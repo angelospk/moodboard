@@ -250,10 +250,8 @@ export function thumbUrl(url: string | null | undefined, cdn = IMAGE_CDN): strin
 	if (!url) return null;
 	if (!/^https?:/.test(url)) return url;
 	if (cdn && url.startsWith(`${cdn}/`)) {
-		// The server stores the thumbnail next to the image: thumbs_<name>/480x0_<name>.
-		const cut = url.lastIndexOf('/');
-		const name = url.slice(cut + 1);
-		return `${url.slice(0, cut)}/thumbs_${name}/480x0_${name}`;
+		// The image Worker on the CDN resizes the stored file and sends AVIF or WebP (see worker/src/images.js).
+		return `${url.split('?')[0]}?w=480`;
 	}
 	const u = new URL(url);
 	u.searchParams.set('thumb', '480x0');
@@ -262,7 +260,8 @@ export function thumbUrl(url: string | null | undefined, cdn = IMAGE_CDN): strin
 
 export function imageUrl(pb: PocketBase, r: Pick<Inspiration, 'id' | 'image_path'>, token: string, cdn = cdnFor(pb)): string {
 	// The CDN (Cloudflare R2) serves the file by its unguessable path: no token, no API call.
-	if (cdn) return `${cdn}/mbinspirations/${r.id}/${encodeURIComponent(r.image_path)}`;
+	// ?w=2048: the image Worker sends it at most 2048 px wide, as AVIF or WebP (about 15x smaller than a PNG).
+	if (cdn) return `${cdn}/mbinspirations/${r.id}/${encodeURIComponent(r.image_path)}?w=2048`;
 	return pb.files.getURL({ id: r.id, collectionName: 'inspirations' }, r.image_path, { token });
 }
 

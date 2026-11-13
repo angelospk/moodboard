@@ -17,6 +17,8 @@
 // stored. So TTL also bounds how long a board stays visible after it is made private or edited.
 // Every other request goes to the VPS unchanged.
 
+import { pickFormat } from './images.js';
+
 export const TTL = 60;
 const FILE_PATH = /^\/api\/mb\/public\/[^/]+\/files\/[^/]+$/;
 const BOARD_PATH = /^\/api\/mb\/public\/[^/]+$/;
@@ -113,10 +115,10 @@ export async function handle(request, env, ctx, { fetch, cache, now = Date.now }
 
 	let res = null;
 	try {
-		// format "auto" lets Cloudflare choose AVIF, WebP or JPEG from the Accept header, which we forward.
+		// The format comes from the Accept header (see pickFormat): Cloudflare's "auto" keeps a PNG as PNG.
 		res = await fetch(originUrl, {
 			headers: { accept: accept || '*/*' },
-			cf: { image: { width: target.width, fit: 'scale-down', format: 'auto', quality: 85, metadata: 'none' } }
+			cf: { image: { width: target.width, fit: 'scale-down', format: pickFormat(accept), quality: 85, metadata: 'none' } }
 		});
 	} catch {
 		// e.g. the free transformation quota is used up: fall through to the plain file

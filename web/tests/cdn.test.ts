@@ -7,7 +7,7 @@ const row = { id: 'rec123abc456def', image_path: 'photo_ab12cd34ef.png' };
 describe('image CDN urls', () => {
 	it('points at the CDN with the stored file path, without a token', () => {
 		const pb = {} as never;
-		expect(imageUrl(pb, row, 'tok', CDN)).toBe(`${CDN}/mbinspirations/rec123abc456def/photo_ab12cd34ef.png`);
+		expect(imageUrl(pb, row, 'tok', CDN)).toBe(`${CDN}/mbinspirations/rec123abc456def/photo_ab12cd34ef.png?w=2048`);
 	});
 
 	it('keeps the API url when no CDN is set', () => {
@@ -15,9 +15,9 @@ describe('image CDN urls', () => {
 		expect(imageUrl(pb, row, 'tok', '')).toBe('https://api/x/photo_ab12cd34ef.png?token=tok');
 	});
 
-	it('thumbUrl maps a CDN url to the stored 480x0 thumbnail', () => {
-		const url = `${CDN}/mbinspirations/rec123abc456def/photo_ab12cd34ef.png`;
-		expect(thumbUrl(url, CDN)).toBe(`${CDN}/mbinspirations/rec123abc456def/thumbs_photo_ab12cd34ef.png/480x0_photo_ab12cd34ef.png`);
+	it('thumbUrl asks the CDN for a 480 px copy', () => {
+		const url = `${CDN}/mbinspirations/rec123abc456def/photo_ab12cd34ef.png?w=2048`;
+		expect(thumbUrl(url, CDN)).toBe(`${CDN}/mbinspirations/rec123abc456def/photo_ab12cd34ef.png?w=480`);
 	});
 
 	it('thumbUrl still adds ?thumb for API urls and leaves blob urls alone', () => {
@@ -37,6 +37,6 @@ describe('image CDN urls', () => {
 			files: { getToken: () => Promise.reject(new Error('token endpoint down')) }
 		} as never;
 		const urls = await imageUrls(pb, [{ id: 'r1', image_path: 'a.png' } as never]);
-		expect(urls['a.png']).toBe('https://images.haroldpoi.dev/mbinspirations/r1/a.png');
+		expect(urls['a.png']).toBe('https://images.haroldpoi.dev/mbinspirations/r1/a.png?w=2048');
 	});
 });

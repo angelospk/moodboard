@@ -111,6 +111,13 @@ Images live in the R2 bucket `moodboard-images` (`images.haroldpoi.dev/mbinspira
 readable by anyone who knows the path. A public board never shows the stored file name (JSON field
 and download name are neutral), because that name is the key to the original there.
 
+The app asks for `?w=480` (cards) and `?w=2048` (panel, viewer). A second Worker,
+`worker/src/images.js` (`npx wrangler deploy -c wrangler.images.jsonc`, route
+`images.haroldpoi.dev/mbinspirations/*`), resizes the stored file with Cloudflare Image Transformations and
+sends AVIF, WebP or JPEG by the Accept header, cached for a year. A 2.1 MB PNG became 8 KB (480 px) and
+115 KB (2048 px) as AVIF. Past the 5,000 monthly transformations, or on any error, the stored file is served.
+The VPS-made `thumbs_*` files are only used for the public board and for local servers.
+
 ## Develop
 
 Requirements: Go 1.27+, Node 22.
