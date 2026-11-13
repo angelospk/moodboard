@@ -94,7 +94,7 @@
 	let search = $state('');
 	let highlight = $state<string | null>(null);
 	let notesOn = $state(false);
-	let size = $state(160);
+	let size = $state(220);
 	let prefsLoaded = false;
 
 	const inProject = $derived(

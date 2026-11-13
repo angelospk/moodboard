@@ -99,13 +99,13 @@ func TestPublicBoardDefaults(t *testing.T) {
 	mustLack(t, out, "site.example", "Σελίδα Α", "Μυστικό Β", "κρυφό Β", f.insB, f.insX, "χωρίς project", "παλιό-μυστικό",
 		"alice@x.gr", "user_id", f.projB)
 
-	// Images of this board only; thumbnails work; browsers must revalidate.
+	// Images of this board only; thumbnails work; browsers may reuse them for 5 minutes.
 	for _, u := range []string{"/api/mb/public/" + f.projA + "/files/" + f.insA, "/api/mb/public/" + f.projA + "/files/" + f.insA + "?thumb=480x0"} {
 		w := e.raw("GET", u)
 		if w.Code != 200 || !strings.HasPrefix(w.Body.String(), "\x89PNG") {
 			t.Fatalf("%s: want png, got %d", u, w.Code)
 		}
-		if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-cache") {
+		if cc := w.Header().Get("Cache-Control"); cc != "private, max-age=300" {
 			t.Fatalf("image Cache-Control %q", cc)
 		}
 	}

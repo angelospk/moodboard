@@ -83,7 +83,7 @@
 				{items}
 				{urlOf}
 				{colors}
-				size={200}
+				size={260}
 				{notesOn}
 				{selectedId}
 				{highlight}

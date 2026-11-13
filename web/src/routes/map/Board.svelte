@@ -97,6 +97,7 @@
 
 	const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 	const K_MIN = 0.15;
+	const AUTO_FIT_MIN = 0.6;
 	const K_MAX = 4;
 	/** Room the dock takes at the bottom of the canvas, screen px. */
 	const DOCK_SPACE = 80;
@@ -491,9 +492,11 @@
 		}
 		if (!Number.isFinite(minX)) return;
 		const margin = W < 500 ? 16 : 48;
+		// The automatic fit keeps cards readable: it stops at AUTO_FIT_MIN and centres the board.
+		// The fit button (explicit) still shows everything.
 		const k = clamp(
 			Math.min((W - margin * 2) / Math.max(1, maxX - minX), (H - margin * 2) / Math.max(1, maxY - minY)),
-			K_MIN,
+			explicit ? K_MIN : AUTO_FIT_MIN,
 			1.25
 		);
 		view = { k, x: W / 2 - ((minX + maxX) / 2) * k, y: H / 2 + 8 - ((minY + maxY) / 2) * k };

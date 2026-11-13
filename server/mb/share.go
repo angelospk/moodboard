@@ -122,9 +122,9 @@ func handlePublicFile(e *core.RequestEvent) error {
 			key, name = thumb, shareThumb+"_"+name
 		}
 	}
-	// Browsers may keep the file but must ask again on each use (a cheap 304), so turning the board
-	// private stops it at once.
-	e.Response.Header().Set("Cache-Control", "private, no-cache")
+	// Browsers may reuse the file for 5 minutes without asking, so turning the board private stops
+	// it within 5 minutes. The board JSON stays no-store and stops at once.
+	e.Response.Header().Set("Cache-Control", "private, max-age=300")
 	e.Response.Header().Del("X-Frame-Options")
 	if err := fsys.Serve(e.Response, e.Request, key, name); err != nil {
 		return publicNotFound(e)
