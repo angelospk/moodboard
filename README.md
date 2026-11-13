@@ -42,7 +42,7 @@ The icon is drawn by `python3 extension/scripts/icons.py` (it writes `favicon.sv
 ```
 browser ── https ──> moodboard.haroldpoi.dev        static SvelteKit SPA (GitHub Pages)
    │
-   └──── https + SSE ─> moodboard-api.haroldpoi.dev  Cloudflare tunnel ─> VPS 127.0.0.1:8190
+   └──── https + SSE ─> moodboard-api.haroldpoi.dev  Cloudflare tunnel ─> mini PC 127.0.0.1:8190
 Chrome extension ──────┘                             one Go binary: PocketBase + /api/mb + /mcp
 ```
 
@@ -89,7 +89,7 @@ when its `updated_at` is newer, so a late echo of an older save cannot undo a ne
   email and password. This is OAuth 2.1 (`server/mb/oauth.go`): dynamic client registration,
   PKCE S256, 1-hour access tokens, 30-day refresh tokens that rotate on every use.
 - **Other clients:** make a long-lived token on the server:
-  `/opt/moodboard/moodboard mcp-token <email> [days] --dir /opt/moodboard/pb_data`.
+  `~/.local/share/moodboard/moodboard mcp-token <email> [days] --dir ~/.local/share/moodboard/pb_data`.
 
 `save_inspiration` downloads only public https images and checks the address it actually
 connects to (no private hosts, no redirects).
@@ -149,7 +149,7 @@ cd extension && npm run check
 |---|---|
 | Web app | push to `main` under `web/` → `.github/workflows/pages.yml` → GitHub Pages |
 | Extension | push to `main` under `extension/` → `.github/workflows/extension.yml` → release `ext-v1.0.N` with the zip and the Windows installer |
-| Backend | `server/deploy.sh` (tests, build, copy to the VPS, restart the systemd unit `moodboard`) |
+| Backend | `server/deploy.sh` (tests, build, install on the mini PC, restart the systemd user unit `moodboard`) |
 
 PocketBase backs up its data every night at 03:30 UTC (`pb_data/backups`, last 7 kept). On the
 mini PC, the systemd user timer `moodboard-backup.timer` (05:15) runs `server/backup-pull.sh`,
