@@ -14,6 +14,32 @@
 				if (pm) {
 					var pu = 'https://moodboard-api.haroldpoi.dev/api/mb/public/' + pm[1];
 					window.__mbBoard = { url: pu, res: fetch(pu, { credentials: 'omit' }) };
+					// The cards nearest the middle of the board are what the first view shows (the automatic
+					// fit centres the board). Their 480 px thumbnails start now, with the same urls the cards
+					// use (thumbUrl in src/lib/inspirations.ts), so they download while the app's code does.
+					// Held in __mbThumbs so the browser keeps them for the cards.
+					window.__mbBoard.res
+						.then(function (r) {
+							return r.ok ? r.clone().json() : null;
+						})
+						.then(function (b) {
+							if (!b || !b.inspirations) return;
+							var pos = b.positions || {};
+							var list = b.inspirations.filter(function (i) { return !i.crop || i.crop.w >= 0.6; });
+							var xs = [], ys = [];
+							list.forEach(function (i) { var p = pos[i.id]; if (p) { xs.push(p.x); ys.push(p.y); } });
+							var cx = (Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2;
+							var cy = (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2;
+							var dist = function (i) { var p = pos[i.id]; return p ? Math.hypot(p.x - cx, p.y - cy) : Infinity; };
+							list.sort(function (a, c) { return dist(a) - dist(c) || 0; });
+							window.__mbThumbs = list.slice(0, 24).map(function (i) {
+								var im = new Image();
+								im.decoding = 'async';
+								im.src = pu + '/files/' + encodeURIComponent(i.id) + '?thumb=480x0';
+								return im;
+							});
+						})
+						.catch(function () {});
 				}
 			} catch (e) {}
 		</script>
