@@ -1,13 +1,14 @@
 package mb
 
 import (
+	"bytes"
 	"io"
 	"net/http"
-	"path"
-	"strings"
+	"strconv"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/filesystem"
 )
 
 // Public boards. When a project has "public" on, anyone with /s/<project id> reads that one project:
@@ -130,25 +131,49 @@ func handlePublicFile(e *core.RequestEvent) error {
 	// it within 5 minutes. The board JSON stays no-store and stops at once.
 	e.Response.Header().Set("Cache-Control", "private, max-age=300")
 	e.Response.Header().Del("X-Frame-Options")
-	// A JPEG original may hold GPS and camera data: stream it without that (thumbnails are re-encoded
-	// and have none).
-	if ext := strings.ToLower(path.Ext(name)); key == r.BaseFilesPath()+"/"+r.GetString("image") && (ext == ".jpg" || ext == ".jpeg") {
-		rd, err := fsys.GetReader(key)
-		if err != nil {
-			return publicNotFound(e)
+	// An original image (not the re-encoded thumbnail) may hold GPS, camera data or a second picture:
+	// serve JPEG, PNG and WebP without it. The format comes from the file's first bytes, not its name.
+	if key == r.BaseFilesPath()+"/"+r.GetString("image") {
+		if served, err := serveClean(e, fsys, key); served {
+			return err
 		}
-		defer rd.Close()
-		clean, err := StripJPEGMeta(rd)
-		if err != nil {
-			return publicNotFound(e)
-		}
-		e.Response.Header().Set("Content-Type", "image/jpeg")
-		e.Response.WriteHeader(http.StatusOK)
-		_, _ = io.Copy(e.Response, clean)
-		return nil
 	}
 	if err := fsys.Serve(e.Response, e.Request, key, name); err != nil {
 		return publicNotFound(e)
 	}
 	return nil
+}
+
+// cleanSlots limits how many originals are read into memory to be cleaned at once (up to 10 MB each).
+var cleanSlots = make(chan struct{}, 2)
+
+// serveClean writes the file at key without its metadata. It reports false, and writes nothing,
+// when the file is not a format StripImageMeta cleans, so the caller serves it the normal way.
+func serveClean(e *core.RequestEvent, fsys *filesystem.System, key string) (bool, error) {
+	rd, err := fsys.GetReader(key)
+	if err != nil {
+		return false, nil
+	}
+	defer rd.Close()
+	head := make([]byte, 12)
+	n, _ := io.ReadFull(rd, head)
+	if !IsStrippable(head[:n]) {
+		return false, nil
+	}
+	select {
+	case cleanSlots <- struct{}{}:
+		defer func() { <-cleanSlots }()
+	case <-e.Request.Context().Done():
+		return true, publicNotFound(e)
+	}
+	clean, err := StripImageMeta(io.MultiReader(bytes.NewReader(head[:n]), rd))
+	if err != nil {
+		return true, publicNotFound(e) // never serve a half-cleaned original
+	}
+	body, _ := io.ReadAll(clean)
+	e.Response.Header().Set("Content-Type", http.DetectContentType(body))
+	e.Response.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	e.Response.WriteHeader(http.StatusOK)
+	_, _ = e.Response.Write(body)
+	return true, nil
 }
