@@ -68,12 +68,16 @@ func EnableAI(app core.App, cfg AIConfig) *Labeler {
 			l.wg.Done()
 		}
 	}()
+	labelers.Store(app, l)
 	app.OnRecordAfterCreateSuccess("inspirations").BindFunc(func(e *core.RecordEvent) error {
 		l.enqueue(e.Record.Id)
 		return e.Next()
 	})
 	return l
 }
+
+// labelers lets the /api/mb/suggest route (bound in Register) find the labeler of its app.
+var labelers sync.Map // core.App -> *Labeler
 
 // Wait blocks until the queue is empty (tests).
 func (l *Labeler) Wait() { l.wg.Wait() }
@@ -123,13 +127,34 @@ func (l *Labeler) label(id string) error {
 	if hasSuggestion(r) || r.GetString("level") != "" && len(stringList(r.Get("tags"))) > 0 {
 		return nil
 	}
-	if !l.take(uid) {
-		return errors.New("daily limit reached")
-	}
-
 	img, err := l.readImage(r)
 	if err != nil {
 		return err
+	}
+	level, tags, err := l.suggest(uid, img)
+	if err != nil {
+		return err
+	}
+	sg := map[string]any{"level": nilIfEmpty(level), "tags": tags}
+	// Re-read: the user may have labeled it while we waited. Write only this field.
+	if r, err = l.app.FindRecordById("inspirations", id); err != nil || hasSuggestion(r) {
+		return err
+	}
+	r.Set("suggestion", sg)
+	r.IgnoreUnchangedFields(true)
+	return l.app.Save(r)
+}
+
+var (
+	errAILimit    = errors.New("daily limit reached")
+	errAINoAnswer = errors.New("answer had no usable level or tags")
+)
+
+// suggest asks the model about one image of user uid. It returns the user's level id (or "") and up
+// to aiMaxTags cleaned tags. It counts one call against the user's daily budget.
+func (l *Labeler) suggest(uid string, img aiImage) (string, []string, error) {
+	if !l.take(uid) {
+		return "", nil, errAILimit
 	}
 	levels := listLevels(l.app, uid)
 	names := make([]string, 0, len(levels))
@@ -140,30 +165,24 @@ func (l *Labeler) label(id string) error {
 	if len(known) > 80 {
 		known = known[:80]
 	}
-
 	ans, err := l.ask(img, names, known)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
-	sg := map[string]any{"level": nil, "tags": []string{}}
-	if lv, err := resolveLevel(l.app, uid, ans.Level); err == nil && ans.Level != "" {
-		sg["level"] = lv.Id
+	level := ""
+	if ans.Level != "" {
+		if lv, err := resolveLevel(l.app, uid, ans.Level); err == nil {
+			level = lv.Id
+		}
 	}
 	tags := CleanTags(ans.Tags)
 	if len(tags) > aiMaxTags {
 		tags = tags[:aiMaxTags]
 	}
-	sg["tags"] = tags
-	if sg["level"] == nil && len(tags) == 0 {
-		return errors.New("answer had no usable level or tags")
+	if level == "" && len(tags) == 0 {
+		return "", nil, errAINoAnswer
 	}
-	// Re-read: the user may have labeled it while we waited. Write only this field.
-	if r, err = l.app.FindRecordById("inspirations", id); err != nil || hasSuggestion(r) {
-		return err
-	}
-	r.Set("suggestion", sg)
-	r.IgnoreUnchangedFields(true)
-	return l.app.Save(r)
+	return level, tags, nil
 }
 
 type aiImage struct{ mime, b64 string }
@@ -183,6 +202,11 @@ func (l *Labeler) readImage(r *core.Record) (aiImage, error) {
 	if err != nil || len(b) > maxImageBytes {
 		return aiImage{}, errors.New("image unreadable or too large")
 	}
+	return newAIImage(b)
+}
+
+// newAIImage checks that b is an image and prepares it for the request.
+func newAIImage(b []byte) (aiImage, error) {
 	mt := http.DetectContentType(b)
 	if !strings.HasPrefix(mt, "image/") {
 		return aiImage{}, fmt.Errorf("type %s not sent to the model", mt)
@@ -269,4 +293,39 @@ func (l *Labeler) post(url string, body []byte) (out []byte, retry bool, err err
 		return nil, res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= 500, fmt.Errorf("gemini status %d", res.StatusCode)
 	}
 	return out, false, nil
+}
+
+// handleSuggest answers {enabled, level, tags} for one image the client has not saved yet (the
+// extension popup, quick add, upload form), so the form can prefill. It stores nothing. Status:
+// 200 (enabled false when the user or the server has AI off), 400 not an image, 413 too large,
+// 429 daily limit, 502 model failed; clients treat any non-200 as "no prefill".
+func handleSuggest(e *core.RequestEvent) error {
+	v, _ := labelers.Load(e.App)
+	l, _ := v.(*Labeler)
+	if l == nil || !e.Auth.GetBool("ai_enabled") {
+		return e.JSON(http.StatusOK, map[string]any{"enabled": false})
+	}
+	e.Request.Body = http.MaxBytesReader(e.Response, e.Request.Body, maxImageBytes+(1<<20))
+	f, _, err := e.Request.FormFile("image")
+	if err != nil {
+		return e.Error(http.StatusRequestEntityTooLarge, "image missing or too large", nil)
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, maxImageBytes+1))
+	if err != nil || len(b) > maxImageBytes {
+		return e.Error(http.StatusRequestEntityTooLarge, "image too large", nil)
+	}
+	img, err := newAIImage(b)
+	if err != nil {
+		return e.BadRequestError("not an image", nil)
+	}
+	level, tags, err := l.suggest(e.Auth.Id, img)
+	switch {
+	case errors.Is(err, errAILimit):
+		return e.Error(http.StatusTooManyRequests, "daily limit reached", nil)
+	case err != nil:
+		e.App.Logger().Warn("ai suggest failed", "error", err.Error())
+		return e.Error(http.StatusBadGateway, "model failed", nil)
+	}
+	return e.JSON(http.StatusOK, map[string]any{"enabled": true, "level": level, "tags": tags})
 }

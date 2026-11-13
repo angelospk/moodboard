@@ -1,9 +1,11 @@
 package mb_test
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -297,5 +299,97 @@ func TestAIUserCanSwitchItOnlyForHimself(t *testing.T) {
 	}
 	if code, _ := e.json("PATCH", "/api/collections/users/records/"+bob.Id, aTok, map[string]any{"ai_enabled": true}); code == 200 {
 		t.Fatalf("alice switched on bob's AI")
+	}
+}
+
+// postImage sends one image to /api/mb/suggest (multipart, like the web app and the extension).
+func (e *env) postImage(tok string, body []byte) (int, string) {
+	e.t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, _ := w.CreateFormFile("image", "a.png")
+	_, _ = part.Write(body)
+	_ = w.Close()
+	return e.req("POST", "/api/mb/suggest", tok, &buf, w.FormDataContentType())
+}
+
+func countInspirations(e *env) int {
+	e.t.Helper()
+	rs, err := e.app.FindAllRecords("inspirations")
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return len(rs)
+}
+
+func TestSuggestEndpoint(t *testing.T) {
+	f := newFakeGemini(t, goodReply)
+	e, l := aiEnv(t, f, 100)
+	alice, aTok := e.user("alice@x.gr")
+
+	if code, _ := e.postImage("", png1x1); code != 401 {
+		t.Fatalf("anonymous: want 401, got %d", code)
+	}
+	// AI off: answers "off" and sends nothing to Google.
+	code, out := e.postImage(aTok, png1x1)
+	if code != 200 || !strings.Contains(out, `"enabled":false`) || f.count() != 0 {
+		t.Fatalf("AI off: %d %s (%d calls)", code, out, f.count())
+	}
+
+	e.setAI(alice.Id, true)
+	code, out = e.postImage(aTok, png1x1)
+	if code != 200 || f.count() != 1 {
+		t.Fatalf("AI on: %d %s (%d calls)", code, out, f.count())
+	}
+	var got struct {
+		Enabled bool     `json:"enabled"`
+		Level   string   `json:"level"`
+		Tags    []string `json:"tags"`
+	}
+	_ = json.Unmarshal([]byte(out), &got)
+	if !got.Enabled || got.Level != e.levelID(alice.Id, "Κτίριο") || strings.Join(got.Tags, ",") != "ξύλο,φως" {
+		t.Fatalf("answer: %s", out)
+	}
+	if !strings.Contains(f.calls[0].body, base64.StdEncoding.EncodeToString(png1x1)) || f.calls[0].key != "test-key" {
+		t.Fatalf("the image or key did not reach the model")
+	}
+	// Nothing is stored: a prefill is not a suggestion on a row.
+	if n := countInspirations(e); n != 0 {
+		t.Fatalf("suggest must not create rows, found %d", n)
+	}
+	l.Wait()
+	if f.count() != 1 {
+		t.Fatalf("suggest must not queue background work")
+	}
+
+	// Not an image.
+	if code, _ = e.postImage(aTok, []byte("hello, I am not an image")); code != 400 {
+		t.Fatalf("text body: want 400, got %d", code)
+	}
+	// Gemini down (after the single retry): 502, the client just skips the prefill.
+	f.statuses = []int{503, 503}
+	if code, _ = e.postImage(aTok, png1x1); code != 502 {
+		t.Fatalf("Gemini down: want 502, got %d", code)
+	}
+}
+
+func TestSuggestEndpointDailyLimitAndNoLabeler(t *testing.T) {
+	f := newFakeGemini(t, goodReply)
+	e, _ := aiEnv(t, f, 1)
+	alice, aTok := e.user("alice@x.gr")
+	e.setAI(alice.Id, true)
+	if code, _ := e.postImage(aTok, png1x1); code != 200 {
+		t.Fatalf("first call: %d", code)
+	}
+	if code, _ := e.postImage(aTok, png1x1); code != 429 {
+		t.Fatalf("over the limit: want 429, got %d", code)
+	}
+
+	// A server without a Gemini key answers "off".
+	e2 := newEnv(t)
+	bob, bTok := e2.user("bob@x.gr")
+	e2.setAI(bob.Id, true)
+	if code, out := e2.postImage(bTok, png1x1); code != 200 || !strings.Contains(out, `"enabled":false`) {
+		t.Fatalf("no labeler: %d %s", code, out)
 	}
 }

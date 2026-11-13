@@ -41,6 +41,7 @@ func Register(app core.App) {
 		g := se.Router.Group("/api/mb")
 		g.Bind(apis.RequireAuth("users"))
 		g.GET("/tags", handleTags)
+		g.POST("/suggest", handleSuggest)
 		g.POST("/inspirations/{id}/note", handleAppendNote)
 		g.POST("/inspirations/{id}/copy", handleCopy)
 		g.POST("/positions", handleSavePositions)
