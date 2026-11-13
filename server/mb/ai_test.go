@@ -393,3 +393,38 @@ func TestSuggestEndpointDailyLimitAndNoLabeler(t *testing.T) {
 		t.Fatalf("no labeler: %d %s", code, out)
 	}
 }
+
+func TestSuggestEndpointRejectsFormatsGeminiCannotRead(t *testing.T) {
+	f := newFakeGemini(t, goodReply)
+	e, _ := aiEnv(t, f, 100)
+	alice, aTok := e.user("alice@x.gr")
+	e.setAI(alice.Id, true)
+	gif := []byte("GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;")
+	if code, _ := e.postImage(aTok, gif); code != 400 || f.count() != 0 {
+		t.Fatalf("gif: want 400 and no model call, got %d (%d calls)", code, f.count())
+	}
+}
+
+func TestSuggestEndpointRefusesBigBodiesBeforeTheModel(t *testing.T) {
+	f := newFakeGemini(t, goodReply)
+	e, _ := aiEnv(t, f, 100)
+	alice, aTok := e.user("alice@x.gr")
+	e.setAI(alice.Id, true)
+	big := append([]byte{}, png1x1...)
+	big = append(big, make([]byte, 5<<20)...) // a valid PNG header followed by 5 MB
+	if code, _ := e.postImage(aTok, big); code != 413 || f.count() != 0 {
+		t.Fatalf("5 MB body: want 413 and no model call, got %d (%d calls)", code, f.count())
+	}
+}
+
+func TestAIImageSavedWhileOffIsNeverSent(t *testing.T) {
+	f := newFakeGemini(t, goodReply)
+	e, l := aiEnv(t, f, 100)
+	alice, aTok := e.user("alice@x.gr")
+	e.newInspiration(aTok, map[string]string{"user_id": alice.Id}) // saved while AI is off
+	e.setAI(alice.Id, true)                                        // switched on right after
+	l.Wait()
+	if f.count() != 0 {
+		t.Fatalf("an image saved before consent reached the model (%d calls)", f.count())
+	}
+}

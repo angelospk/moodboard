@@ -39,7 +39,14 @@ type Labeler struct {
 
 	mu   sync.Mutex
 	used map[string]int // "<user id>|<UTC date>" -> calls today
+
+	slots chan struct{} // concurrent /suggest requests (each holds up to a few MB while it runs)
 }
+
+const (
+	suggestMaxBytes = 4 << 20 // clients send a ~1024px JPEG; anything bigger just gets no prefill
+	suggestSlots    = 3
+)
 
 const aiMaxTags = 5
 
@@ -60,7 +67,7 @@ func EnableAI(app core.App, cfg AIConfig) *Labeler {
 	}
 	l := &Labeler{
 		app: app, cfg: cfg, client: &http.Client{Timeout: 60 * time.Second},
-		queue: make(chan string, 64), used: map[string]int{},
+		queue: make(chan string, 64), used: map[string]int{}, slots: make(chan struct{}, suggestSlots),
 	}
 	go func() {
 		for id := range l.queue {
@@ -70,7 +77,11 @@ func EnableAI(app core.App, cfg AIConfig) *Labeler {
 	}()
 	labelers.Store(app, l)
 	app.OnRecordAfterCreateSuccess("inspirations").BindFunc(func(e *core.RecordEvent) error {
-		l.enqueue(e.Record.Id)
+		// Opt-in is checked now, not only when the worker runs: an image saved while AI was off must
+		// never be sent because the user switched it on while it waited in the queue.
+		if u, err := app.FindRecordById("users", e.Record.GetString("user_id")); err == nil && u.GetBool("ai_enabled") {
+			l.enqueue(e.Record.Id)
+		}
 		return e.Next()
 	})
 	return l
@@ -89,6 +100,14 @@ func (l *Labeler) enqueue(id string) {
 	default: // queue full: drop it, the image stays unlabeled
 		l.wg.Done()
 	}
+}
+
+// hasBudget reports whether the user can still make a call today (without using it).
+func (l *Labeler) hasBudget(uid string) bool {
+	k := uid + "|" + time.Now().UTC().Format("2006-01-02")
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.used[k] < l.cfg.DailyLimit
 }
 
 // take counts one call against the user's daily budget.
@@ -208,7 +227,7 @@ func (l *Labeler) readImage(r *core.Record) (aiImage, error) {
 // newAIImage checks that b is an image and prepares it for the request.
 func newAIImage(b []byte) (aiImage, error) {
 	mt := http.DetectContentType(b)
-	if !strings.HasPrefix(mt, "image/") {
+	if mt != "image/png" && mt != "image/jpeg" && mt != "image/webp" { // the formats Gemini reads (no gif, avif)
 		return aiImage{}, fmt.Errorf("type %s not sent to the model", mt)
 	}
 	return aiImage{mime: mt, b64: base64.StdEncoding.EncodeToString(b)}, nil
@@ -298,21 +317,31 @@ func (l *Labeler) post(url string, body []byte) (out []byte, retry bool, err err
 // handleSuggest answers {enabled, level, tags} for one image the client has not saved yet (the
 // extension popup, quick add, upload form), so the form can prefill. It stores nothing. Status:
 // 200 (enabled false when the user or the server has AI off), 400 not an image, 413 too large,
-// 429 daily limit, 502 model failed; clients treat any non-200 as "no prefill".
+// 429 daily limit, 503 too many at once, 502 model failed; clients treat any non-200 as "no prefill".
 func handleSuggest(e *core.RequestEvent) error {
 	v, _ := labelers.Load(e.App)
 	l, _ := v.(*Labeler)
 	if l == nil || !e.Auth.GetBool("ai_enabled") {
 		return e.JSON(http.StatusOK, map[string]any{"enabled": false})
 	}
-	e.Request.Body = http.MaxBytesReader(e.Response, e.Request.Body, maxImageBytes+(1<<20))
+	// Cheap refusals first, before any body is read: over budget, or all slots busy.
+	if !l.hasBudget(e.Auth.Id) {
+		return e.Error(http.StatusTooManyRequests, "daily limit reached", nil)
+	}
+	select {
+	case l.slots <- struct{}{}:
+		defer func() { <-l.slots }()
+	default:
+		return e.Error(http.StatusServiceUnavailable, "busy, try again", nil)
+	}
+	e.Request.Body = http.MaxBytesReader(e.Response, e.Request.Body, suggestMaxBytes+(1<<20))
 	f, _, err := e.Request.FormFile("image")
 	if err != nil {
 		return e.Error(http.StatusRequestEntityTooLarge, "image missing or too large", nil)
 	}
 	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, maxImageBytes+1))
-	if err != nil || len(b) > maxImageBytes {
+	b, err := io.ReadAll(io.LimitReader(f, suggestMaxBytes+1))
+	if err != nil || len(b) > suggestMaxBytes {
 		return e.Error(http.StatusRequestEntityTooLarge, "image too large", nil)
 	}
 	img, err := newAIImage(b)
