@@ -182,3 +182,81 @@ describe('handle', () => {
 		expect(calls[0].url).toBe(FILE);
 	});
 });
+
+describe('public board JSON', () => {
+	const BOARD = 'https://moodboard-api.haroldpoi.dev/api/mb/public/proj1';
+	const json = () =>
+		new Response('{"project":{"name":"P"}}', { status: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+
+	it('keeps the board at the edge for TTL seconds and gives the browser what is left', async () => {
+		const { calls, clock, deps } = setup(json());
+		let c = ctx();
+		let res = await handle(get(BOARD), ENV, c, deps);
+		await c.done();
+		expect(res.status).toBe(200);
+		expect(await res.text()).toBe('{"project":{"name":"P"}}');
+		expect(res.headers.get('content-type')).toBe('application/json');
+		expect(res.headers.get('cache-control')).toBe('private, max-age=60');
+		expect(res.headers.get('access-control-allow-origin')).toBe('*');
+		expect(calls).toHaveLength(1);
+		expect(calls[0].url).toBe(BOARD);
+
+		clock.t += 20_000;
+		c = ctx();
+		res = await handle(get(BOARD), ENV, c, deps);
+		await c.done();
+		expect(await res.text()).toBe('{"project":{"name":"P"}}');
+		expect(res.headers.get('cache-control')).toBe('private, max-age=40');
+		expect(calls).toHaveLength(1); // served from the edge
+
+		clock.t += 41_000; // past TTL: ask the VPS again (it decides public/private)
+		c = ctx();
+		res = await handle(get(BOARD), ENV, c, deps);
+		await c.done();
+		expect(res.status).toBe(200);
+		expect(calls).toHaveLength(2);
+	});
+
+	it('never caches a 404 (private or unknown board)', async () => {
+		const { calls, deps } = setup(new Response('{"message":"x"}', { status: 404 }));
+		for (let i = 0; i < 2; i++) {
+			const c = ctx();
+			const res = await handle(get(BOARD), ENV, c, deps);
+			await c.done();
+			expect(res.status).toBe(404);
+		}
+		expect(calls).toHaveLength(2);
+	});
+
+	it('does not cache an error answer', async () => {
+		const { calls, deps } = setup([new Response('down', { status: 502 }), json()]);
+		let c = ctx();
+		expect((await handle(get(BOARD), ENV, c, deps)).status).toBe(502);
+		await c.done();
+		c = ctx();
+		expect((await handle(get(BOARD), ENV, c, deps)).status).toBe(200);
+		await c.done();
+		expect(calls).toHaveLength(2);
+	});
+
+	it('passes other methods and URLs with a query through unchanged', async () => {
+		const { calls, deps } = setup(json());
+		for (const req of [new Request(BOARD, { method: 'POST' }), get(BOARD + '?x=1'), get(BOARD), get(BOARD + '?x=1')]) {
+			const c = ctx();
+			await handle(req, ENV, c, deps);
+			await c.done();
+		}
+		// POST and the two query URLs reach the VPS; the plain GET is fetched once.
+		expect(calls).toHaveLength(4);
+	});
+
+	it('keeps boards apart', async () => {
+		const { calls, deps } = setup(json());
+		for (const u of [BOARD, BOARD.replace('proj1', 'proj2'), BOARD, BOARD.replace('proj1', 'proj2')]) {
+			const c = ctx();
+			await handle(get(u), ENV, c, deps);
+			await c.done();
+		}
+		expect(calls).toHaveLength(2);
+	});
+});

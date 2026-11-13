@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { reloadData } from '#lib/reload.js';
+	import { forceNextLoad } from '#lib/datacache.js';
 	import { t } from '#lib/i18n.js';
 	// Project board: header, tag row, canvas with tag zones, dock, inspiration panel.
 	// Board.svelte owns the canvas (simulation, pan/zoom, drag, drop, saved positions); this page owns
 	// the data, filters, selection, adding images, menus and toasts.
-	import { goto, invalidate } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount, tick, untrack } from 'svelte';
 	import type { Crop, Inspiration, Level } from '#lib/types.js';
@@ -247,7 +249,7 @@
 		const now = new Date().toISOString();
 		files.forEach((file, i) => {
 			try {
-				checkImage(file);
+				checkImage(file, true);
 			} catch (err) {
 				const name = file.name && file.name !== 'image.png' ? `${file.name}: ` : '';
 				toast({ text: name + errText(err, t('map.imageNotSaved')), tone: 'error' }, 8000);
@@ -308,7 +310,7 @@
 		dismiss(busy);
 		if (added > 1) toast(t('map.added', { n: added }));
 		// Reload only when nothing else is uploading (pending rows survive a reload anyway).
-		if (added && !uploading.size) void invalidate('moodboard:data');
+		if (added && !uploading.size) void reloadData();
 	}
 
 	function onPaste(e: ClipboardEvent) {
@@ -398,7 +400,7 @@
 
 	function onCopied(projectName: string | null) {
 		toast(projectName ? t('map.copiedTo', { name: projectName }) : t('map.copiedNoProject'));
-		void invalidate('moodboard:data');
+		void reloadData();
 	}
 
 	function onDeleted(id: string) {
@@ -611,6 +613,8 @@
 		const next = applyEvent(items, e);
 		if (next === items) return;
 		items = next;
+		// The cached rows (and tags) are now old: the next page load asks the server.
+		forceNextLoad();
 		if (e.action === 'delete' && selectedId === e.record.id) select(null);
 		if (e.action === 'create' && !data.urls[e.record.image] && !liveUrls[e.record.image]) {
 			try {
@@ -631,7 +635,7 @@
 			// Projects change rarely: reload the data (names, counts) once a burst settles.
 			project: () => {
 				clearTimeout(projectsTimer);
-				projectsTimer = setTimeout(() => void invalidate('moodboard:data'), 300);
+				projectsTimer = setTimeout(() => void reloadData(), 300);
 			}
 		})
 			.then((u) => {

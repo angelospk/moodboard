@@ -1,4 +1,6 @@
+import { invalidate } from '$app/navigation';
 import type { PageLoad } from './$types.js';
+import { swrLoad } from '#lib/datacache.js';
 import { fileToken, imageUrls, listInspirations, listProjects, loadPositions, userTags } from '#lib/inspirations.js';
 
 export const load: PageLoad = async ({ parent, depends, url }) => {
@@ -12,8 +14,13 @@ export const load: PageLoad = async ({ parent, depends, url }) => {
 
 	// Everything that does not need the rows starts at once: one round trip instead of three.
 	void fileToken(pb).catch(() => null);
+	// Rows and tags: the last known copy at once, the server's answer when it differs (see datacache.ts).
+	const uid = user!.id;
+	const refresh = () => void invalidate('moodboard:data');
 	const extras = Promise.all([
-		userTags(pb).catch(() => []),
+		swrLoad(`tags:${uid}`, () => userTags(pb), refresh).catch((): string[] => []),
+		// Positions always come from the server: the board reads them only when it opens a scope, so a
+		// cached copy that is out of date (moved on another device) would stay on screen.
 		loadPositions(pb, scope).catch((): Record<string, { x: number; y: number }> => ({}))
 	]);
 
@@ -21,7 +28,14 @@ export const load: PageLoad = async ({ parent, depends, url }) => {
 	let projects: Awaited<ReturnType<typeof listProjects>> = [];
 	let inspirations: Awaited<ReturnType<typeof listInspirations>> = [];
 	try {
-		[projects, inspirations] = await Promise.all([listProjects(pb), listInspirations(pb)]);
+		({ projects, inspirations } = await swrLoad(
+			`rows:${uid}`,
+			async () => {
+				const [p, i] = await Promise.all([listProjects(pb), listInspirations(pb)]);
+				return { projects: p, inspirations: i };
+			},
+			refresh
+		));
 	} catch (e) {
 		error = e instanceof Error ? e.message : String(e);
 	}

@@ -55,7 +55,12 @@ export function publicImageUrl(projectId: string, id: string, base = PB_URL): st
 
 /** Read a public board without a session. Throws «Το board δεν είναι δημόσιο.» when it is not. */
 export async function loadPublic(projectId: string, base = PB_URL): Promise<PublicBoard> {
-	const res = await fetch(`${base}/api/mb/public/${encodeURIComponent(projectId)}`, { credentials: 'omit' });
+	const url = `${base}/api/mb/public/${encodeURIComponent(projectId)}`;
+	// app.html may have started this request before the app's code loaded: use it once.
+	const w = globalThis as { __mbBoard?: { url: string; res: Promise<Response> } };
+	const early = w.__mbBoard?.url === url ? w.__mbBoard.res.catch(() => null) : null;
+	if (w.__mbBoard) delete w.__mbBoard;
+	const res = (await early) ?? (await fetch(url, { credentials: 'omit' }));
 	if (res.status === 404) throw new Error(t('err.boardNotPublic'));
 	if (!res.ok) throw new Error(t('err.loadStatus', { status: res.status }));
 	const body = await res.json();

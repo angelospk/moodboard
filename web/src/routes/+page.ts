@@ -1,4 +1,6 @@
+import { invalidate } from '$app/navigation';
 import type { PageLoad } from './$types.js';
+import { swrLoad } from '#lib/datacache.js';
 import { fileToken, imageUrls, listInspirations, listProjects, thumbUrl } from '#lib/inspirations.js';
 
 export const load: PageLoad = async ({ parent, depends }) => {
@@ -12,7 +14,15 @@ export const load: PageLoad = async ({ parent, depends }) => {
 	let projects: Awaited<ReturnType<typeof listProjects>> = [];
 	let inspirations: Awaited<ReturnType<typeof listInspirations>> = [];
 	try {
-		[projects, inspirations] = await Promise.all([listProjects(pb), listInspirations(pb)]);
+		// The last known rows at once; the server's answer replaces them when it differs.
+		({ projects, inspirations } = await swrLoad(
+			`rows:${user!.id}`,
+			async () => {
+				const [p, i] = await Promise.all([listProjects(pb), listInspirations(pb)]);
+				return { projects: p, inspirations: i };
+			},
+			() => void invalidate('moodboard:data')
+		));
 	} catch (e) {
 		error = e instanceof Error ? e.message : String(e);
 	}

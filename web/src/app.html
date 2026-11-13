@@ -4,6 +4,19 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<link rel="preconnect" href="https://moodboard-api.haroldpoi.dev" crossorigin />
+		<link rel="preconnect" href="https://images.haroldpoi.dev" />
+		<script>
+			// A public board (/s/<id>) asks for its data now, while the app's code still downloads.
+			// src/lib/share.ts (loadPublic) takes this answer when the URL matches its own.
+			try {
+				var pm = location.pathname.match(/^\/s\/([^/]+)\/?$/);
+				if (pm) {
+					var pu = 'https://moodboard-api.haroldpoi.dev/api/mb/public/' + pm[1];
+					window.__mbBoard = { url: pu, res: fetch(pu, { credentials: 'omit' }) };
+				}
+			} catch (e) {}
+		</script>
 		<script>
 			// Appearance before first paint (see src/lib/appearance.ts).
 			try {

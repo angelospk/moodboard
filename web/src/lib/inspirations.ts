@@ -1,6 +1,7 @@
 // Client-side data helpers (browser and tests). The PocketBase client acts as the signed-in user, so
 // the collection API rules and the server hooks limit every call to the user's own rows and files.
 import type PocketBase from 'pocketbase';
+import { compressImage } from '#lib/compress.js';
 import { t } from '#lib/i18n.js';
 import type { RecordModel } from 'pocketbase';
 import type { Crop, Inspiration, Project, Suggestion } from '#lib/types.js';
@@ -33,11 +34,13 @@ export function cleanTags(tags: string[] = []): string[] {
 	return [...new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 30);
 }
 
-/** Throws a user-readable (Greek) message when the file cannot be stored. */
-export function checkImage(file: Blob): string {
+/** Throws a user-readable (Greek) message when the file cannot be stored. With `beforeCompress`, the
+ *  size of a file that compressImage can shrink (not a GIF) is not checked: the limit applies to
+ *  the bytes uploaded, and createInspiration checks them. */
+export function checkImage(file: Blob, beforeCompress = false): string {
 	const ext = IMAGE_EXT[file.type];
 	if (!ext) throw new Error(t('err.imageType'));
-	if (file.size > MAX_IMAGE_BYTES) throw new Error(t('err.imageSize'));
+	if (file.size > MAX_IMAGE_BYTES && !(beforeCompress && file.type !== 'image/gif')) throw new Error(t('err.imageSize'));
 	return ext;
 }
 
@@ -288,10 +291,11 @@ export async function createInspiration(
 	file: Blob,
 	fields: NewFields & { id?: string }
 ): Promise<Inspiration> {
-	checkImage(file);
+	const small = await compressImage(file);
+	checkImage(small);
 	try {
 		const rec = await pb.collection('inspirations').create(
-			form({ ...fields, user_id: userId, note: (fields.note ?? '').trim(), tags: cleanTags(fields.tags), regions: fields.regions ?? [] }, file)
+			form({ ...fields, user_id: userId, note: (fields.note ?? '').trim(), tags: cleanTags(fields.tags), regions: fields.regions ?? [] }, small)
 		);
 		return toInspiration(rec);
 	} catch (e) {

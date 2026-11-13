@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { pb } from '#lib/pb.js';
 import { listLevels } from '#lib/levels.js';
+import { clearCached } from '#lib/datacache.js';
 import { levelStore, setLevels } from '#lib/levels.svelte.js';
 import type { RecordModel } from 'pocketbase';
 import type { LayoutLoad } from './$types';
@@ -53,6 +54,8 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	if (!user) {
 		levelsFor = null;
 		setLevels([]);
+		// Nothing of a signed-out user stays in this browser's page cache.
+		clearCached();
 	} else if (levelsFor !== user.id) {
 		const id = user.id;
 		// Another account's levels must not show while this one's load.
@@ -61,8 +64,11 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		const before = levelStore.list;
 		listLevels(pb)
 			.then((rows) => {
-				// A change made meanwhile (the level manager) is newer than this answer: keep it.
-				if (levelsFor === id && levelStore.list === before) setLevels(rows);
+				if (levelsFor !== id) return;
+				// A change made meanwhile (the level manager) is newer than this answer: keep it, and load
+				// the full list again on the next page (the change may have started from an empty list).
+				if (levelStore.list === before) setLevels(rows);
+				else levelsFor = null;
 			})
 			.catch(() => {
 				// Only a successful fetch counts as loaded, so a failed one is tried again on the next page.

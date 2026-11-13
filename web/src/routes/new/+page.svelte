@@ -41,7 +41,7 @@
 		error = '';
 		if (!f) return;
 		try {
-			checkImage(f);
+			checkImage(f, true);
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('new.unsupported');
 			return;

@@ -11,11 +11,15 @@
 //     one-hour minimum for its own cache of resized images; the VPS answer is "private", which keeps
 //     Cloudflare from storing it, and a real probe (board made private, polled) gave 404 after 51 s.
 //     If that ever changes, add must-revalidate (and an ETag) to the VPS answer.
-// If resizing fails, the plain VPS answer is served (it strips metadata too). Every other request
-// goes to the VPS unchanged.
+// If resizing fails, the plain VPS answer is served (it strips metadata too).
+// The board JSON itself (GET /api/mb/public/{project}, no query string) is kept at the edge the same
+// way: stored for TTL seconds, a browser gets the freshness that is left, and only a 2xx answer is
+// stored. So TTL also bounds how long a board stays visible after it is made private or edited.
+// Every other request goes to the VPS unchanged.
 
 export const TTL = 60;
 const FILE_PATH = /^\/api\/mb\/public\/[^/]+\/files\/[^/]+$/;
+const BOARD_PATH = /^\/api\/mb\/public\/[^/]+$/;
 
 /** The size to serve, or null when this request is not a public image. */
 export function parseTarget(url) {
@@ -55,10 +59,42 @@ function forBrowser(body, contentType, maxAge) {
 	});
 }
 
+/** The board JSON: the VPS answer's content type is kept, the browser gets the time that is left. */
+function boardForBrowser(body, contentType, maxAge) {
+	return new Response(body, {
+		status: 200,
+		headers: {
+			'content-type': contentType || 'application/json',
+			'cache-control': `private, max-age=${maxAge}`,
+			'access-control-allow-origin': '*'
+		}
+	});
+}
+
+async function handleBoard(request, originUrl, key, ctx, { fetch, cache, now }) {
+	const hit = await cache.match(key);
+	if (hit) {
+		const left = TTL - Math.floor((now() - Number(hit.headers.get('x-stored-at'))) / 1000);
+		if (left > 0) return boardForBrowser(hit.body, hit.headers.get('content-type'), left);
+	}
+	const res = await fetch(new Request(originUrl, request));
+	if (res.status !== 200) return res; // private, unknown or failing: as the VPS said, never stored
+	const type = res.headers.get('content-type') || 'application/json';
+	const stored = new Response(res.clone().body, {
+		status: 200,
+		headers: { 'content-type': type, 'cache-control': `public, max-age=${TTL}`, 'x-stored-at': String(now()) }
+	});
+	ctx.waitUntil(cache.put(key, stored));
+	return boardForBrowser(res.body, type, TTL);
+}
+
 export async function handle(request, env, ctx, { fetch, cache, now = Date.now }) {
 	const url = new URL(request.url);
 	// Always the configured API host, never a host taken from the request.
 	const originUrl = env.ORIGIN + url.pathname + url.search;
+	if (request.method === 'GET' && !url.search && BOARD_PATH.test(url.pathname)) {
+		return handleBoard(request, originUrl, new Request(`${env.ORIGIN}${url.pathname}`), ctx, { fetch, cache, now });
+	}
 	const target = request.method === 'GET' ? parseTarget(url) : null;
 	// A request from the resizer itself must reach the VPS as it is (no loop).
 	if (!target || /image-resizing/.test(request.headers.get('via') || '')) {

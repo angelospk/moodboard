@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { goto, invalidate } from '$app/navigation';
+	import { reloadData } from '#lib/reload.js';
+	import { goto, preloadCode } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import type { Inspiration, Level } from '#lib/types.js';
@@ -187,6 +188,9 @@
 
 	onMount(() => {
 		now = Date.now();
+		// Most visits go on to the map: fetch its code while the browser is idle, so it opens at once.
+		const idle = globalThis.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1500));
+		idle(() => void preloadCode('/map').catch(() => {}));
 		if (selected !== 'all' && selected !== 'none') return;
 		try {
 			lastProjectId = localStorage.getItem(LAST_PROJECT_KEY);
@@ -204,7 +208,7 @@
 		try {
 			const row = await createProjectRow(data.pb, data.user!.id, name);
 			newProject = '';
-			await invalidate('moodboard:data');
+			await reloadData();
 			selectProject(row.id);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : t('common.failed');
@@ -255,7 +259,7 @@
 		try {
 			await renameProject(data.pb, card.key, name);
 			editing = null;
-			await invalidate('moodboard:data');
+			await reloadData();
 		} catch (err) {
 			const message = err instanceof Error ? err.message : t('common.failed');
 			manageError = /unique|υπάρχει|already/i.test(message)
@@ -274,7 +278,7 @@
 			await action();
 			closeManage();
 			after?.();
-			await invalidate('moodboard:data');
+			await reloadData();
 		} catch (err) {
 			manageError = err instanceof Error ? err.message : t('common.failed');
 		} finally {
