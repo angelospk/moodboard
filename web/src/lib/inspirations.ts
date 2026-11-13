@@ -5,6 +5,16 @@ import { t } from '#lib/i18n.js';
 import type { RecordModel } from 'pocketbase';
 import type { Crop, Inspiration, Project, Suggestion } from '#lib/types.js';
 
+const PROD_API = 'https://moodboard-api.haroldpoi.dev';
+/** Host of the image bucket (Cloudflare R2). VITE_IMAGE_CDN overrides it; '' turns it off. */
+export const IMAGE_CDN: string = import.meta.env.VITE_IMAGE_CDN ?? 'https://images.haroldpoi.dev';
+
+/** The image host for a client: the CDN only for the production API. Any other backend (local
+ *  server, tests) serves its own files. */
+export function cdnFor(pb: Pick<PocketBase, 'baseURL'>): string {
+	return pb.baseURL === PROD_API ? IMAGE_CDN : '';
+}
+
 export const IMAGE_EXT: Record<string, string> = {
 	'image/png': 'png',
 	'image/jpeg': 'jpg',
@@ -222,24 +232,34 @@ export function forgetFileToken(pb: PocketBase) {
 /** Image URL per `image_path`, all with the same cached file token. */
 export async function imageUrls(pb: PocketBase, rows: Inspiration[]): Promise<Record<string, string>> {
 	if (!rows.length) return {};
-	const token = await fileToken(pb);
+	const cdn = cdnFor(pb);
+	// CDN urls carry no token, so a failed token request cannot hide the images.
+	const token = cdn ? '' : await fileToken(pb);
 	const out: Record<string, string> = {};
 	for (const r of rows) {
-		if (r.image_path) out[r.image_path] = imageUrl(pb, r, token);
+		if (r.image_path) out[r.image_path] = imageUrl(pb, r, token, cdn);
 	}
 	return out;
 }
 
 /** The 480px-wide thumbnail of a server image URL; other URLs (local blob: previews) stay as they are. */
-export function thumbUrl(url: string | null | undefined): string | null {
+export function thumbUrl(url: string | null | undefined, cdn = IMAGE_CDN): string | null {
 	if (!url) return null;
 	if (!/^https?:/.test(url)) return url;
+	if (cdn && url.startsWith(`${cdn}/`)) {
+		// The server stores the thumbnail next to the image: thumbs_<name>/480x0_<name>.
+		const cut = url.lastIndexOf('/');
+		const name = url.slice(cut + 1);
+		return `${url.slice(0, cut)}/thumbs_${name}/480x0_${name}`;
+	}
 	const u = new URL(url);
 	u.searchParams.set('thumb', '480x0');
 	return u.toString();
 }
 
-export function imageUrl(pb: PocketBase, r: Pick<Inspiration, 'id' | 'image_path'>, token: string): string {
+export function imageUrl(pb: PocketBase, r: Pick<Inspiration, 'id' | 'image_path'>, token: string, cdn = cdnFor(pb)): string {
+	// The CDN (Cloudflare R2) serves the file by its unguessable path: no token, no API call.
+	if (cdn) return `${cdn}/mbinspirations/${r.id}/${encodeURIComponent(r.image_path)}`;
 	return pb.files.getURL({ id: r.id, collectionName: 'inspirations' }, r.image_path, { token });
 }
 

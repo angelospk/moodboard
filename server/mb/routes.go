@@ -2,6 +2,7 @@ package mb
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 var jsonUnmarshal = json.Unmarshal
@@ -118,6 +120,11 @@ func handleCopy(e *core.RequestEvent) error {
 		return notFound(e)
 	}
 	if err != nil {
+		// Keep a refusal such as «storage full» (413) instead of turning it into a generic 400.
+		var ae *router.ApiError
+		if errors.As(err, &ae) {
+			return ae
+		}
 		return e.BadRequestError(tr(e.Request, "Αποτυχία αντιγραφής.", "Could not copy."), err)
 	}
 	return e.JSON(http.StatusOK, map[string]string{"id": r.Id})

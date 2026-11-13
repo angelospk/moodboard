@@ -154,6 +154,11 @@
 		return () => clearTimeout(sharpTimer);
 	});
 
+	/** The stored thumbnail is not there yet (a card just uploaded): show the full image instead. */
+	function thumbMissing(el: HTMLImageElement, full: string | null) {
+		if (full && el.src !== full) el.src = full;
+	}
+
 	function hiReady(el: HTMLImageElement) {
 		const done = () => (el.dataset.loaded = '1');
 		if (el.complete && el.naturalWidth) done();
@@ -1143,7 +1148,7 @@
 						style:--ch={item.crop?.h}
 					>
 						{#if url}
-							<img src={url} alt="" loading="lazy" decoding="async" draggable="false" {@attach imgReady} />
+							<img src={url} alt="" loading="lazy" decoding="async" draggable="false" onerror={(e) => thumbMissing(e.currentTarget as HTMLImageElement, urlOf(item))} {@attach imgReady} />
 							{#if sharp && url !== urlOf(item)}
 								<img class="hi" src={urlOf(item)} alt="" loading="lazy" decoding="async" draggable="false" {@attach hiReady} />
 							{/if}

@@ -23,6 +23,7 @@ func Register(app core.App) {
 	app.OnRecordUpdateRequest("inspirations").BindFunc(checkProjectOwner)
 	app.OnRecordCreateRequest("inspirations").BindFunc(checkLevelOwner)
 	app.OnRecordUpdateRequest("inspirations").BindFunc(checkLevelOwner)
+	app.OnRecordCreate("inspirations").BindFunc(checkStoreRoom)
 	app.OnRecordCreate("inspirations").BindFunc(func(e *core.RecordEvent) error {
 		defaultsForInspiration(e.Record)
 		return e.Next()
