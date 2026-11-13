@@ -429,3 +429,72 @@ func TestAIImageSavedWhileOffIsNeverSent(t *testing.T) {
 		t.Fatalf("an image saved before consent reached the model (%d calls)", f.count())
 	}
 }
+
+// TestSuggestForStoredImage: POST /api/mb/inspirations/{id}/suggest asks the model about an image
+// the user already saved (the edit page, the map panel). Same answer shape and limits as
+// /api/mb/suggest; it stores nothing on the row.
+func TestSuggestForStoredImage(t *testing.T) {
+	f := newFakeGemini(t, goodReply)
+	e, l := aiEnv(t, f, 2)
+	alice, aTok := e.user("alice@x.gr")
+	_, bTok := e.user("bob@x.gr")
+	// Saved while AI was off, so the background labeler leaves it alone.
+	id := e.newInspiration(aTok, map[string]string{"user_id": alice.Id, "note": "παλιά"})
+	l.Wait()
+	path := "/api/mb/inspirations/" + id + "/suggest"
+
+	if code, _ := e.req("POST", path, "", nil, ""); code != 401 {
+		t.Fatalf("anonymous: want 401, got %d", code)
+	}
+	// AI off: answers "off" and sends nothing to Google.
+	if code, out := e.req("POST", path, aTok, nil, ""); code != 200 || !strings.Contains(out, `"enabled":false`) || f.count() != 0 {
+		t.Fatalf("AI off: %d %s (%d calls)", code, out, f.count())
+	}
+
+	e.setAI(alice.Id, true)
+	// Not the owner: 404, no model call.
+	if code, _ := e.req("POST", path, bTok, nil, ""); code != 404 || f.count() != 0 {
+		t.Fatalf("other user: want 404 and no call, got %d (%d calls)", code, f.count())
+	}
+	if code, _ := e.req("POST", "/api/mb/inspirations/nosuchid0000000/suggest", aTok, nil, ""); code != 404 {
+		t.Fatalf("unknown id: want 404, got %d", code)
+	}
+
+	code, out := e.req("POST", path, aTok, nil, "")
+	if code != 200 || f.count() != 1 {
+		t.Fatalf("AI on: %d %s (%d calls)", code, out, f.count())
+	}
+	var got struct {
+		Enabled bool     `json:"enabled"`
+		Level   string   `json:"level"`
+		Tags    []string `json:"tags"`
+	}
+	_ = json.Unmarshal([]byte(out), &got)
+	if !got.Enabled || got.Level != e.levelID(alice.Id, "Κτίριο") || strings.Join(got.Tags, ",") != "ξύλο,φως" {
+		t.Fatalf("answer: %s", out)
+	}
+	if !strings.Contains(f.calls[0].body, base64.StdEncoding.EncodeToString(png1x1)) {
+		t.Fatalf("the stored image did not reach the model")
+	}
+	// Nothing is stored on the row.
+	if s := e.suggestionOf(id); s != nil {
+		t.Fatalf("suggest must not write the suggestion field, got %+v", s)
+	}
+
+	// Daily limit (2): the second call is the last one allowed.
+	if code, _ := e.req("POST", path, aTok, nil, ""); code != 200 {
+		t.Fatalf("second call: %d", code)
+	}
+	if code, _ := e.req("POST", path, aTok, nil, ""); code != 429 {
+		t.Fatalf("over the limit: want 429, got %d", code)
+	}
+
+	// A server without a Gemini key answers "off".
+	e2 := newEnv(t)
+	carol, cTok := e2.user("carol@x.gr")
+	cid := e2.newInspiration(cTok, map[string]string{"user_id": carol.Id})
+	e2.setAI(carol.Id, true)
+	if code, out := e2.req("POST", "/api/mb/inspirations/"+cid+"/suggest", cTok, nil, ""); code != 200 || !strings.Contains(out, `"enabled":false`) {
+		t.Fatalf("no labeler: %d %s", code, out)
+	}
+}
