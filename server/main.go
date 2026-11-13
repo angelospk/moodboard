@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"time"
 
@@ -20,6 +21,11 @@ func main() {
 	app := pocketbase.New()
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{Automigrate: false})
 	mb.Register(app)
+	// Automatic labels need GEMINI_API_KEY (from the systemd EnvironmentFile) and run only under `serve`.
+	if key := os.Getenv("GEMINI_API_KEY"); key != "" && len(os.Args) > 1 && os.Args[1] == "serve" {
+		limit, _ := strconv.Atoi(os.Getenv("MB_AI_DAILY_LIMIT"))
+		mb.EnableAI(app, mb.AIConfig{Key: key, Model: os.Getenv("MB_AI_MODEL"), DailyLimit: limit})
+	}
 
 	app.RootCmd.AddCommand(&cobra.Command{
 		Use:   "mcp-token <email> [days]",

@@ -18,6 +18,7 @@ After=network-online.target
 [Service]
 User=ubuntu
 WorkingDirectory=/opt/moodboard
+EnvironmentFile=-/opt/moodboard/ai.env
 ExecStart=/opt/moodboard/moodboard serve --http 127.0.0.1:8190 --dir /opt/moodboard/pb_data
 Restart=always
 RestartSec=3
