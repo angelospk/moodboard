@@ -30,6 +30,7 @@ export const en: Record<keyof typeof el, string> = {
 	'popup.unsupportedType': 'The image type is not supported.',
 	'popup.screenshotFailed': 'The screenshot failed.',
 	'popup.language': 'Language',
+	'popup.aiFilling': 'AI is suggesting a level and tags…',
 
 	'tags.remove': 'Remove {tag}',
 

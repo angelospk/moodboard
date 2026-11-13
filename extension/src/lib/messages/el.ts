@@ -28,6 +28,7 @@ export const el = {
 	'popup.unsupportedType': 'Ο τύπος εικόνας δεν υποστηρίζεται.',
 	'popup.screenshotFailed': 'Το στιγμιότυπο απέτυχε.',
 	'popup.language': 'Γλώσσα',
+	'popup.aiFilling': 'Το AI προτείνει επίπεδο και tags…',
 
 	'tags.remove': 'Αφαίρεση {tag}',
 

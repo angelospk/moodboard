@@ -5,6 +5,7 @@
 	import { msg, pb, ready } from '@/lib/pb';
 	import { clearPending, getPending, type CaptureResult, type PendingCapture } from '@/lib/pending';
 	import TagInput from '@/lib/TagInput.svelte';
+	import { suggestLabels } from '@/lib/suggest';
 	import {
 		MIME_EXT,
 		normalizeMime,
@@ -86,6 +87,26 @@
 		await loadProjects();
 		await loadLevels();
 		await loadUserTags();
+		void prefill();
+	}
+
+	let prefilling = $state(false);
+	let prefillRun = 0;
+
+	/** Fill level and tags from the AI (when the user switched it on). Never overwrites what the user already set. */
+	async function prefill() {
+		const current = pending;
+		if (!current?.dataUrl || current.error) return;
+		const run = ++prefillRun;
+		prefilling = true;
+		try {
+			const s = await suggestLabels(current.dataUrl);
+			if (!s || pending !== current) return; // off, failed, or another capture is open now
+			if (!level && levels.some((l) => l.id === s.level)) level = s.level as Level;
+			if (!tags.length) tags = s.tags;
+		} finally {
+			if (run === prefillRun) prefilling = false;
+		}
 	}
 
 	async function loadUserTags() {
@@ -258,6 +279,7 @@
 		if (!pending && response && !response.ok) {
 			errorMessage = response.error ?? t('popup.screenshotFailed');
 		}
+		void prefill();
 	}
 
 	function resetCapture() {
@@ -364,6 +386,8 @@
 					<label>{t('popup.note')}
 						<textarea rows="3" bind:value={note}></textarea>
 					</label>
+
+					{#if prefilling}<p class="muted">✦ {t('popup.aiFilling')}</p>{/if}
 
 					<div class="field">
 						<span class="field-label">Tags</span>
