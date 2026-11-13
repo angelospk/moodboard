@@ -7,8 +7,10 @@
 //   - Cloudflare resizes the image (cf.image) to 1600 px (480 px for ?thumb=480x0), converts it to
 //     AVIF/WebP when the client accepts it, and drops all metadata (GPS, camera) in the same step,
 //   - the result is kept at the edge for TTL seconds, and a browser gets only the freshness that is
-//     left, so turning a board private takes effect within about TTL seconds (the VPS answer carries
-//     the same max-age, which bounds Cloudflare's own transformation cache).
+//     left, so turning a board private takes effect within about TTL seconds. Cloudflare documents a
+//     one-hour minimum for its own cache of resized images; the VPS answer is "private", which keeps
+//     Cloudflare from storing it, and a real probe (board made private, polled) gave 404 after 51 s.
+//     If that ever changes, add must-revalidate (and an ETag) to the VPS answer.
 // If resizing fails, the plain VPS answer is served (it strips metadata too). Every other request
 // goes to the VPS unchanged.
 
