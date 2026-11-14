@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type PocketBase from 'pocketbase';
+	import { tick } from 'svelte';
 	import { t } from '#lib/i18n.js';
 	import { updateMany } from '#lib/inspirations.js';
 	import { reloadData } from '#lib/reload.js';
@@ -36,6 +37,11 @@
 			const out = await updateMany(pb, ids, { source_project: name });
 			failed = out.failed.length > 0;
 			await reloadData();
+			// Some images kept the old name: the field shows the new one again, so Enter retries.
+			if (failed) {
+				await tick();
+				draft = name ?? '';
+			}
 		} finally {
 			busy = false;
 		}

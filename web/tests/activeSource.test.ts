@@ -7,6 +7,7 @@ import {
 	nameForPage,
 	parseActiveSource,
 	pastedPageUrl,
+	sameSource,
 	sourceFields
 } from '../src/lib/activeSource';
 
@@ -80,5 +81,18 @@ describe('sourceFields', () => {
 			source_project: 'K'
 		});
 		expect(sourceFields(null)).toEqual({});
+	});
+});
+
+describe('sameSource', () => {
+	const a = { url: 'https://a.com/p', project: 'K', at: NOW };
+	it('same page and name, whatever the time', () => {
+		expect(sameSource(a, { ...a, at: NOW + 5 })).toBe(true);
+	});
+	it('another page, another name, or none: not the same', () => {
+		expect(sameSource(a, { ...a, url: 'https://a.com/q' })).toBe(false);
+		expect(sameSource(a, { ...a, project: null })).toBe(false);
+		expect(sameSource(a, null)).toBe(false);
+		expect(sameSource(null, null)).toBe(false);
 	});
 });

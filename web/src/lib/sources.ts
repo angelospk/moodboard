@@ -50,6 +50,19 @@ export function itemsOfPage(items: Inspiration[], url: string): Inspiration[] {
 	return items.filter((i) => hostOf(i.source_url) && pageKey(i.source_url!) === key);
 }
 
+/** The images of every page, by page key (see pageKey), in one pass. */
+export function itemsByPage(items: Inspiration[]): Map<string, Inspiration[]> {
+	const pages = new Map<string, Inspiration[]>();
+	for (const i of items) {
+		if (!hostOf(i.source_url)) continue;
+		const key = pageKey(i.source_url!);
+		const list = pages.get(key);
+		if (list) list.push(i);
+		else pages.set(key, [i]);
+	}
+	return pages;
+}
+
 const byCount = <T extends { count: number }>(a: T, b: T) => b.count - a.count;
 
 export function groupSources(items: Inspiration[], sort: SourceSort = 'count'): { sources: Source[]; unsourced: Inspiration[] } {

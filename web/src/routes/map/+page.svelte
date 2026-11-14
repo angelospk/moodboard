@@ -334,7 +334,7 @@
 			queue.push({ id, file });
 		});
 		if (!queue.length) return;
-		if (src) activeSource.touch();
+		if (src) activeSource.touch(src);
 		uploading = new Set([...uploading, ...queue.map((q) => q.id)]);
 		const first = queue[0].id;
 		const busy = toast({ text: queue.length > 1 ? t('map.uploadingMany', { n: queue.length }) : t('map.uploadingOne'), tone: 'busy' }, 0);

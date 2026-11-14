@@ -1,6 +1,6 @@
 // Grouping images by the website they came from (pure functions, no server).
 import { describe, expect, it } from 'vitest';
-import { filterItems, groupSources, hostOf, itemsOfPage } from '../src/lib/sources';
+import { filterItems, groupSources, hostOf, itemsByPage, itemsOfPage, pageKey } from '../src/lib/sources';
 import type { Inspiration } from '../src/lib/types';
 
 let n = 0;
@@ -82,5 +82,19 @@ describe('itemsOfPage', () => {
 		const page = groupSources(shown).sources[0].pages[0];
 		expect(page.items.map((i) => i.id)).toEqual([a.id]);
 		expect(itemsOfPage([a, b, c, d, e], page.url).map((i) => i.id)).toEqual([a.id, b.id]);
+	});
+});
+
+describe('itemsByPage', () => {
+	it('the images of each page, by page key, in one pass; same pages as itemsOfPage', () => {
+		const a = row({ source_url: 'https://www.site.com/p/1/' });
+		const b = row({ source_url: 'https://site.com/p/1#g' });
+		const c = row({ source_url: 'https://site.com/p/2' });
+		const d = row({ source_url: null });
+		const e = row({ source_url: 'javascript:alert(1)' });
+		const index = itemsByPage([a, b, c, d, e]);
+		expect(index.get(pageKey('https://site.com/p/1'))?.map((i) => i.id)).toEqual([a.id, b.id]);
+		expect(index.get(pageKey('https://site.com/p/2'))?.map((i) => i.id)).toEqual([c.id]);
+		expect(index.size).toBe(2);
 	});
 });

@@ -58,6 +58,11 @@ export function nameForPage(items: Inspiration[], url: string): string | null {
 	return commonSourceProject(itemsOfPage(items, url)).name;
 }
 
+/** The same page and name (the time of last use aside). */
+export function sameSource(a: ActiveSource | null, b: ActiveSource | null): boolean {
+	return !!a && !!b && a.url === b.url && a.project === b.project;
+}
+
 /** The fields a new image gets from a live source (none without one). */
 export function sourceFields(a: ActiveSource | null): { source_url?: string; source_project?: string | null } {
 	return a ? { source_url: a.url, source_project: a.project } : {};
