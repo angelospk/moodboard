@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '#lib/i18n.js';
 	import { cleanSourceProject, SOURCE_PROJECT_MAX } from '#lib/sourceProjects.js';
 
@@ -15,14 +16,23 @@
 	const uid = $props.id();
 	const listId = `sp-${uid}`;
 	let draft = $state('');
+	// Show the stored value, but not while the draft already means the same name: saving as the
+	// user types hands back the cleaned name, and replacing the draft would eat a typed space.
 	$effect(() => {
-		draft = value ?? '';
+		const stored = value ?? '';
+		if (stored !== (cleanSourceProject(untrack(() => draft)) ?? '')) draft = stored;
 	});
 
-	function commit() {
-		const next = cleanSourceProject(draft);
-		draft = next ?? '';
+	/** Hand the cleaned name to the caller (its autosave waits for a pause in typing). */
+	function save(text: string) {
+		const next = cleanSourceProject(text);
 		if (next !== (value ?? null)) onchange(next);
+	}
+
+	/** Leaving the field shows the name as it is stored. */
+	function tidy() {
+		save(draft);
+		draft = cleanSourceProject(draft) ?? '';
 	}
 </script>
 
@@ -35,8 +45,9 @@
 		placeholder={t('sp.placeholder')}
 		maxlength={SOURCE_PROJECT_MAX}
 		autocomplete="off"
-		onchange={commit}
-		onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), commit())}
+		oninput={(e) => save(e.currentTarget.value)}
+		onchange={tidy}
+		onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), tidy())}
 	/>
 	<datalist id={listId}>
 		{#each names as n (n)}<option value={n}></option>{/each}

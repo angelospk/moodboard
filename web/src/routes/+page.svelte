@@ -265,7 +265,11 @@
 	}
 
 	async function applyPicked(name: string | null) {
-		if (await applySourceProject([...picked], name)) picked.clear();
+		const ids = [...picked];
+		if (await applySourceProject(ids, name)) {
+			// Only the images that were sent: the user may have ticked others while it saved.
+			for (const id of ids) picked.delete(id);
+		}
 	}
 
 	const selectedName = $derived(
