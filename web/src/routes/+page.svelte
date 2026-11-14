@@ -12,7 +12,6 @@
 	import ProjectSummary from '#lib/components/ProjectSummary.svelte';
 	import { searchByMeaning, SmartSearchError } from '#lib/semantic.js';
 	import { needSmart, smart } from '#lib/smart.svelte.js';
-	import { groupByProject } from '#lib/grouping.js';
 	import { t, tn, timeAgo } from '#lib/i18n.js';
 	import {
 		createProject as createProjectRow,
@@ -25,7 +24,6 @@
 	let { data }: PageProps = $props();
 
 	const LAST_PROJECT_KEY = 'moodboard:last-project';
-	const GROUP_KEY = 'moodboard:group-by-project';
 
 	let query = $state('');
 	/** The search box looks for meaning instead of words (needs the smart search consent). */
@@ -35,8 +33,6 @@
 	/** The last meaning search: its text and the ids it found, best first. */
 	let meaning = $state<{ q: string; ids: string[] } | null>(null);
 	let level = $state<Level | ''>('');
-	/** "All images" split into one section per project; remembered per browser. */
-	let grouped = $state(false);
 	let newProject = $state('');
 	let creating = $state(false);
 	let projectError = $state('');
@@ -190,26 +186,6 @@
 		});
 	});
 
-	// Archived projects keep their images in "all images": their sections follow the active ones.
-	const sections = $derived(
-		grouped && selected === 'all'
-			? groupByProject(
-					filtered,
-					[...data.projects.filter((p) => !p.archived), ...data.projects.filter((p) => p.archived)],
-					{ noProjectName: t('common.noProject'), ranked: byMeaning && !!meaning }
-				)
-			: null
-	);
-
-	function toggleGrouped() {
-		grouped = !grouped;
-		try {
-			localStorage.setItem(GROUP_KEY, grouped ? '1' : '0');
-		} catch {
-			/* optional: private mode or no quota */
-		}
-	}
-
 	const selectedName = $derived(
 		selected === 'none'
 			? t('common.noProject')
@@ -275,11 +251,6 @@
 		// Most visits go on to the map: fetch its code while the browser is idle, so it opens at once.
 		const idle = globalThis.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1500));
 		idle(() => void preloadCode('/map').catch(() => {}));
-		try {
-			grouped = localStorage.getItem(GROUP_KEY) === '1';
-		} catch {
-			grouped = false;
-		}
 		if (selected !== 'all' && selected !== 'none') return;
 		try {
 			lastProjectId = localStorage.getItem(LAST_PROJECT_KEY);
@@ -716,17 +687,6 @@
 		>
 			⌕ {t('search.meaning')}
 		</button>
-		{#if selected === 'all'}
-			<button
-				type="button"
-				class={['chip', grouped && 'on']}
-				aria-pressed={grouped}
-				title={t('home.groupByProjectTitle')}
-				onclick={toggleGrouped}
-			>
-				{t('home.groupByProject')}
-			</button>
-		{/if}
 		<select bind:value={level} aria-label={t('common.level')}>
 			<option value="">{t('home.allLevels')}</option>
 			{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
@@ -763,48 +723,32 @@
 			{t('home.noMatch')}
 			<a href="/new">{t('home.addImage')}</a>
 		</p>
-	{:else if sections}
-		<div class="psecs">
-			{#each sections as sec (sec.key)}
-				<section class="psec">
-					<h3 class="psec-head">
-						<a href={gridHref(sec.key)}>{sec.name}</a>
-						<span class="sec-meta">{tn('common.images', sec.items.length)}</span>
-					</h3>
-					<div class="grid">
-						{#each sec.items as item (item.id)}{@render imageCard(item)}{/each}
-					</div>
-				</section>
-			{/each}
-		</div>
 	{:else}
 		<div class="grid">
-			{#each filtered as item (item.id)}{@render imageCard(item)}{/each}
+			{#each filtered as item (item.id)}
+				<a class="card" href={`/i/${item.id}`}>
+					<div class="thumb">
+						{#if data.urls[item.image_path]}
+							<img src={data.urls[item.image_path]} alt="" loading="lazy" decoding="async" />
+						{:else}
+							<span class="missing">{t('common.noImage')}</span>
+						{/if}
+						{#if levelLabel(item.level)}
+							<span class="badge">{levelLabel(item.level)}</span>
+						{/if}
+					</div>
+					<div class="body">
+						{#if item.note}
+							<p class="note">{item.note.length > 140 ? `${item.note.slice(0, 140).trimEnd()}…` : item.note}</p>
+						{/if}
+						{#if item.tags.length}
+							<p class="tags">{item.tags.slice(0, 4).join(' · ')}</p>
+						{/if}
+					</div>
+				</a>
+			{/each}
 		</div>
 	{/if}
-{/snippet}
-
-{#snippet imageCard(item: Inspiration)}
-	<a class="card" href={`/i/${item.id}`}>
-		<div class="thumb">
-			{#if data.urls[item.image_path]}
-				<img src={data.urls[item.image_path]} alt="" loading="lazy" decoding="async" />
-			{:else}
-				<span class="missing">{t('common.noImage')}</span>
-			{/if}
-			{#if levelLabel(item.level)}
-				<span class="badge">{levelLabel(item.level)}</span>
-			{/if}
-		</div>
-		<div class="body">
-			{#if item.note}
-				<p class="note">{item.note.length > 140 ? `${item.note.slice(0, 140).trimEnd()}…` : item.note}</p>
-			{/if}
-			{#if item.tags.length}
-				<p class="tags">{item.tags.slice(0, 4).join(' · ')}</p>
-			{/if}
-		</div>
-	</a>
 {/snippet}
 
 <a class="fab" href="/new" aria-label={t('common.newImage')}>+</a>
@@ -1026,24 +970,6 @@
 	@media (min-width: 560px) { .grid { columns: 2; } }
 	@media (min-width: 900px) { .grid { columns: 3; } }
 	@media (min-width: 1300px) { .grid { columns: 4; } }
-
-	.psec { margin-bottom: 12px; }
-	.psec-head {
-		display: flex;
-		align-items: baseline;
-		gap: 10px;
-		flex-wrap: wrap;
-		margin: 8px 0 12px;
-		padding-top: 12px;
-		border-top: 1px solid var(--line);
-		font-family: var(--font-serif);
-		font-size: 1.05rem;
-		font-weight: 600;
-	}
-	.psec:first-child .psec-head { border-top: 0; padding-top: 0; margin-top: 0; }
-	.psec-head a { color: var(--text); text-decoration: none; overflow-wrap: anywhere; min-width: 0; }
-	.psec-head a:hover { color: var(--accent); }
-	.psec-head .sec-meta { font-family: var(--font-sans); font-weight: 400; }
 
 	.card {
 		display: block;
