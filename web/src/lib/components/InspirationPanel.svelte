@@ -338,6 +338,11 @@
 			}}
 		/>
 
+		<div class="field">
+			<span class="lbl">{t('item.regions')}{regions.length ? ` · ${regions.length}` : ''}</span>
+			<RegionList bind:regions={() => regions, (v) => ((regions = v), change('regions', v))} bind:active />
+		</div>
+
 		<SourceProjectField
 			value={sourceProject}
 			names={sourceProjects}
@@ -346,11 +351,6 @@
 				change('source_project', v);
 			}}
 		/>
-
-		<div class="field">
-			<span class="lbl">{t('item.regions')}{regions.length ? ` · ${regions.length}` : ''}</span>
-			<RegionList bind:regions={() => regions, (v) => ((regions = v), change('regions', v))} bind:active />
-		</div>
 
 		{#if safeSource}
 			<div class="field">

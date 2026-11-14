@@ -88,10 +88,32 @@ export interface SourceProjectSuggestion {
 	url: string;
 	/** Images without a source project that are on that page. */
 	ids: string[];
-	/** The name to offer: an existing one the page's other images already have, else the page title, else the site. */
+	/**
+	 * The name to offer: an existing one the page's other images already have, else a name in use that
+	 * the page title starts with, else the page title, else the site.
+	 */
 	name: string;
 	/** True when `name` is one the page's other images already have. */
 	existing: boolean;
+}
+
+/** Shortest name (in characters) that may match the start of a page title. */
+const MIN_TITLE_MATCH = 4;
+
+/**
+ * A name in use that the page title starts with, as a whole word («Villa Savoye» in «Villa Savoye /
+ * Le Corbusier»), so a suggestion does not invent a second spelling of it. Longest match wins.
+ */
+function nameInTitle(title: string | undefined, inUse: { key: string; name: string }[]): string | null {
+	if (!title) return null;
+	const t = nameKey(title);
+	let best: { key: string; name: string } | null = null;
+	for (const e of inUse) {
+		if (e.key.length < MIN_TITLE_MATCH || !t.startsWith(e.key)) continue;
+		if (/[\p{L}\p{N}]/u.test(t.charAt(e.key.length))) continue;
+		if (!best || e.key.length > best.key.length) best = e;
+	}
+	return best?.name ?? null;
 }
 
 /**
@@ -113,6 +135,7 @@ export function suggestSourceProjects(
 		(cleanSourceProject(i.source_project) ? p.named : p.loose).push(i);
 		pages.set(key, p);
 	}
+	const inUse = tally(items);
 	const out: SourceProjectSuggestion[] = [];
 	for (const [key, p] of pages) {
 		if (!p.loose.length || dismissed.has(key)) continue;
@@ -125,10 +148,33 @@ export function suggestSourceProjects(
 				key,
 				url: p.url,
 				ids: p.loose.map((i) => i.id),
-				name: cleanSourceProject(title) ?? p.host,
+				name: nameInTitle(title, inUse) ?? cleanSourceProject(title) ?? p.host,
 				existing: false
 			});
 		}
 	}
 	return out.sort((a, b) => b.ids.length - a.ids.length || Number(b.existing) - Number(a.existing));
+}
+
+export interface UndoBatch {
+	/** The name to put back; null = no source project. */
+	name: string | null;
+	ids: string[];
+}
+
+/**
+ * How to undo a bulk change: `before` holds each image's source project before it, `changed` the
+ * images that really changed. One batch per previous name, in the order the names first appear.
+ */
+export function undoBatches(before: ReadonlyMap<string, string | null>, changed: string[]): UndoBatch[] {
+	const out = new Map<string, UndoBatch>();
+	for (const id of changed) {
+		if (!before.has(id)) continue;
+		const name = cleanSourceProject(before.get(id));
+		const k = name ?? '\0';
+		const b = out.get(k) ?? { name, ids: [] };
+		b.ids.push(id);
+		out.set(k, b);
+	}
+	return [...out.values()];
 }

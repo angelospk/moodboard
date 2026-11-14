@@ -5,7 +5,8 @@ import {
 	cleanSourceProject,
 	groupBySourceProject,
 	sourceProjectNames,
-	suggestSourceProjects
+	suggestSourceProjects,
+	undoBatches
 } from '../src/lib/sourceProjects';
 
 let n = 0;
@@ -127,6 +128,38 @@ describe('suggestSourceProjects', () => {
 		expect(out[0].existing).toBe(false);
 		expect(out[0].url).toBe(page);
 	});
+	it('the page title starts with a name already in use: offer that name, not a second spelling', () => {
+		const items = [
+			img({ source_url: 'https://pinterest.com/pin/1', source_project: 'Villa Savoye' }),
+			img({ source_url: page, source_title: 'villa savoye / Le Corbusier' }),
+			img({ source_url: page })
+		];
+		const out = suggestSourceProjects(items);
+		expect(out).toHaveLength(1);
+		expect(out[0].name).toBe('Villa Savoye');
+		expect(out[0].existing).toBe(false);
+	});
+	it('only a whole-word start of the title counts, and short names never match', () => {
+		const items = [
+			img({ source_url: 'https://a.com/1', source_project: 'Villa' }),
+			img({ source_url: 'https://a.com/2', source_project: 'Casa' }),
+			img({ source_url: 'https://a.com/3', source_project: 'Ab' }),
+			img({ source_url: page, source_title: 'Villanova House' }),
+			img({ source_url: page }),
+			img({ source_url: 'https://b.com/x', source_title: 'Ab Studio' }),
+			img({ source_url: 'https://b.com/x' })
+		];
+		expect(suggestSourceProjects(items).map((s) => s.name).sort()).toEqual(['Ab Studio', 'Villanova House']);
+	});
+	it('several names match: the longest one', () => {
+		const items = [
+			img({ source_url: 'https://a.com/1', source_project: 'Villa Savoye' }),
+			img({ source_url: 'https://a.com/2', source_project: 'Villa Savoye Poissy' }),
+			img({ source_url: page, source_title: 'Villa Savoye Poissy, 1931' }),
+			img({ source_url: page })
+		];
+		expect(suggestSourceProjects(items)[0].name).toBe('Villa Savoye Poissy');
+	});
 	it('treats www, a trailing slash and a #fragment as the same page', () => {
 		const items = [
 			img({ source_url: 'https://www.site.com/p/1/' }),
@@ -183,5 +216,36 @@ describe('suggestSourceProjects', () => {
 		const items = [img({ source_url: page }), img({ source_url: page })];
 		const [first] = suggestSourceProjects(items);
 		expect(suggestSourceProjects(items, new Set([first.key]))).toEqual([]);
+	});
+});
+
+describe('undoBatches', () => {
+	it('puts each changed image back to the name it had: one batch per previous name', () => {
+		const before = new Map<string, string | null>([
+			['a', 'Therme Vals'],
+			['b', null],
+			['c', 'Therme Vals'],
+			['d', 'Kolumba']
+		]);
+		expect(undoBatches(before, ['a', 'b', 'c', 'd'])).toEqual([
+			{ name: 'Therme Vals', ids: ['a', 'c'] },
+			{ name: null, ids: ['b'] },
+			{ name: 'Kolumba', ids: ['d'] }
+		]);
+	});
+	it('only the images that really changed: failed ones and unknown ids are left alone', () => {
+		const before = new Map<string, string | null>([
+			['a', null],
+			['b', 'X']
+		]);
+		expect(undoBatches(before, ['b', 'zzz'])).toEqual([{ name: 'X', ids: ['b'] }]);
+		expect(undoBatches(before, [])).toEqual([]);
+	});
+	it('a blank previous value counts as no name', () => {
+		const before = new Map<string, string | null>([
+			['a', '  '],
+			['b', null]
+		]);
+		expect(undoBatches(before, ['a', 'b'])).toEqual([{ name: null, ids: ['a', 'b'] }]);
 	});
 });

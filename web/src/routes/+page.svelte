@@ -2,7 +2,7 @@
 	import { reloadData } from '#lib/reload.js';
 	import { goto, preloadCode } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import type { Inspiration, Level } from '#lib/types.js';
 	import { levelLabel, levelStore } from '#lib/levels.svelte.js';
 	import LevelManager from '#lib/components/LevelManager.svelte';
@@ -14,7 +14,14 @@
 	import { needSmart, smart } from '#lib/smart.svelte.js';
 	import SourceProjectBar from '#lib/components/SourceProjectBar.svelte';
 	import SourceProjectSuggestions from '#lib/components/SourceProjectSuggestions.svelte';
-	import { groupBySourceProject, sourceProjectNames, suggestSourceProjects } from '#lib/sourceProjects.js';
+	import {
+		groupBySourceProject,
+		sourceProjectNames,
+		suggestSourceProjects,
+		undoBatches,
+		type UndoBatch
+	} from '#lib/sourceProjects.js';
+	import { keepPlace } from '#lib/scrollAnchor.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { t, tn, timeAgo } from '#lib/i18n.js';
 	import {
@@ -47,6 +54,10 @@
 	const picked = new SvelteSet<string>();
 	let spBusy = $state(false);
 	let spMessage = $state('');
+	/** How to undo the last set or clear; null when there is nothing to undo. */
+	let spUndo = $state<UndoBatch[] | null>(null);
+	let bar: SourceProjectBar | undefined = $state();
+	let pageEl: HTMLElement | undefined = $state();
 	/** Pages whose suggestion the user dismissed; remembered per browser. */
 	let dismissed = $state(new Set<string>());
 	let newProject = $state('');
@@ -207,6 +218,8 @@
 		grouped ? groupBySourceProject(filtered, { noneName: t('sp.none'), ranked: byMeaning && !!meaning }) : null
 	);
 	const suggestions = $derived(suggestSourceProjects(data.inspirations, dismissed));
+	/** Dismissed suggestions that would still apply. */
+	const hiddenSuggestions = $derived(dismissed.size ? suggestSourceProjects(data.inspirations).length - suggestions.length : 0);
 	const imageById = $derived(new Map(data.inspirations.map((i) => [i.id, i])));
 
 	function toggleGrouped() {
@@ -226,7 +239,20 @@
 	function toggleSelecting() {
 		selecting = !selecting;
 		picked.clear();
-		spMessage = '';
+		// The result of the last action (and its undo) stays in view after «Τέλος».
+		if (selecting) {
+			spMessage = '';
+			spUndo = null;
+		}
+	}
+
+	/** A section's «Επιλογή»: enter select mode with the section ticked, cursor in the name field. */
+	async function pickSection(ids: string[]) {
+		if (!selecting) toggleSelecting();
+		toggleMany(ids);
+		await tick();
+		// Not on touch screens: the keyboard would cover the images the user may still untick.
+		if (matchMedia('(hover: hover)').matches) bar?.focus();
 	}
 
 	/** Every id in `ids` is ticked: untick them, else tick them all. */
@@ -235,23 +261,33 @@
 		else for (const id of ids) picked.add(id);
 	}
 
-	function dismissSuggestion(key: string) {
-		dismissed = new Set([...dismissed, key]);
+	function saveDismissed(keys: Set<string>) {
+		dismissed = keys;
 		try {
-			localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissed]));
+			if (keys.size) localStorage.setItem(DISMISSED_KEY, JSON.stringify([...keys]));
+			else localStorage.removeItem(DISMISSED_KEY);
 		} catch {
 			/* optional */
 		}
 	}
+	const dismissSuggestion = (key: string) => saveDismissed(new Set([...dismissed, key]));
 
 	/** Set (`name`) or clear (null) the source project of `ids`. Returns true when every image changed. */
 	async function applySourceProject(ids: string[], name: string | null): Promise<boolean> {
 		if (spBusy || !ids.length) return false;
 		spBusy = true;
 		spMessage = '';
+		spUndo = null;
+		const before = new Map(ids.map((id) => [id, imageById.get(id)?.source_project ?? null]));
 		try {
-			const out = await updateMany(data.pb, ids, { source_project: name });
-			await reloadData();
+			// Named images move to another section: keep the section the user is reading in place.
+			const out = await keepPlace(pageEl, async () => {
+				const o = await updateMany(data.pb, ids, { source_project: name });
+				await reloadData();
+				return o;
+			}, tick);
+			const undo = undoBatches(before, out.ok);
+			spUndo = undo.length ? undo : null;
 			const images = tn('common.images', out.ok.length);
 			spMessage = out.failed.length
 				? t('sp.partial', { ok: out.ok.length, failed: out.failed.length })
@@ -259,6 +295,29 @@
 					? t('sp.set', { name, images })
 					: t('sp.cleared', { images });
 			return out.failed.length === 0;
+		} finally {
+			spBusy = false;
+		}
+	}
+
+	/** Put back the names the last set or clear replaced. */
+	async function undoSourceProject() {
+		const undo = spUndo;
+		if (spBusy || !undo) return;
+		spBusy = true;
+		spUndo = null;
+		try {
+			let ok = 0;
+			let failed = 0;
+			await keepPlace(pageEl, async () => {
+				for (const b of undo) {
+					const out = await updateMany(data.pb, b.ids, { source_project: b.name });
+					ok += out.ok.length;
+					failed += out.failed.length;
+				}
+				await reloadData();
+			}, tick);
+			spMessage = failed ? t('sp.partial', { ok, failed }) : t('sp.undone', { images: tn('common.images', ok) });
 		} finally {
 			spBusy = false;
 		}
@@ -473,6 +532,16 @@
 	<title>Moodboard</title>
 </svelte:head>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key !== 'Escape' || !selecting || managingLevels || e.defaultPrevented) return;
+		// First Esc leaves a text field (it may only close its suggestions), the next one leaves select mode.
+		const el = e.target;
+		if (el instanceof HTMLElement && el.matches('input, select, textarea')) el.blur();
+		else toggleSelecting();
+	}}
+/>
+
 <header class="appbar">
 	<a class="brand" href="/">
 		<h1>Moodboard</h1>
@@ -492,7 +561,7 @@
 	</div>
 </header>
 
-<div class="page">
+<div class="page" class:selecting bind:this={pageEl}>
 	{#if data.error}
 		<p class="err">{t('home.loadError', { error: data.error })}</p>
 	{/if}
@@ -618,14 +687,15 @@
 			{#if !selecting}
 				<SourceProjectSuggestions
 					{suggestions}
+					hidden={hiddenSuggestions}
 					byId={imageById}
 					urls={data.urls}
 					names={sourceNames}
 					busy={spBusy}
 					onapply={(ids, name) => void applySourceProject(ids, name)}
 					ondismiss={dismissSuggestion}
+					onrestore={() => saveDismissed(new Set())}
 				/>
-				{#if spMessage}<p class="mhint spmsg" role="status">{spMessage}</p>{/if}
 			{/if}
 			{@render filters()}
 			{@render imageGrid()}
@@ -799,10 +869,16 @@
 			title={t('sp.groupTitle')}
 			onclick={toggleGrouped}
 		>
-			{t('sp.group')}
+			{t('sp.group')}{#if sourceNames.length}<span class="n">{sourceNames.length}</span>{/if}
 		</button>
 		{#if data.inspirations.length}
-			<button type="button" class={['chip', selecting && 'on']} aria-pressed={selecting} onclick={toggleSelecting}>
+			<button
+				type="button"
+				class={['chip', selecting && 'on']}
+				aria-pressed={selecting}
+				title={selecting ? t('sp.bar.doneTitle') : t('sp.selectTitle')}
+				onclick={toggleSelecting}
+			>
 				{selecting ? t('bulk.done') : t('bulk.select')}
 			</button>
 		{/if}
@@ -825,6 +901,13 @@
 			{/if}
 		</p>
 	{/if}
+	{#if spMessage && !selecting}
+		<p class="mhint" role="status">
+			{spMessage}
+			{#if spUndo}<button type="button" class="clear" disabled={spBusy} onclick={undoSourceProject}>{t('sp.undo')}</button>{/if}
+		</p>
+	{/if}
+	{#if !selecting && sections?.length === 1 && !sections[0].key}<p class="mhint">{t('sp.groupEmpty')}</p>{/if}
 {/snippet}
 
 {#snippet imageGrid()}
@@ -846,13 +929,23 @@
 		<div class="psecs">
 			{#each sections as sec (sec.key)}
 				{@const ids = sec.items.map((i) => i.id)}
-				<section class="psec">
+				<section class="psec" data-section={sec.key}>
 					<h3 class="psec-head">
 						<span class={['psec-name', !sec.key && 'none']}>{sec.name}</span>
 						<span class="sec-meta">{tn('common.images', sec.items.length)}</span>
 						{#if selecting}
 							<button type="button" class="btn ghost" onclick={() => toggleMany(ids)}>
 								{ids.every((id) => picked.has(id)) ? t('sp.bar.sectionNone') : t('sp.bar.sectionAll')}
+							</button>
+						{:else}
+							<button
+								type="button"
+								class="btn ghost"
+								title={t('sp.bar.sectionAll')}
+								aria-label={t('sp.section.selectLabel', { name: sec.name })}
+								onclick={() => void pickSection(ids)}
+							>
+								{t('sp.section.select')}
 							</button>
 						{/if}
 					</h3>
@@ -913,14 +1006,16 @@
 	{/if}
 {/snippet}
 
-<a class="fab" href="/new" aria-label={t('common.newImage')}>+</a>
+{#if !selecting}<a class="fab" href="/new" aria-label={t('common.newImage')}>+</a>{/if}
 
 {#if selecting}
 	<SourceProjectBar
+		bind:this={bar}
 		count={picked.size}
 		names={sourceNames}
 		busy={spBusy}
 		message={spMessage}
+		onundo={spUndo ? undoSourceProject : undefined}
 		onset={(name) => void applyPicked(name)}
 		onclear={() => void applyPicked(null)}
 		onall={() => {
@@ -1177,7 +1272,9 @@
 	}
 	.body { padding: 10px 12px 12px; }
 	.sp { margin: 6px 0 0; font-size: 0.76rem; color: var(--accent); overflow-wrap: anywhere; }
-	.spmsg { margin: 0 0 12px; }
+	/* Room under the last cards for the floating select bar. */
+	.page.selecting { padding-bottom: 160px; }
+	.chip .n { margin-left: 6px; font-size: 12.5px; opacity: 0.7; }
 	button.card { width: 100%; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 	.card.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
 	.tick {
@@ -1194,7 +1291,7 @@
 		font-size: 14px;
 		line-height: 1;
 	}
-	.card.picked .tick { background: var(--accent); color: #fff; box-shadow: none; }
+	.card.picked .tick { background: var(--accent); color: var(--on-accent); box-shadow: none; }
 	.psec { margin-bottom: 12px; }
 	.psec-head {
 		display: flex;
