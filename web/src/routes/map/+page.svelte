@@ -175,7 +175,6 @@
 	);
 	const projectColors = $derived(zoneColors(projectNames.keys()));
 	let zonesBusy = false;
-	const boardScope = $derived(byProject ? PROJECT_SCOPE : data.positionsScope);
 
 	$effect(() => {
 		if (zonePref !== 'project' || project !== 'all') {
@@ -499,7 +498,6 @@
 		}
 		const prev = item.project_id;
 		const next = zone === NO_PROJECT_ZONE ? null : zone;
-		const scope = boardScope;
 		setItem({ ...item, project_id: next });
 		try {
 			setItem(await updateInspiration(data.pb, item.id, { project_id: next }));
@@ -507,23 +505,21 @@
 			toast(
 				{
 					text: name ? t('map.movedTo', { name }) : t('map.movedNoProject'),
-					action: { label: t('map.undo'), run: () => void undoMove(item.id, prev, from, scope) }
+					action: { label: t('map.undo'), run: () => void undoMove(item.id, prev, from) }
 				},
 				5000
 			);
 		} catch (err) {
 			setItem(item);
-			board?.restore(item.id, from);
 			toast({ text: errText(err, t('map.moveNotSaved')), tone: 'error' }, 6000);
 		}
 	}
 
-	/** `from` belongs to the map `scope`: put the card back only while that map is still open. */
-	async function undoMove(id: string, prev: string | null, from: From, scope: string) {
+	async function undoMove(id: string, prev: string | null, from: From) {
 		const cur = items.find((i) => i.id === id);
 		if (!cur) return;
 		setItem({ ...cur, project_id: prev });
-		if (scope === boardScope) board?.restore(id, from);
+		board?.restore(id, from);
 		try {
 			setItem(await updateInspiration(data.pb, id, { project_id: prev }));
 		} catch (err) {
@@ -905,7 +901,7 @@
 				selectedId={panelOpen ? selectedId : null}
 				{highlight}
 				{matches}
-				scope={boardScope}
+				scope={byProject ? PROJECT_SCOPE : data.positionsScope}
 				seed={byProject && projectSeed ? projectSeed : data.positions}
 				canSave={!!data.userId}
 				{rightInset}
