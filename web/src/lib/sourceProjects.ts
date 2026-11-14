@@ -206,3 +206,44 @@ export function undoStillValid(
 		.map((b) => ({ ...b, ids: b.ids.filter((id) => current.has(id) && cleanSourceProject(current.get(id)) === want) }))
 		.filter((b) => b.ids.length);
 }
+
+/** A neighbour 0.05 less similar than the closest one counts e^-1 as much (as the server's label vote). */
+const SIMILAR_SHARP = 20;
+/** A name needs this share of the neighbours' weight, and two neighbours at least. */
+const SIMILAR_SHARE = 0.5;
+const SIMILAR_MIN_VOTES = 2;
+
+/**
+ * The source project the images that look most like one image share, or null. Only an offer: the
+ * closest images vote (weighted by how close they are); neighbours without a name dilute the vote.
+ * `names`: the source project of each neighbour that is known.
+ */
+export function similarSourceProject(
+	hits: { id: string; score: number }[],
+	names: ReadonlyMap<string, string | null>
+): string | null {
+	const known = hits.filter((h) => names.has(h.id));
+	if (!known.length) return null;
+	const best = Math.max(...known.map((h) => h.score));
+	let total = 0;
+	const votes = new Map<string, { w: number; n: number; spellings: Map<string, number> }>();
+	for (const h of known) {
+		const w = Math.exp(SIMILAR_SHARP * (h.score - best));
+		total += w;
+		const name = cleanSourceProject(names.get(h.id));
+		if (!name) continue;
+		const k = nameKey(name);
+		const v = votes.get(k) ?? { w: 0, n: 0, spellings: new Map<string, number>() };
+		v.w += w;
+		v.n++;
+		v.spellings.set(name, (v.spellings.get(name) ?? 0) + 1);
+		votes.set(k, v);
+	}
+	let pick: { w: number; name: string } | null = null;
+	for (const v of votes.values()) {
+		if (v.n < SIMILAR_MIN_VOTES || v.w / total < SIMILAR_SHARE) continue;
+		const name = [...v.spellings].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+		if (!pick || v.w > pick.w) pick = { w: v.w, name };
+	}
+	return pick?.name ?? null;
+}

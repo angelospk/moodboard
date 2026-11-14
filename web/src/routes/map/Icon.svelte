@@ -18,6 +18,7 @@
 		x: 'M4 4l8 8M12 4l-8 8',
 		check: 'M3 8.5l3 3 7-7',
 		upload: 'M8 11V3M4.5 6.5L8 3l3.5 3.5M3 13h10',
+		link: 'M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.9.9M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.9-.9',
 		contrast: 'M8 2.5a5.5 5.5 0 1 0 0 11a5.5 5.5 0 0 0 0-11zM8 2.5v11M8 5h3.8M8 8h5.5M8 11h3.8'
 	} as const;
 	export type IconName = keyof typeof PATHS;

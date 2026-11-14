@@ -342,6 +342,8 @@
 				</label>
 
 				<SourceProjectField
+					pb={data.pb}
+					id={item.id}
 					value={sourceProject}
 					names={data.sourceProjects}
 					onchange={(v) => {

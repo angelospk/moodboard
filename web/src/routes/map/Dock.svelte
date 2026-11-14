@@ -2,6 +2,7 @@
 	import { t } from '#lib/i18n.js';
 	import Icon from './Icon.svelte';
 	import Appearance from './Appearance.svelte';
+	import SourceButton from './SourceButton.svelte';
 
 	interface Props {
 		notesOn: boolean;
@@ -15,8 +16,14 @@
 		onadd: () => void;
 		onfit: () => void;
 		onlayout: () => void;
+		/** Source project names in use (the «Πηγή» suggestions). */
+		sourceNames: string[];
+		/** The name the images of a page already have, if any. */
+		nameFor: (url: string) => string | null;
+		/** The paste shortcut, e.g. ⌘ or Ctrl+. */
+		mod: string;
 	}
-	let { notesOn = $bindable(), size = $bindable(), min, max, hint, inset, onadd, onfit, onlayout }: Props = $props();
+	let { notesOn = $bindable(), size = $bindable(), min, max, hint, inset, onadd, onfit, onlayout, sourceNames, nameFor, mod }: Props = $props();
 </script>
 
 <div class="dockwrap" style:--inset="{inset}px">
@@ -26,6 +33,7 @@
 			<span class="lbl">{t('dock.image')}</span>
 			<span class="tip" aria-hidden="true">{t('common.newImage')} <kbd class="kbd">N</kbd></span>
 		</button>
+		<SourceButton names={sourceNames} {nameFor} {mod} />
 		<span class="sep" aria-hidden="true"></span>
 		<button
 			type="button"
@@ -234,8 +242,15 @@
 		.dock :global(.dbtn.primary) {
 			padding: 0;
 		}
+		/* Nine controls must fit a 390px phone: a shorter slider, no separators. */
+		.sep {
+			display: none;
+		}
+		.size {
+			padding: 0 4px;
+		}
 		.size input {
-			width: 84px;
+			width: 56px;
 		}
 		.size .s {
 			display: none;
