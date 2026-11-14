@@ -6,7 +6,7 @@ export interface CardNode extends SimulationNodeDatum {
 	/** 'i:<inspiration id>' (the saved-position key). */
 	id: string;
 	item: Inspiration;
-	/** The zone of a card: its first tag (null floats outside zones), or its project (see zoneKey). */
+	/** The zone of a card is its first tag; null floats outside zones. */
 	zone: string | null;
 	/** Measured card box, world px. */
 	w: number;
@@ -363,24 +363,13 @@ export function viewerList(items: Inspiration[], tag: string | null): Inspiratio
 	return tag === null ? items : items.filter((i) => i.tags?.includes(tag));
 }
 
-/** What the zones of a board stand for: the first tag of each card, or its project. */
-export type ZoneBy = 'tag' | 'project';
-
-/** The zone key of the cards with no project, when zones stand for projects. */
-export const NO_PROJECT_ZONE = 'none';
-
-/** The zone of one card: its first tag (null: outside every zone), or its project. */
-export function zoneKey(i: Inspiration, by: ZoneBy): string | null {
-	return by === 'project' ? (i.project_id ?? NO_PROJECT_ZONE) : (i.tags?.[0] ?? null);
-}
-
 /** True when the new rows put the same cards in the same zones: only their content changed, so
  *  the layout needs no new simulation run. */
-export function sameLayout(old: Map<string, Pick<CardNode, 'zone'>>, list: Inspiration[], by: ZoneBy = 'tag'): boolean {
+export function sameLayout(old: Map<string, Pick<CardNode, 'zone'>>, list: Inspiration[]): boolean {
 	if (old.size !== list.length) return false;
 	for (const item of list) {
 		const prev = old.get(`i:${item.id}`);
-		if (!prev || prev.zone !== zoneKey(item, by)) return false;
+		if (!prev || prev.zone !== (item.tags?.[0] ?? null)) return false;
 	}
 	return true;
 }

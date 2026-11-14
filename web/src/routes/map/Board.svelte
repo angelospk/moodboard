@@ -3,7 +3,7 @@
 		/** World coordinates. */
 		x: number;
 		y: number;
-		/** Key of the zone under the spot (a tag, or a project key when zones are by project), null outside zones. */
+		/** Tag of the zone under the spot, null outside zones. */
 		zone: string | null;
 	}
 
@@ -34,10 +34,8 @@
 		separateFrom,
 		ZONE_PAD,
 		zoneBox,
-		zoneKey,
 		type CardNode,
 		type Group,
-		type ZoneBy,
 		type ZoneColor
 	} from './board.js';
 
@@ -52,10 +50,6 @@
 		selectedId: string | null;
 		/** Cards whose image is still uploading. */
 		uploading?: Set<string>;
-		/** Zones from the first tag (default) or from the project. */
-		zoneBy?: ZoneBy;
-		/** Label per zone key, when the key is not the label (project ids). */
-		zoneNames?: Map<string, string>;
 		/** Tag whose cards stay bright; the rest fade. */
 		highlight: string | null;
 		/** Ids that match the search; null = no search. */
@@ -74,8 +68,8 @@
 		onfiles: (files: File[], spot: Spot) => void;
 		/** Double-click on empty canvas: add an image there. */
 		onpick: (spot: Spot) => void;
-		/** A card was dropped inside another zone (its key); `from` is where it was before the drag. */
-		onrezone: (item: Inspiration, zone: string, from: Placement) => void;
+		/** A card was dropped inside another zone; `from` is where it was before the drag. */
+		onrezone: (item: Inspiration, tag: string, from: Placement) => void;
 		ontoast: (msg: string) => void;
 	}
 
@@ -88,8 +82,6 @@
 		notesOn,
 		selectedId,
 		uploading = new Set<string>(),
-		zoneBy = 'tag',
-		zoneNames,
 		highlight,
 		matches,
 		scope,
@@ -233,7 +225,7 @@
 		return () => obs.disconnect();
 	}
 
-	function rebuild(list: Inspiration[], loadedScope: string, by: ZoneBy) {
+	function rebuild(list: Inspiration[], loadedScope: string) {
 		let fresh = false;
 		if (seededScope !== loadedScope) {
 			// Rows still waiting for the debounce belong to the map we are leaving.
@@ -250,7 +242,7 @@
 
 		const old = byId;
 		// Only row content changed (a save's answer, a live echo): keep the cards still.
-		const settled = !fresh && sameLayout(old, list, by);
+		const settled = !fresh && sameLayout(old, list);
 		const next: CardNode[] = list.map((item) => {
 			const id = `i:${item.id}`;
 			const prev = old.get(id);
@@ -258,7 +250,7 @@
 			return {
 				id,
 				item,
-				zone: zoneKey(item, by),
+				zone: item.tags?.[0] ?? null,
 				w: prev?.w ?? size,
 				h: prev?.h ?? estimateH(),
 				x: m?.x,
@@ -454,8 +446,7 @@
 	$effect(() => {
 		const list = items;
 		const sc = scope;
-		const by = zoneBy;
-		untrack(() => rebuild(list, sc, by));
+		untrack(() => rebuild(list, sc));
 	});
 
 	// A new card size changes every box before the observer reports it; nudge the layout.
@@ -1084,8 +1075,8 @@
 			{@const c = colors.get(z.tag)}
 			<div
 				class="zone"
-				class:dim={zoneBy === 'tag' && highlight !== null && highlight !== z.tag}
-				class:hl={zoneBy === 'tag' && highlight === z.tag}
+				class:dim={highlight !== null && highlight !== z.tag}
+				class:hl={highlight === z.tag}
 				class:target={dropZone === z.tag}
 				style:--zl={c?.light}
 				style:--zd={c?.dark}
@@ -1100,7 +1091,7 @@
 					onpointerup={zoneUp}
 					onpointercancel={zoneUp}
 				>
-					<span class="zlabel">{zoneNames?.get(z.tag) ?? z.tag}<span class="zcount">&nbsp;·&nbsp;{z.count}</span></span>
+					<span class="zlabel">{z.tag}<span class="zcount">&nbsp;·&nbsp;{z.count}</span></span>
 				</div>
 			</div>
 		{/each}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ZONE_GAP, layoutTargets, NO_PROJECT_ZONE, sameLayout, separateFrom, viewerList, zoneBox, zoneKey, type CardNode, type Rect } from '../src/routes/map/board';
+import { ZONE_GAP, layoutTargets, sameLayout, separateFrom, viewerList, zoneBox, type CardNode, type Rect } from '../src/routes/map/board';
 import type { Inspiration } from '../src/lib/types';
 
 const overlaps = (a: Rect, b: Rect, gap = ZONE_GAP) =>
@@ -122,36 +122,5 @@ describe('sameLayout', () => {
 		expect(sameLayout(old, [row('1', ['b', 'a']), row('2', [])])).toBe(false);
 		expect(sameLayout(old, [row('1', ['a'])])).toBe(false);
 		expect(sameLayout(old, [row('1', ['a']), row('3', [])])).toBe(false);
-	});
-});
-
-describe('zoneKey', () => {
-	const row = (tags: string[], project_id: string | null) => ({ id: 'x', tags, project_id }) as unknown as Inspiration;
-
-	it('by tag: the first tag, or no zone', () => {
-		expect(zoneKey(row(['a', 'b'], 'p1'), 'tag')).toBe('a');
-		expect(zoneKey(row([], 'p1'), 'tag')).toBeNull();
-	});
-
-	it('by project: the project id, or the no-project zone', () => {
-		expect(zoneKey(row(['a'], 'p1'), 'project')).toBe('p1');
-		expect(zoneKey(row(['a'], null), 'project')).toBe(NO_PROJECT_ZONE);
-	});
-});
-
-describe('sameLayout by project', () => {
-	const row = (id: string, tags: string[], project_id: string | null) => ({ id, tags, project_id }) as unknown as Inspiration;
-	const old = new Map([
-		['i:1', { zone: 'p1' }],
-		['i:2', { zone: NO_PROJECT_ZONE }]
-	]) as unknown as Map<string, CardNode>;
-
-	it('ignores tag changes', () => {
-		expect(sameLayout(old, [row('1', ['z'], 'p1'), row('2', ['q'], null)], 'project')).toBe(true);
-	});
-
-	it('is false when a card moves to another project', () => {
-		expect(sameLayout(old, [row('1', [], 'p2'), row('2', [], null)], 'project')).toBe(false);
-		expect(sameLayout(old, [row('1', [], 'p1'), row('2', [], 'p1')], 'project')).toBe(false);
 	});
 });

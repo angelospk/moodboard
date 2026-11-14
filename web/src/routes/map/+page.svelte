@@ -19,7 +19,6 @@
 		deleteInspiration,
 		updateInspiration,
 		imageUrls,
-		loadPositions,
 		toInspiration
 	} from '#lib/inspirations.js';
 	import { applyEvent, subscribeLive } from '#lib/realtime.js';
@@ -35,7 +34,7 @@
 	import Toasts, { type Toast } from './Toasts.svelte';
 	import Icon from './Icon.svelte';
 	import ShareMenu from './ShareMenu.svelte';
-	import { CARD_GAP, isTyping, NO_PROJECT_ZONE, searchText, viewerList, zoneColors, type ZoneBy } from './board.js';
+	import { CARD_GAP, isTyping, searchText, viewerList, zoneColors } from './board.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -162,47 +161,6 @@
 			.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 	});
 	const colors = $derived(zoneColors(tagStats.map((t) => t.tag)));
-
-	// Zones by first tag (default) or by project. By project only on the map of all projects, where a
-	// card dropped in another project's zone moves to that project. That layout has its own saved
-	// positions, loaded each time it opens.
-	const PROJECT_SCOPE = 'all:projects';
-	let zonePref = $state<ZoneBy>('tag');
-	let projectSeed = $state<Record<string, { x: number; y: number }> | null>(null);
-	const byProject = $derived(zonePref === 'project' && project === 'all' && projectSeed !== null);
-	const projectNames = $derived(
-		new Map([...data.projects.map((p) => [p.id, p.name] as const), [NO_PROJECT_ZONE, t('common.noProject')] as const])
-	);
-	const projectColors = $derived(zoneColors(projectNames.keys()));
-	let zonesBusy = false;
-
-	$effect(() => {
-		if (zonePref !== 'project' || project !== 'all') {
-			untrack(() => (projectSeed = null));
-			return;
-		}
-		if (untrack(() => projectSeed) !== null) return;
-		let alive = true;
-		const pb = untrack(() => data.pb);
-		loadPositions(pb, PROJECT_SCOPE)
-			.catch((): Record<string, { x: number; y: number }> => ({}))
-			.then((s) => alive && (projectSeed = s));
-		return () => {
-			alive = false;
-		};
-	});
-
-	async function setZones(by: ZoneBy) {
-		if (by === zonePref || zonesBusy) return;
-		zonesBusy = true;
-		try {
-			// Back to tag zones: cards moved there earlier in this visit were saved after the page loaded.
-			if (by === 'tag' && byProject) await reloadData().catch(() => {});
-			zonePref = by;
-		} finally {
-			zonesBusy = false;
-		}
-	}
 
 	const options = $derived.by(() => {
 		const per = new Map<string | null, number>();
@@ -340,11 +298,9 @@
 		}
 		// A new image must be visible where it lands: clear what would hide or fade it.
 		search = '';
-		// By project, a zone is a project and new images get no tag.
-		const inProjectZone = byProject && spot.zone !== null;
-		if (highlight && (byProject || highlight !== spot.zone)) highlight = null;
-		const projectId = inProjectZone ? (spot.zone === NO_PROJECT_ZONE ? null : spot.zone) : newProjectId;
-		const tags = !byProject && spot.zone ? [spot.zone] : [];
+		if (highlight && highlight !== spot.zone) highlight = null;
+		const projectId = newProjectId;
+		const tags = spot.zone ? [spot.zone] : [];
 		const lvl = level || null;
 		const cols = Math.ceil(Math.sqrt(files.length));
 		const queue: { id: string; file: File }[] = [];
@@ -483,45 +439,6 @@
 		board?.restore(id, from);
 		try {
 			setItem(await updateInspiration(data.pb, id, { tags }));
-		} catch (err) {
-			setItem(cur);
-			toast({ text: errText(err, t('map.undoFailed')), tone: 'error' }, 6000);
-		}
-	}
-
-	/** A card dropped in another project's zone moves to that project. */
-	async function moveProject(item: Inspiration, zone: string, from: From) {
-		if (uploading.has(item.id)) {
-			board?.restore(item.id, from);
-			toast(t('map.stillUploading'));
-			return;
-		}
-		const prev = item.project_id;
-		const next = zone === NO_PROJECT_ZONE ? null : zone;
-		setItem({ ...item, project_id: next });
-		try {
-			setItem(await updateInspiration(data.pb, item.id, { project_id: next }));
-			const name = next ? projectNames.get(next) : null;
-			toast(
-				{
-					text: name ? t('map.movedTo', { name }) : t('map.movedNoProject'),
-					action: { label: t('map.undo'), run: () => void undoMove(item.id, prev, from) }
-				},
-				5000
-			);
-		} catch (err) {
-			setItem(item);
-			toast({ text: errText(err, t('map.moveNotSaved')), tone: 'error' }, 6000);
-		}
-	}
-
-	async function undoMove(id: string, prev: string | null, from: From) {
-		const cur = items.find((i) => i.id === id);
-		if (!cur) return;
-		setItem({ ...cur, project_id: prev });
-		board?.restore(id, from);
-		try {
-			setItem(await updateInspiration(data.pb, id, { project_id: prev }));
 		} catch (err) {
 			setItem(cur);
 			toast({ text: errText(err, t('map.undoFailed')), tone: 'error' }, 6000);
@@ -800,10 +717,9 @@
 		try {
 			const raw = localStorage.getItem(LS_KEY);
 			if (raw) {
-				const v = JSON.parse(raw) as { size?: unknown; notesOn?: unknown; zones?: unknown };
+				const v = JSON.parse(raw) as { size?: unknown; notesOn?: unknown };
 				if (typeof v.size === 'number' && Number.isFinite(v.size)) size = clamp(Math.round(v.size), SIZE_MIN, SIZE_MAX);
 				if (typeof v.notesOn === 'boolean') notesOn = v.notesOn;
-				if (v.zones === 'project') zonePref = 'project';
 			}
 		} catch {
 			/* storage unavailable: keep the defaults */
@@ -816,7 +732,7 @@
 	});
 
 	$effect(() => {
-		const prefs = { size, notesOn, zones: zonePref };
+		const prefs = { size, notesOn };
 		if (!prefsLoaded) return;
 		try {
 			localStorage.setItem(LS_KEY, JSON.stringify(prefs));
@@ -853,8 +769,6 @@
 		{meaningBusy}
 		onmeaningtoggle={() => void toggleMeaning()}
 		onmeaning={() => void runMeaning()}
-		zoneBy={project === 'all' ? zonePref : undefined}
-		onzones={(by) => void setZones(by)}
 	>
 		{#snippet actions()}
 			{#if project !== 'all' && project !== 'none'}
@@ -863,23 +777,8 @@
 		{/snippet}
 	</BoardHeader>
 
-	{#if tagStats.length || project === 'all'}
+	{#if tagStats.length}
 		<div class="tagrow">
-			{#if project === 'all'}
-				<div class="seg zones" role="group" aria-label={t('map.zones')}>
-					<button type="button" class:on={zonePref === 'tag'} aria-pressed={zonePref === 'tag'} onclick={() => void setZones('tag')}>
-						{t('map.zonesTags')}
-					</button>
-					<button
-						type="button"
-						class:on={zonePref === 'project'}
-						aria-pressed={zonePref === 'project'}
-						onclick={() => void setZones('project')}
-					>
-						{t('map.zonesProjects')}
-					</button>
-				</div>
-			{/if}
 			<TagChips tags={tagStats} {colors} {highlight} ontoggle={toggleTag} />
 		</div>
 	{/if}
@@ -893,16 +792,14 @@
 				pb={data.pb}
 				items={filtered}
 				{urlOf}
-				colors={byProject ? projectColors : colors}
-				zoneBy={byProject ? 'project' : 'tag'}
-				zoneNames={byProject ? projectNames : undefined}
+				{colors}
 				{size}
 				{notesOn}
 				selectedId={panelOpen ? selectedId : null}
 				{highlight}
 				{matches}
-				scope={byProject ? PROJECT_SCOPE : data.positionsScope}
-				seed={byProject && projectSeed ? projectSeed : data.positions}
+				scope={data.positionsScope}
+				seed={data.positions}
 				canSave={!!data.userId}
 				{rightInset}
 				{uploading}
@@ -914,7 +811,7 @@
 				oncontext={onContext}
 				onfiles={(files, spot) => void addFiles(files, spot)}
 				onpick={(spot) => pickFiles(spot)}
-				onrezone={(item, zone, from) => void (byProject ? moveProject(item, zone, from) : rezone(item, zone, from))}
+				onrezone={(item, tag, from) => void rezone(item, tag, from)}
 				ontoast={(msg) => toast({ text: msg, tone: 'error' }, 5000)}
 			/>
 
@@ -1045,19 +942,11 @@
 		height: 40px;
 		display: flex;
 		align-items: center;
-		gap: 12px;
 		padding: 0 20px;
 		background: var(--surface);
 		border-bottom: 1px solid var(--line);
 		position: relative;
 		z-index: 20;
-	}
-	.zones {
-		flex: none;
-	}
-	.zones button {
-		padding: 4px 10px;
-		font-size: 12.5px;
 	}
 	.body {
 		position: relative;
