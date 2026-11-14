@@ -10,13 +10,15 @@ export interface AnchorBox {
 }
 
 /**
- * The section to hold in place: the one that covers the top of the viewport (the one being read),
- * else the first one that starts inside it. Null when none is in view.
+ * The sections to hold in place, best first: the one that covers the top of the viewport (the one
+ * being read), else the first one that starts inside it; then the sections after it, then the ones
+ * before it (nearest first), in case the change removes it. Empty when none is in view.
  */
-export function pickAnchor(boxes: AnchorBox[], viewportHeight: number): string | null {
-	const reading = boxes.find((b) => b.top <= 0 && b.bottom > 0);
-	if (reading) return reading.id;
-	return boxes.find((b) => b.top > 0 && b.top < viewportHeight)?.id ?? null;
+export function anchorCandidates(boxes: AnchorBox[], viewportHeight: number): string[] {
+	let i = boxes.findIndex((b) => b.top <= 0 && b.bottom > 0);
+	if (i < 0) i = boxes.findIndex((b) => b.top > 0 && b.top < viewportHeight);
+	if (i < 0) return [];
+	return [...boxes.slice(i), ...boxes.slice(0, i).reverse()].map((b) => b.id);
 }
 
 /**
@@ -32,14 +34,17 @@ export async function keepPlace<T>(
 		const r = el.getBoundingClientRect();
 		return { id: el.dataset.section!, top: r.top, bottom: r.bottom };
 	});
-	const id = pickAnchor(boxes, window.innerHeight);
-	const before = boxes.find((b) => b.id === id)?.top ?? 0;
+	const tops = new Map(boxes.map((b) => [b.id, b.top]));
+	const candidates = anchorCandidates(boxes, window.innerHeight);
 	const out = await change();
 	await settled();
-	const el = id === null ? null : root?.querySelector<HTMLElement>(`[data-section="${CSS.escape(id)}"]`);
-	if (el) {
-		const delta = el.getBoundingClientRect().top - before;
+	// The first candidate that is still there (a bulk rename can remove the one being read).
+	for (const id of candidates) {
+		const el = root?.querySelector<HTMLElement>(`[data-section="${CSS.escape(id)}"]`);
+		if (!el) continue;
+		const delta = el.getBoundingClientRect().top - tops.get(id)!;
 		if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'instant' });
+		break;
 	}
 	return out;
 }

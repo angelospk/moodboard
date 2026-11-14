@@ -178,3 +178,23 @@ export function undoBatches(before: ReadonlyMap<string, string | null>, changed:
 	}
 	return [...out.values()];
 }
+
+/**
+ * The part of an undo that is still safe: only images that still have the name the change set
+ * (`set`; null = cleared). An image someone changed since keeps its newer value. `current` holds
+ * each image's source project now; images no longer there are dropped.
+ */
+export function undoStillValid(
+	batches: UndoBatch[],
+	set: string | null,
+	current: ReadonlyMap<string, string | null>
+): UndoBatch[] {
+	const key = (v: string | null | undefined) => {
+		const name = cleanSourceProject(v);
+		return name === null ? null : nameKey(name);
+	};
+	const want = key(set);
+	return batches
+		.map((b) => ({ ...b, ids: b.ids.filter((id) => current.has(id) && key(current.get(id)) === want) }))
+		.filter((b) => b.ids.length);
+}

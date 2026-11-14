@@ -6,7 +6,8 @@ import {
 	groupBySourceProject,
 	sourceProjectNames,
 	suggestSourceProjects,
-	undoBatches
+	undoBatches,
+	undoStillValid
 } from '../src/lib/sourceProjects';
 
 let n = 0;
@@ -247,5 +248,30 @@ describe('undoBatches', () => {
 			['b', null]
 		]);
 		expect(undoBatches(before, ['a', 'b'])).toEqual([{ name: null, ids: ['a', 'b'] }]);
+	});
+});
+
+describe('undoStillValid', () => {
+	const batches = [
+		{ name: 'Therme Vals', ids: ['a', 'b'] },
+		{ name: null, ids: ['c'] }
+	];
+	it('keeps only images that still have the name the change set (none changed them since)', () => {
+		const now = new Map<string, string | null>([
+			['a', 'Kolumba'],
+			['b', 'Other'],
+			['c', ' kolumba ']
+		]);
+		expect(undoStillValid(batches, 'Kolumba', now)).toEqual([
+			{ name: 'Therme Vals', ids: ['a'] },
+			{ name: null, ids: ['c'] }
+		]);
+	});
+	it('a clear (null) is undone only where the image still has no name; gone images are dropped', () => {
+		const now = new Map<string, string | null>([
+			['a', null],
+			['c', 'New']
+		]);
+		expect(undoStillValid(batches, null, now)).toEqual([{ name: 'Therme Vals', ids: ['a'] }]);
 	});
 });

@@ -19,6 +19,7 @@
 		sourceProjectNames,
 		suggestSourceProjects,
 		undoBatches,
+		undoStillValid,
 		type UndoBatch
 	} from '#lib/sourceProjects.js';
 	import { keepPlace } from '#lib/scrollAnchor.js';
@@ -54,8 +55,8 @@
 	const picked = new SvelteSet<string>();
 	let spBusy = $state(false);
 	let spMessage = $state('');
-	/** How to undo the last set or clear; null when there is nothing to undo. */
-	let spUndo = $state<UndoBatch[] | null>(null);
+	/** How to undo the last set or clear (`set`: the name it set, null = cleared); null when nothing to undo. */
+	let spUndo = $state<{ set: string | null; batches: UndoBatch[] } | null>(null);
 	let bar: SourceProjectBar | undefined = $state();
 	let pageEl: HTMLElement | undefined = $state();
 	/** Pages whose suggestion the user dismissed; remembered per browser. */
@@ -287,7 +288,7 @@
 				return o;
 			}, tick);
 			const undo = undoBatches(before, out.ok);
-			spUndo = undo.length ? undo : null;
+			spUndo = undo.length ? { set: name, batches: undo } : null;
 			const images = tn('common.images', out.ok.length);
 			spMessage = out.failed.length
 				? t('sp.partial', { ok: out.ok.length, failed: out.failed.length })
@@ -307,17 +308,25 @@
 		spBusy = true;
 		spUndo = null;
 		try {
+			// Images changed since (another tab or device) keep their newer name: read them fresh first.
+			await reloadData();
+			await tick();
+			const current = new Map(data.inspirations.map((i) => [i.id, i.source_project]));
+			const batches = undoStillValid(undo.batches, undo.set, current);
 			let ok = 0;
-			let failed = 0;
+			const failed: UndoBatch[] = [];
 			await keepPlace(pageEl, async () => {
-				for (const b of undo) {
+				for (const b of batches) {
 					const out = await updateMany(data.pb, b.ids, { source_project: b.name });
 					ok += out.ok.length;
-					failed += out.failed.length;
+					if (out.failed.length) failed.push({ name: b.name, ids: out.failed });
 				}
 				await reloadData();
 			}, tick);
-			spMessage = failed ? t('sp.partial', { ok, failed }) : t('sp.undone', { images: tn('common.images', ok) });
+			const n = failed.reduce((sum, b) => sum + b.ids.length, 0);
+			// The ones that failed can be undone again.
+			if (n) spUndo = { set: undo.set, batches: failed };
+			spMessage = n ? t('sp.partial', { ok, failed: n }) : t('sp.undone', { images: tn('common.images', ok) });
 		} finally {
 			spBusy = false;
 		}
