@@ -36,10 +36,20 @@ export async function keepPlace<T>(
 	});
 	const tops = new Map(boxes.map((b) => [b.id, b.top]));
 	const candidates = anchorCandidates(boxes, window.innerHeight);
-	const out = await change();
-	await settled();
+	// The user scrolled while the change was saving: that is the place to keep, so do nothing.
+	let moved = false;
+	const stop = new AbortController();
+	for (const type of ['wheel', 'touchmove', 'keydown', 'pointerdown'])
+		window.addEventListener(type, () => (moved = true), { passive: true, signal: stop.signal });
+	let out: T;
+	try {
+		out = await change();
+		await settled();
+	} finally {
+		stop.abort();
+	}
 	// The first candidate that is still there (a bulk rename can remove the one being read).
-	for (const id of candidates) {
+	for (const id of moved ? [] : candidates) {
 		const el = root?.querySelector<HTMLElement>(`[data-section="${CSS.escape(id)}"]`);
 		if (!el) continue;
 		const delta = el.getBoundingClientRect().top - tops.get(id)!;
