@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Inspiration } from '../src/lib/types';
 import {
 	cleanSourceProject,
+	commonSourceProject,
 	groupBySourceProject,
 	sourceProjectNames,
 	suggestSourceProjects,
@@ -280,5 +281,23 @@ describe('undoStillValid', () => {
 			['c', 'New']
 		]);
 		expect(undoStillValid(batches, null, now)).toEqual([{ name: 'Therme Vals', ids: ['a'] }]);
+	});
+});
+
+describe('commonSourceProject', () => {
+	const named = (v: string | null) => img({ source_project: v });
+	it('no image has a name: none, not mixed', () => {
+		expect(commonSourceProject([named(null), named(null)])).toEqual({ name: null, mixed: false });
+		expect(commonSourceProject([])).toEqual({ name: null, mixed: false });
+	});
+	it('every image has the same name (any spelling): that name, not mixed', () => {
+		expect(commonSourceProject([named('Kolumba'), named('kolumba'), named('Kolumba')])).toEqual({
+			name: 'Kolumba',
+			mixed: false
+		});
+	});
+	it('different names, or some images without one: mixed, with the most used name', () => {
+		expect(commonSourceProject([named('A'), named('B'), named('B')])).toEqual({ name: 'B', mixed: true });
+		expect(commonSourceProject([named('A'), named(null)])).toEqual({ name: 'A', mixed: true });
 	});
 });

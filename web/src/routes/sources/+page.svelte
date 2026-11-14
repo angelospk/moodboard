@@ -4,6 +4,8 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import type { Inspiration } from '#lib/types.js';
 	import { filterItems, groupSources, type Source, type SourceSort } from '#lib/sources.js';
+	import { sourceProjectNames } from '#lib/sourceProjects.js';
+	import SourcePageProject from '#lib/components/SourcePageProject.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -20,6 +22,7 @@
 	const STRIP = 12;
 
 	const projectName = $derived(new Map(data.projects.map((p) => [p.id, p.name])));
+	const sourceNames = $derived(sourceProjectNames(data.inspirations));
 
 	const filtered = $derived(
 		filterItems(data.inspirations, {
@@ -184,6 +187,10 @@
 		<div class="empty"><p>{t('sources.noMatch')}</p></div>
 	{/if}
 
+	<datalist id="source-project-names">
+		{#each sourceNames as n (n)}<option value={n}></option>{/each}
+	</datalist>
+
 	<ol class="sources">
 		{#each grouped.sources as s (s.host)}
 			{@const expanded = open.has(s.host)}
@@ -226,6 +233,7 @@
 								<div class="page-head">
 									<a href={pg.url} target="_blank" rel="noopener noreferrer" title={pg.url}>{pageLabel(pg.url, pg.title)}</a>
 									<span class="n">{pg.items.length}</span>
+									<SourcePageProject pb={data.pb} items={pg.items} listId="source-project-names" />
 								</div>
 								{@render strip(pg.items, 8)}
 							</li>
@@ -351,6 +359,8 @@
 		gap: 12px;
 	}
 	.source {
+		/* A grid item: without this the image strip widens the page instead of scrolling. */
+		min-width: 0;
 		background: var(--raised);
 		border: 1px solid var(--line);
 		border-radius: var(--r-panel);
@@ -530,9 +540,13 @@
 		display: grid;
 		gap: 14px;
 	}
+	.pages > li {
+		min-width: 0;
+	}
 	.page-head {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
+		flex-wrap: wrap;
 		gap: 8px;
 		font-size: 14px;
 	}

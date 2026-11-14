@@ -23,6 +23,7 @@
 		type UndoBatch
 	} from '#lib/sourceProjects.js';
 	import { keepPlace } from '#lib/scrollAnchor.js';
+	import { groupByFirstTag, parseGroupMode, type GroupMode } from '#lib/sections.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { t, tn, timeAgo } from '#lib/i18n.js';
 	import {
@@ -48,8 +49,8 @@
 	/** The last meaning search: its text and the ids it found, best first. */
 	let meaning = $state<{ q: string; ids: string[] } | null>(null);
 	let level = $state<Level | ''>('');
-	/** Images split into one section per source project; remembered per browser. */
-	let grouped = $state(false);
+	/** Images split into sections by first tag or by source project; remembered per browser. */
+	let groupMode = $state<GroupMode>('');
 	/** Select mode: pressing a card ticks it instead of opening it. */
 	let selecting = $state(false);
 	const picked = new SvelteSet<string>();
@@ -215,18 +216,24 @@
 	});
 
 	const sourceNames = $derived(sourceProjectNames(data.inspirations));
-	const sections = $derived(
-		grouped ? groupBySourceProject(filtered, { noneName: t('sp.none'), ranked: byMeaning && !!meaning }) : null
-	);
+	/** Names among the images in view (the chip's count). */
+	const shownNames = $derived(sourceProjectNames(filtered).length);
+	const sections = $derived.by(() => {
+		const ranked = byMeaning && !!meaning;
+		if (groupMode === 'tag') return groupByFirstTag(filtered, { noneName: t('grp.noTag'), ranked });
+		if (groupMode === 'source') return groupBySourceProject(filtered, { noneName: t('sp.none'), ranked });
+		return null;
+	});
 	const suggestions = $derived(suggestSourceProjects(data.inspirations, dismissed));
 	/** Dismissed suggestions that would still apply. */
 	const hiddenSuggestions = $derived(dismissed.size ? suggestSourceProjects(data.inspirations).length - suggestions.length : 0);
 	const imageById = $derived(new Map(data.inspirations.map((i) => [i.id, i])));
 
-	function toggleGrouped() {
-		grouped = !grouped;
+	/** Turn a grouping on (the other one goes off), or off when it is already on. */
+	function toggleGroup(mode: Exclude<GroupMode, ''>) {
+		groupMode = groupMode === mode ? '' : mode;
 		try {
-			localStorage.setItem(GROUP_KEY, grouped ? '1' : '0');
+			localStorage.setItem(GROUP_KEY, groupMode);
 		} catch {
 			/* optional: private mode or no quota */
 		}
@@ -411,7 +418,7 @@
 		const idle = globalThis.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1500));
 		idle(() => void preloadCode('/map').catch(() => {}));
 		try {
-			grouped = localStorage.getItem(GROUP_KEY) === '1';
+			groupMode = parseGroupMode(localStorage.getItem(GROUP_KEY));
 			const saved: unknown = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '[]');
 			if (Array.isArray(saved)) dismissed = new Set(saved.filter((k): k is string => typeof k === 'string'));
 		} catch {
@@ -878,12 +885,21 @@
 		</button>
 		<button
 			type="button"
-			class={['chip', grouped && 'on']}
-			aria-pressed={grouped}
-			title={t('sp.groupTitle')}
-			onclick={toggleGrouped}
+			class={['chip', groupMode === 'tag' && 'on']}
+			aria-pressed={groupMode === 'tag'}
+			title={t('grp.tagTitle')}
+			onclick={() => toggleGroup('tag')}
 		>
-			{t('sp.group')}{#if sourceNames.length}<span class="n">{sourceNames.length}</span>{/if}
+			{t('grp.tag')}
+		</button>
+		<button
+			type="button"
+			class={['chip', groupMode === 'source' && 'on']}
+			aria-pressed={groupMode === 'source'}
+			title={t('sp.groupTitle')}
+			onclick={() => toggleGroup('source')}
+		>
+			{t('sp.group')}{#if shownNames}<span class="n">{shownNames}</span>{/if}
 		</button>
 		{#if data.inspirations.length}
 			<button
@@ -921,7 +937,7 @@
 			{#if spUndo}<button type="button" class="clear" disabled={spBusy} onclick={undoSourceProject}>{t('sp.undo')}</button>{/if}
 		</p>
 	{/if}
-	{#if !selecting && sections?.length === 1 && !sections[0].key}<p class="mhint">{t('sp.groupEmpty')}</p>{/if}
+	{#if !selecting && groupMode === 'source' && sections?.length === 1 && !sections[0].key}<p class="mhint">{t('sp.groupEmpty')}</p>{/if}
 {/snippet}
 
 {#snippet imageGrid()}
@@ -994,7 +1010,7 @@
 		{#if item.note}
 			<p class="note">{item.note.length > 140 ? `${item.note.slice(0, 140).trimEnd()}…` : item.note}</p>
 		{/if}
-		{#if item.source_project && !sections}
+		{#if item.source_project && groupMode !== 'source'}
 			<p class="sp">{t('sp.on', { name: item.source_project })}</p>
 		{/if}
 		{#if item.tags.length}

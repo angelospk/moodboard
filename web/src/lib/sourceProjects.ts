@@ -44,6 +44,17 @@ export function sourceProjectNames(items: Pick<Inspiration, 'source_project'>[])
 	return tally(items).sort(byCountThenName).map((e) => e.name);
 }
 
+/**
+ * The source project a set of images shares (one web page on «Πηγές»): `name` = the name they all
+ * have, or when they differ (or some have none) the most used one with `mixed`.
+ */
+export function commonSourceProject(items: Pick<Inspiration, 'source_project'>[]): { name: string | null; mixed: boolean } {
+	const names = tally(items).sort(byCountThenName);
+	if (!names.length) return { name: null, mixed: false };
+	const unnamed = items.length - names.reduce((n, e) => n + e.count, 0);
+	return { name: names[0].name, mixed: names.length > 1 || unnamed > 0 };
+}
+
 export interface SourceProjectSection {
 	/** The name key; '' for the images without a source project. */
 	key: string;
