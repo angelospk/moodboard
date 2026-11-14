@@ -1,8 +1,5 @@
 <script lang="ts">
 	import { sourceProjectNames } from '#lib/sourceProjects.js';
-	import { nameForPage, pastedPageUrl, sourceFields } from '#lib/activeSource.js';
-	import { activeSource } from '#lib/activeSource.svelte.js';
-	import { hostOf, pageKey } from '#lib/sources.js';
 	import { reloadData } from '#lib/reload.js';
 	import { forceNextLoad } from '#lib/datacache.js';
 	import { t } from '#lib/i18n.js';
@@ -304,9 +301,6 @@
 		search = '';
 		if (highlight && highlight !== spot.zone) highlight = null;
 		const projectId = newProjectId;
-		// «Πηγή»: every image added while it is live gets its page and source project.
-		const src = activeSource.fresh();
-		const fromSource = sourceFields(src);
 		const tags = spot.zone ? [spot.zone] : [];
 		const lvl = level || null;
 		const cols = Math.ceil(Math.sqrt(files.length));
@@ -326,7 +320,7 @@
 			localUrls = { ...localUrls, [id]: URL.createObjectURL(file) };
 			board?.place(id, x, y);
 			const row: Inspiration = {
-				id, project_id: projectId, image_path: '', source_url: src?.url ?? null, source_title: null, source_project: src?.project ?? null, image_url: null,
+				id, project_id: projectId, image_path: '', source_url: null, source_title: null, source_project: null, image_url: null,
 				crop: null, note: '', tags, level: lvl, regions: [], suggestion: null, colors: [], created_at: now, updated_at: now
 			};
 			pendingRows.set(id, row);
@@ -334,7 +328,6 @@
 			queue.push({ id, file });
 		});
 		if (!queue.length) return;
-		if (src) activeSource.touch();
 		uploading = new Set([...uploading, ...queue.map((q) => q.id)]);
 		const first = queue[0].id;
 		const busy = toast({ text: queue.length > 1 ? t('map.uploadingMany', { n: queue.length }) : t('map.uploadingOne'), tone: 'busy' }, 0);
@@ -342,7 +335,7 @@
 
 		const upload = async ({ id, file }: { id: string; file: File }) => {
 			try {
-				const row = await createInspiration(data.pb, userId, file, { id, project_id: projectId, tags, level: lvl, ...fromSource });
+				const row = await createInspiration(data.pb, userId, file, { id, project_id: projectId, tags, level: lvl });
 				// Keep edits made meanwhile on the board (e.g. a retag); take the server's file name.
 				const cur = items.find((i) => i.id === id);
 				const merged = cur ? { ...row, tags: cur.tags, project_id: cur.project_id, level: cur.level } : row;
@@ -387,32 +380,10 @@
 			const f = it.getAsFile();
 			if (f) files.push(f);
 		}
-		if (!files.length) {
-			const url = pastedPageUrl(e.clipboardData?.getData('text/plain') ?? '');
-			if (!url) return;
-			e.preventDefault();
-			menu = null;
-			startSource(url);
-			return;
-		}
+		if (!files.length) return;
 		e.preventDefault();
 		menu = null;
 		void addFiles(files, board?.pointerSpot() ?? { x: 0, y: 0, zone: null });
-	}
-
-	/** A pasted page address starts «Πηγή» (the name its images already have; or the current one, same page). */
-	function startSource(url: string) {
-		const prev = activeSource.fresh();
-		const project = nameForPage(items, url) ?? (prev && pageKey(prev.url) === pageKey(url) ? prev.project : null);
-		activeSource.start(url, project);
-		const host = hostOf(url) ?? url;
-		toast(
-			{
-				text: project ? t('src.startedNamed', { host, name: project }) : t('src.started', { host }),
-				action: { label: t('map.undo'), run: () => activeSource.restore(prev) }
-			},
-			6000
-		);
 	}
 
 	/** «Επικόλληση εδώ»: read an image from the clipboard (needs permission; falls back to a hint). */
@@ -742,8 +713,6 @@
 
 	// ------------------------------------------------------------- Lifecycle
 
-	onMount(() => activeSource.init());
-
 	onMount(() => {
 		isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 		try {
@@ -893,9 +862,6 @@
 					onadd={() => pickFiles(null)}
 					onfit={() => board?.fit()}
 					onlayout={() => void board?.autoLayout()}
-					sourceNames={sourceProjectNames(items)}
-					nameFor={(url) => nameForPage(items, url)}
-					{mod}
 				/>
 			{/if}
 			<Toasts {toasts} inset={rightInset} ondismiss={dismiss} />

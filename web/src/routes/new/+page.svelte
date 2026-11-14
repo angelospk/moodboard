@@ -4,12 +4,8 @@
 	import { onMount } from 'svelte';
 	import type { Level } from '#lib/types.js';
 	import { levelStore } from '#lib/levels.svelte.js';
-	import { checkImage, cleanSource, createInspiration } from '#lib/inspirations.js';
+	import { checkImage, createInspiration } from '#lib/inspirations.js';
 	import TagInput from '#lib/components/TagInput.svelte';
-	import { cleanSourceProject, SOURCE_PROJECT_MAX } from '#lib/sourceProjects.js';
-	import { pastedPageUrl } from '#lib/activeSource.js';
-	import { activeSource } from '#lib/activeSource.svelte.js';
-	import { isTyping } from '../map/board.js';
 	import { suggestLabels } from '#lib/suggest.js';
 	import type { PageProps } from './$types';
 
@@ -23,10 +19,6 @@
 	let level = $state<Level | ''>('');
 	let busy = $state(false);
 	let error = $state('');
-	// «Πηγή»: the page the image comes from; «keep» makes it the source of the next images too.
-	let sourceUrl = $state('');
-	let sourceProject = $state('');
-	let keepSource = $state(false);
 
 	let aiBusy = $state(false);
 	let aiRun = 0;
@@ -74,23 +66,9 @@
 	}
 
 	onMount(() => {
-		const stopSync = activeSource.init();
-		const live = activeSource.fresh();
-		if (live) {
-			sourceUrl = live.url;
-			sourceProject = live.project ?? '';
-			keepSource = true;
-		}
 		function onPaste(e: ClipboardEvent) {
 			const items = e.clipboardData?.items;
 			if (!items) return;
-			// A page address pasted outside a field is the image's source.
-			const url = isTyping(e.target) ? null : pastedPageUrl(e.clipboardData?.getData('text/plain') ?? '');
-			if (url && ![...items].some((i) => i.kind === 'file')) {
-				sourceUrl = url;
-				e.preventDefault();
-				return;
-			}
 			for (const item of items) {
 				if (item.kind === 'file' && item.type.startsWith('image/')) {
 					const f = item.getAsFile();
@@ -104,7 +82,6 @@
 		}
 		window.addEventListener('paste', onPaste);
 		return () => {
-			stopSync();
 			window.removeEventListener('paste', onPaste);
 			if (preview) URL.revokeObjectURL(preview);
 		};
@@ -114,9 +91,6 @@
 		e.preventDefault();
 		if (!file || busy) return;
 		if (!data.user) { error = t('new.noUser'); return; }
-		const src = sourceUrl.trim() ? cleanSource(sourceUrl) : null;
-		if (sourceUrl.trim() && !src) { error = t('src.badUrl'); return; }
-		const name = cleanSourceProject(sourceProject);
 
 		busy = true;
 		error = '';
@@ -125,12 +99,8 @@
 				project_id: projectId || null,
 				note,
 				tags,
-				level: level || null,
-				...(src ? { source_url: src } : {}),
-				source_project: name
+				level: level || null
 			});
-			if (keepSource && src) activeSource.start(src, name);
-			else activeSource.stop();
 			await goto(`/i/${id}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('new.saveFailed');
@@ -200,24 +170,6 @@
 				<textarea bind:value={note} rows="4" placeholder={t('new.notePlaceholder')}></textarea>
 			</label>
 
-			<label>
-				<span>{t('item.source')}</span>
-				<input type="text" inputmode="url" bind:value={sourceUrl} placeholder="https://…" autocomplete="off" title={t('src.newHint')} />
-			</label>
-
-			<label title={t('sp.hint')}>
-				<span>{t('sp.label')}</span>
-				<input type="text" list="new-sp-names" bind:value={sourceProject} placeholder={t('sp.placeholder')} maxlength={SOURCE_PROJECT_MAX} autocomplete="off" />
-				<datalist id="new-sp-names">
-					{#each data.sourceProjects as n (n)}<option value={n}></option>{/each}
-				</datalist>
-			</label>
-
-			<label class="wide check">
-				<input type="checkbox" bind:checked={keepSource} disabled={!sourceUrl.trim()} />
-				<span>{t('src.keep')}</span>
-			</label>
-
 			<div class="wide field">
 				<label for="tags">Tags <em>{t('new.tagsLimit')}</em>{#if aiBusy} <em>✦ {t('ai.filling')}</em>{/if}</label>
 				<TagInput id="tags" bind:tags suggestions={data.tags} placeholder={t('new.tagsPlaceholder')} />
@@ -276,8 +228,6 @@
 	.field { display: grid; gap: 4px; font-size: 0.82rem; color: var(--muted); min-width: 0; }
 	label :is(input, select, textarea) { width: 100%; color: var(--text); }
 	.wide { grid-column: 1 / -1; }
-	.check { display: flex; align-items: center; gap: 8px; }
-	.check input { width: auto; }
 	em { font-style: normal; opacity: 0.7; }
 
 	.err { color: #c0392b; margin: 0; font-size: 0.85rem; }

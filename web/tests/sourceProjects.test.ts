@@ -4,7 +4,6 @@ import type { Inspiration } from '../src/lib/types';
 import {
 	cleanSourceProject,
 	commonSourceProject,
-	similarSourceProject,
 	groupBySourceProject,
 	sourceProjectNames,
 	suggestSourceProjects,
@@ -300,48 +299,5 @@ describe('commonSourceProject', () => {
 	it('different names, or some images without one: mixed, with the most used name', () => {
 		expect(commonSourceProject([named('A'), named('B'), named('B')])).toEqual({ name: 'B', mixed: true });
 		expect(commonSourceProject([named('A'), named(null)])).toEqual({ name: 'A', mixed: true });
-	});
-});
-
-describe('similarSourceProject', () => {
-	const names = new Map<string, string | null>([
-		['a', 'Kolumba'],
-		['b', 'kolumba'],
-		['c', 'Therme Vals'],
-		['d', null],
-		['e', 'Therme Vals']
-	]);
-	it('the name most of the closest images share (two at least)', () => {
-		const hits = [
-			{ id: 'a', score: 0.91 },
-			{ id: 'b', score: 0.9 },
-			{ id: 'c', score: 0.8 }
-		];
-		expect(similarSourceProject(hits, names)).toBe('Kolumba');
-	});
-	it('one close image with a name is not a pattern', () => {
-		expect(similarSourceProject([{ id: 'a', score: 0.9 }, { id: 'd', score: 0.89 }], names)).toBeNull();
-	});
-	it('close images without a name (or with other names) outweigh it: none', () => {
-		const hits = [
-			{ id: 'd', score: 0.95 },
-			{ id: 'c', score: 0.95 },
-			{ id: 'a', score: 0.94 },
-			{ id: 'b', score: 0.94 }
-		];
-		expect(similarSourceProject(hits, names)).toBeNull();
-	});
-	it('far images barely count', () => {
-		const hits = [
-			{ id: 'a', score: 0.9 },
-			{ id: 'b', score: 0.9 },
-			{ id: 'c', score: 0.6 },
-			{ id: 'e', score: 0.6 }
-		];
-		expect(similarSourceProject(hits, names)).toBe('Kolumba');
-	});
-	it('no hits, or hits that are not known: none', () => {
-		expect(similarSourceProject([], names)).toBeNull();
-		expect(similarSourceProject([{ id: 'zz', score: 1 }], names)).toBeNull();
 	});
 });
