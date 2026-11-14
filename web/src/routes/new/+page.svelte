@@ -7,7 +7,7 @@
 	import { checkImage, cleanSource, createInspiration } from '#lib/inspirations.js';
 	import TagInput from '#lib/components/TagInput.svelte';
 	import { cleanSourceProject, SOURCE_PROJECT_MAX } from '#lib/sourceProjects.js';
-	import { pastedPageUrl, sameSource, type ActiveSource } from '#lib/activeSource.js';
+	import { pastedPageUrl } from '#lib/activeSource.js';
 	import { activeSource } from '#lib/activeSource.svelte.js';
 	import { isTyping } from '../map/board.js';
 	import { suggestLabels } from '#lib/suggest.js';
@@ -27,8 +27,6 @@
 	let sourceUrl = $state('');
 	let sourceProject = $state('');
 	let keepSource = $state(false);
-	/** The source the form started from (another tab may change it meanwhile). */
-	let loaded: ActiveSource | null = null;
 
 	let aiBusy = $state(false);
 	let aiRun = 0;
@@ -78,7 +76,6 @@
 	onMount(() => {
 		const stopSync = activeSource.init();
 		const live = activeSource.fresh();
-		loaded = live;
 		if (live) {
 			sourceUrl = live.url;
 			sourceProject = live.project ?? '';
@@ -132,12 +129,8 @@
 				...(src ? { source_url: src } : {}),
 				source_project: name
 			});
-			// Change only what this form changed: an untouched source is renewed (never brought back
-			// after another tab stopped or replaced it), and «keep» off stops only the source it showed.
-			if (keepSource && src) {
-				if (loaded && sameSource(loaded, { ...loaded, url: src, project: name })) activeSource.touch(loaded);
-				else activeSource.start(src, name);
-			} else if (sameSource(activeSource.fresh(), loaded)) activeSource.stop();
+			if (keepSource && src) activeSource.start(src, name);
+			else activeSource.stop();
 			await goto(`/i/${id}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('new.saveFailed');

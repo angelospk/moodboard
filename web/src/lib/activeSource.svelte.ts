@@ -1,6 +1,6 @@
 // «Προσθέτεις από», per browser: the map and /new share it, and other tabs follow it.
 import { cleanSourceProject } from '#lib/sourceProjects.js';
-import { liveSource, parseActiveSource, sameSource, type ActiveSource } from '#lib/activeSource.js';
+import { liveSource, parseActiveSource, type ActiveSource } from '#lib/activeSource.js';
 
 const KEY = 'moodboard:active-source';
 
@@ -8,12 +8,11 @@ let stored = $state<ActiveSource | null>(null);
 /** Re-read once a minute so a source that lapses leaves the screen. */
 let now = $state(Date.now());
 
-/** What storage holds now (another tab may have changed it); what this page knows when storage is blocked. */
 function read(): ActiveSource | null {
 	try {
 		return parseActiveSource(localStorage.getItem(KEY));
 	} catch {
-		return stored;
+		return null;
 	}
 }
 
@@ -34,7 +33,6 @@ export const activeSource = {
 	},
 	/** The live source at this moment (for a new image), or null. */
 	fresh(): ActiveSource | null {
-		stored = read();
 		return liveSource(stored, Date.now());
 	},
 	start(url: string, project: string | null) {
@@ -49,11 +47,10 @@ export const activeSource = {
 	stop() {
 		write(null);
 	},
-	/** Images were added with `used`: keep it live another hour, unless it was stopped or replaced since. */
-	touch(used: ActiveSource) {
-		const a = liveSource(read(), Date.now());
-		if (sameSource(a, used)) write({ ...used, at: Date.now() });
-		else stored = a;
+	/** An image was added with it: keep it live for another hour. */
+	touch() {
+		const a = liveSource(stored, Date.now());
+		if (a) write({ ...a, at: Date.now() });
 	},
 	/** Load it and follow other tabs; returns the cleanup. Call from onMount. */
 	init(): () => void {

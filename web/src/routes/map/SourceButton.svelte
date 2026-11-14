@@ -133,13 +133,9 @@
 			</label>
 			<label class="row">
 				<span>{t('sp.label')}</span>
-				<!-- svelte-ignore a11y_autofocus -->
-				<!-- A live source: the name is what changes most; either way focus leaves the dock button,
-				     so the board's shortcuts (N, F, L) do not fire while the form is open. -->
 				<input
 					type="text"
 					list="src-names-{uid}"
-					autofocus={!!live}
 					bind:value={project}
 					placeholder={t('sp.placeholder')}
 					maxlength={SOURCE_PROJECT_MAX}
