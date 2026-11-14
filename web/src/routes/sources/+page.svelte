@@ -3,7 +3,7 @@
 	// «Πηγές»: every website images were saved from, with its images, pages and projects.
 	import { SvelteSet } from 'svelte/reactivity';
 	import type { Inspiration } from '#lib/types.js';
-	import { filterItems, groupSources, type Source, type SourceSort } from '#lib/sources.js';
+	import { filterItems, groupSources, itemsOfPage, type Source, type SourceSort } from '#lib/sources.js';
 	import { sourceProjectNames } from '#lib/sourceProjects.js';
 	import SourcePageProject from '#lib/components/SourcePageProject.svelte';
 	import type { PageProps } from './$types';
@@ -233,7 +233,7 @@
 								<div class="page-head">
 									<a href={pg.url} target="_blank" rel="noopener noreferrer" title={pg.url}>{pageLabel(pg.url, pg.title)}</a>
 									<span class="n">{pg.items.length}</span>
-									<SourcePageProject pb={data.pb} items={pg.items} listId="source-project-names" />
+									<SourcePageProject pb={data.pb} items={itemsOfPage(data.inspirations, pg.url)} listId="source-project-names" />
 								</div>
 								{@render strip(pg.items, 8)}
 							</li>

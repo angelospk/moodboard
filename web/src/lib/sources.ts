@@ -44,6 +44,12 @@ export function pageKey(url: string): string {
 	return hostOf(url) + u.pathname.replace(/\/$/, '') + u.search;
 }
 
+/** Every image saved from the page `url` (same page key), whatever filters are on. */
+export function itemsOfPage(items: Inspiration[], url: string): Inspiration[] {
+	const key = pageKey(url);
+	return items.filter((i) => hostOf(i.source_url) && pageKey(i.source_url!) === key);
+}
+
 const byCount = <T extends { count: number }>(a: T, b: T) => b.count - a.count;
 
 export function groupSources(items: Inspiration[], sort: SourceSort = 'count'): { sources: Source[]; unsourced: Inspiration[] } {

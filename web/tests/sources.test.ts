@@ -1,6 +1,6 @@
 // Grouping images by the website they came from (pure functions, no server).
 import { describe, expect, it } from 'vitest';
-import { filterItems, groupSources, hostOf } from '../src/lib/sources';
+import { filterItems, groupSources, hostOf, itemsOfPage } from '../src/lib/sources';
 import type { Inspiration } from '../src/lib/types';
 
 let n = 0;
@@ -68,5 +68,19 @@ describe('filterItems', () => {
 		expect(filterItems(items, { project: null })).toHaveLength(1);
 		expect(filterItems(items, { tag: 'φως' })).toHaveLength(1);
 		expect(filterItems(items, {})).toHaveLength(3);
+	});
+});
+
+describe('itemsOfPage', () => {
+	it('every image of the page, whatever the filters show: www, #fragment and trailing slash are the same page', () => {
+		const a = row({ source_url: 'https://www.site.com/p/1/', project_id: 'x' });
+		const b = row({ source_url: 'https://site.com/p/1#g', project_id: 'y' });
+		const c = row({ source_url: 'https://site.com/p/2' });
+		const d = row({ source_url: null });
+		const e = row({ source_url: 'javascript:alert(1)' });
+		const shown = filterItems([a, b, c, d, e], { query: '', project: 'x', tag: null });
+		const page = groupSources(shown).sources[0].pages[0];
+		expect(page.items.map((i) => i.id)).toEqual([a.id]);
+		expect(itemsOfPage([a, b, c, d, e], page.url).map((i) => i.id)).toEqual([a.id, b.id]);
 	});
 });
