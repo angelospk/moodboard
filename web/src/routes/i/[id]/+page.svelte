@@ -15,6 +15,7 @@
 	} from '#lib/inspirations.js';
 	import { duplicatesOf } from '#lib/semantic.js';
 	import { smart } from '#lib/smart.svelte.js';
+	import SourceProjectField from '#lib/components/SourceProjectField.svelte';
 	import SimilarImages from '#lib/components/SimilarImages.svelte';
 	import SmartSuggest from '#lib/components/SmartSuggest.svelte';
 	import ChatSearch from '#lib/components/ChatSearch.svelte';
@@ -34,6 +35,7 @@
 	let tags = $state<string[]>([...item.tags]);
 	let level = $state<Level | null>(item.level ?? null);
 	let projectId = $state(item.project_id ?? '');
+	let sourceProject = $state<string | null>(item.source_project);
 	let regions = $state<Region[]>(item.regions.map((r) => ({ ...r })));
 	let active = $state<number | null>(null);
 
@@ -338,6 +340,15 @@
 						{#each data.projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 					</select>
 				</label>
+
+				<SourceProjectField
+					value={sourceProject}
+					names={data.sourceProjects}
+					onchange={(v) => {
+						sourceProject = v;
+						change('source_project', v);
+					}}
+				/>
 
 				{#if safeSource}
 					<div class="field">

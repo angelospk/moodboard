@@ -7,7 +7,7 @@ let n = 0;
 function row(p: Partial<Inspiration>): Inspiration {
 	n++;
 	return {
-		id: `i${n}`, project_id: null, image_path: `f${n}.png`, source_url: null, source_title: null, image_url: null,
+		id: `i${n}`, project_id: null, image_path: `f${n}.png`, source_url: null, source_title: null, source_project: null, image_url: null,
 		crop: null, note: '', tags: [], level: null, regions: [], created_at: `2026-11-0${(n % 9) + 1} 10:00:00.000Z`,
 		updated_at: `2026-11-0${(n % 9) + 1} 10:00:00.000Z`, ...p
 	};

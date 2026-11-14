@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { sourceProjectNames } from '#lib/sourceProjects.js';
 	import { reloadData } from '#lib/reload.js';
 	import { forceNextLoad } from '#lib/datacache.js';
 	import { t } from '#lib/i18n.js';
@@ -319,7 +320,7 @@
 			localUrls = { ...localUrls, [id]: URL.createObjectURL(file) };
 			board?.place(id, x, y);
 			const row: Inspiration = {
-				id, project_id: projectId, image_path: '', source_url: null, source_title: null, image_url: null,
+				id, project_id: projectId, image_path: '', source_url: null, source_title: null, source_project: null, image_url: null,
 				crop: null, note: '', tags, level: lvl, regions: [], suggestion: null, colors: [], created_at: now, updated_at: now
 			};
 			pendingRows.set(id, row);
@@ -539,8 +540,8 @@
 	function onPanelSaved(row: Inspiration) {
 		const cur = items.find((i) => i.id === row.id);
 		if (!cur) return;
-		const { note, tags, level, regions, project_id, suggestion, updated_at } = row;
-		setItem({ ...cur, note, tags, level, regions, project_id, suggestion, updated_at });
+		const { note, tags, level, regions, project_id, suggestion, source_project, updated_at } = row;
+		setItem({ ...cur, note, tags, level, regions, project_id, suggestion, source_project, updated_at });
 	}
 
 	/** The card goes at once; if the server refuses, it comes back. */
@@ -876,6 +877,7 @@
 					imageUrl={urlOf(selected)}
 					projects={data.projects}
 					suggestions={data.tags}
+					sourceProjects={sourceProjectNames(items)}
 					{focusNote}
 					onsaved={onPanelSaved}
 					oncopied={onCopied}

@@ -52,7 +52,7 @@ func fieldJSON(t *testing.T, v any) string {
 func TestCopyKeepsCropAndImageURL(t *testing.T) {
 	e := newEnv(t)
 	u, tok := e.user("a@x.gr")
-	_, out := e.upload(tok, map[string]string{"user_id": u.Id, "image_url": "https://example.com/a.png", "crop": `{"x":0.1,"y":0.1,"w":0.5,"h":0.5}`})
+	_, out := e.upload(tok, map[string]string{"user_id": u.Id, "image_url": "https://example.com/a.png", "source_project": "Villa Savoye", "crop": `{"x":0.1,"y":0.1,"w":0.5,"h":0.5}`})
 	var row struct{ Id string }
 	_ = json.Unmarshal([]byte(out), &row)
 	code, out := e.json("POST", "/api/mb/inspirations/"+row.Id+"/copy", tok, map[string]any{"project_id": nil})
@@ -62,7 +62,7 @@ func TestCopyKeepsCropAndImageURL(t *testing.T) {
 	var cp struct{ Id string }
 	_ = json.Unmarshal([]byte(out), &cp)
 	rec, err := e.app.FindRecordById("inspirations", cp.Id)
-	if err != nil || rec.GetString("image_url") != "https://example.com/a.png" || !strings.Contains(rec.GetString("crop"), `"w":0.5`) {
-		t.Fatalf("copy lost crop/image_url: %v %v", err, rec)
+	if err != nil || rec.GetString("image_url") != "https://example.com/a.png" || !strings.Contains(rec.GetString("crop"), `"w":0.5`) || rec.GetString("source_project") != "Villa Savoye" {
+		t.Fatalf("copy lost crop/image_url/source_project: %v %v", err, rec)
 	}
 }

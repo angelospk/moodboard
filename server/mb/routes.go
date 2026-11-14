@@ -96,7 +96,7 @@ func CopyInspiration(app core.App, userId, id, projectId string) (*core.Record, 
 		return nil, err
 	}
 	dst := core.NewRecord(src.Collection())
-	for _, f := range []string{"user_id", "note", "tags", "level", "regions", "source_url", "source_title", "image_url", "crop"} {
+	for _, f := range []string{"user_id", "note", "tags", "level", "regions", "source_url", "source_title", "source_project", "image_url", "crop"} {
 		dst.Set(f, src.Get(f))
 	}
 	dst.Set("project_id", projectId)

@@ -39,7 +39,7 @@ export function fold(s: string): string {
 }
 
 /** One key per page: no `www.`, no `#…`, no trailing slash. */
-function pageKey(url: string): string {
+export function pageKey(url: string): string {
 	const u = new URL(url);
 	return hostOf(url) + u.pathname.replace(/\/$/, '') + u.search;
 }

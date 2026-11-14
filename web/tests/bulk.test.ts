@@ -2,7 +2,7 @@
 import type PocketBase from 'pocketbase';
 import { beforeAll, describe, expect, inject, it } from 'vitest';
 import { createClient } from '../src/lib/pb';
-import { createInspiration, createProject, getInspiration, signUp, updateMany } from '../src/lib/inspirations';
+import { copyInspiration, createInspiration, createProject, getInspiration, signUp, updateMany } from '../src/lib/inspirations';
 import { cleanSource } from '../src/lib/inspirations';
 import { suggestStored } from '../src/lib/suggest';
 
@@ -76,6 +76,27 @@ describe('updateMany', () => {
 
 	it('does nothing for no ids', async () => {
 		expect(await updateMany(A.pb, [], { project_id: null })).toEqual({ ok: [], failed: [] });
+	});
+
+	it('sets the source project of several stored images at once, and clears it', async () => {
+		const a = await createInspiration(A.pb, A.id, png(), { project_id: null });
+		const b = await createInspiration(A.pb, A.id, png(), { project_id: null, note: 'μένει' });
+		expect((await getInspiration(A.pb, a.id))!.source_project).toBeNull();
+		const out = await updateMany(A.pb, [a.id, b.id], { source_project: '  Villa   Savoye ' });
+		expect(out).toEqual({ ok: [a.id, b.id], failed: [] });
+		for (const id of [a.id, b.id]) expect((await getInspiration(A.pb, id))!.source_project).toBe('Villa Savoye');
+		expect((await getInspiration(A.pb, b.id))!.note).toBe('μένει');
+		await updateMany(A.pb, [a.id], { source_project: null });
+		expect((await getInspiration(A.pb, a.id))!.source_project).toBeNull();
+		expect((await getInspiration(A.pb, b.id))!.source_project).toBe('Villa Savoye');
+	});
+
+	it('keeps the source project when an image is created with it, and when it is copied', async () => {
+		const p = (await createProject(A.pb, A.id, 'Αντίγραφο')).id;
+		const a = await createInspiration(A.pb, A.id, png(), { project_id: null, source_project: 'Casa' });
+		expect((await getInspiration(A.pb, a.id))!.source_project).toBe('Casa');
+		const copy = await copyInspiration(A.pb, A.id, a.id, p);
+		expect((await getInspiration(A.pb, copy.id))!.source_project).toBe('Casa');
 	});
 });
 

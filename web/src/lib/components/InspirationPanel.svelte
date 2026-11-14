@@ -11,6 +11,7 @@
 	import RegionList from '#lib/components/RegionList.svelte';
 	import SmartSuggest from '#lib/components/SmartSuggest.svelte';
 	import SimilarImages from '#lib/components/SimilarImages.svelte';
+	import SourceProjectField from '#lib/components/SourceProjectField.svelte';
 	import { tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Autosaver, type SaveState } from '#lib/autosave.js';
@@ -22,6 +23,8 @@
 		projects: Project[];
 		/** Past tags for one-click chips. */
 		suggestions: string[];
+		/** Source project names already in use, for the suggestions list. */
+		sourceProjects?: string[];
 		/** Focus the note on open (e.g. right after a new image was added). */
 		focusNote?: boolean;
 		/** After each successful autosave, with the saved row. */
@@ -46,6 +49,7 @@
 		imageUrl,
 		projects,
 		suggestions,
+		sourceProjects = [],
 		focusNote = false,
 		onsaved,
 		oncopied,
@@ -66,6 +70,7 @@
 	let level = $state<Level | null>(null);
 	let regions = $state<Region[]>([]);
 	let suggestion = $state<Suggestion | null>(null);
+	let sourceProject = $state<string | null>(null);
 	let active = $state<number | null>(null);
 
 	let status = $state<SaveState>('idle');
@@ -91,6 +96,7 @@
 		tags = [...((d.tags !== undefined ? d.tags : it.tags) ?? [])];
 		level = d.level !== undefined ? d.level : (it.level ?? null);
 		suggestion = d.suggestion !== undefined ? d.suggestion : (it.suggestion ?? null);
+		sourceProject = d.source_project !== undefined ? d.source_project : (it.source_project ?? null);
 		regions = ((d.regions !== undefined ? d.regions : it.regions) ?? []).map((r) => ({ ...r }));
 	}
 
@@ -329,6 +335,15 @@
 			onsetlevel={(l) => {
 				level = l;
 				change('level', l);
+			}}
+		/>
+
+		<SourceProjectField
+			value={sourceProject}
+			names={sourceProjects}
+			onchange={(v) => {
+				sourceProject = v;
+				change('source_project', v);
 			}}
 		/>
 

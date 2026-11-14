@@ -43,6 +43,8 @@ export interface Inspiration {
 	image_path: string;
 	source_url: string | null;
 	source_title: string | null;
+	/** The work the image was taken from (a case study, a portfolio piece), typed by the user; see sourceProjects.ts. Not one of the user's own projects. */
+	source_project: string | null;
 	/** The image's own address on the web (from the extension); source_url is the page. */
 	image_url: string | null;
 	crop: Crop | null;

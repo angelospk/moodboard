@@ -3,6 +3,7 @@
 import type PocketBase from 'pocketbase';
 import { compressImage } from '#lib/compress.js';
 import { t } from '#lib/i18n.js';
+import { cleanSourceProject, sourceProjectNames } from '#lib/sourceProjects.js';
 import type { RecordModel } from 'pocketbase';
 import type { Crop, Inspiration, Project, Suggestion } from '#lib/types.js';
 
@@ -26,7 +27,7 @@ export const IMAGE_EXT: Record<string, string> = {
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export type NewFields = Partial<
-	Pick<Inspiration, 'project_id' | 'note' | 'tags' | 'level' | 'regions' | 'source_url' | 'source_title' | 'image_url' | 'crop'>
+	Pick<Inspiration, 'project_id' | 'note' | 'tags' | 'level' | 'regions' | 'source_url' | 'source_title' | 'source_project' | 'image_url' | 'crop'>
 >;
 
 /** Trim, lowercase and dedupe tags; keep at most 30. */
@@ -60,6 +61,7 @@ export function toInspiration(r: RecordModel): Inspiration {
 		image_path: r.image ?? '',
 		source_url: r.source_url || null,
 		source_title: r.source_title || null,
+		source_project: r.source_project || null,
 		image_url: r.image_url || null,
 		crop: toCrop(r.crop),
 		note: r.note ?? '',
@@ -151,6 +153,16 @@ export async function deleteProject(pb: PocketBase, id: string): Promise<void> {
 export async function listInspirations(pb: PocketBase): Promise<Inspiration[]> {
 	const rows = await pb.collection('inspirations').getFullList({ sort: '-created_at,id' });
 	return rows.map(toInspiration);
+}
+
+/** The source projects in use, for autocomplete: most used first. Reads one small column only. */
+export async function listSourceProjectNames(pb: PocketBase): Promise<string[]> {
+	const rows = await pb.collection('inspirations').getFullList({
+		fields: 'id,source_project',
+		filter: 'source_project != ""',
+		sort: 'id'
+	});
+	return sourceProjectNames(rows.map((r) => ({ source_project: r.source_project || null })));
 }
 
 /** The inspirations with these ids, in the order of `ids` (ids that are not the user's are left out). */
@@ -314,7 +326,7 @@ export async function createInspiration(
 	checkImage(small);
 	try {
 		const rec = await pb.collection('inspirations').create(
-			form({ ...fields, user_id: userId, note: (fields.note ?? '').trim(), tags: cleanTags(fields.tags), regions: fields.regions ?? [] }, small)
+			form({ ...fields, source_project: cleanSourceProject(fields.source_project), user_id: userId, note: (fields.note ?? '').trim(), tags: cleanTags(fields.tags), regions: fields.regions ?? [] }, small)
 		);
 		return toInspiration(rec);
 	} catch (e) {
@@ -382,7 +394,7 @@ export async function loadPositions(pb: PocketBase, scope: string): Promise<Reco
 }
 
 export type EditableFields = Partial<
-	Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id' | 'crop' | 'suggestion' | 'source_url' | 'source_title'>
+	Pick<Inspiration, 'note' | 'tags' | 'level' | 'regions' | 'project_id' | 'crop' | 'suggestion' | 'source_url' | 'source_title' | 'source_project'>
 >;
 
 /** Save edits to one inspiration and return the updated row. Throws when it is not the caller's. */
@@ -394,6 +406,7 @@ export async function updateInspiration(pb: PocketBase, id: string, fields: Edit
 	if (fields.level !== undefined) patch.level = fields.level ?? '';
 	if (fields.source_url !== undefined) patch.source_url = fields.source_url ?? '';
 	if (fields.source_title !== undefined) patch.source_title = fields.source_title?.trim() ?? '';
+	if (fields.source_project !== undefined) patch.source_project = cleanSourceProject(fields.source_project) ?? '';
 	try {
 		return toInspiration(await pb.collection('inspirations').update(id, patch));
 	} catch (e) {

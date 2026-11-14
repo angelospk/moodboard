@@ -12,18 +12,25 @@
 	import ProjectSummary from '#lib/components/ProjectSummary.svelte';
 	import { searchByMeaning, SmartSearchError } from '#lib/semantic.js';
 	import { needSmart, smart } from '#lib/smart.svelte.js';
+	import SourceProjectBar from '#lib/components/SourceProjectBar.svelte';
+	import SourceProjectSuggestions from '#lib/components/SourceProjectSuggestions.svelte';
+	import { groupBySourceProject, sourceProjectNames, suggestSourceProjects } from '#lib/sourceProjects.js';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { t, tn, timeAgo } from '#lib/i18n.js';
 	import {
 		createProject as createProjectRow,
 		deleteProject,
 		renameProject,
-		setProjectArchived
+		setProjectArchived,
+		updateMany
 	} from '#lib/inspirations.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	const LAST_PROJECT_KEY = 'moodboard:last-project';
+	const GROUP_KEY = 'moodboard:group-by-source-project';
+	const DISMISSED_KEY = 'moodboard:dismissed-source-suggestions';
 
 	let query = $state('');
 	/** The search box looks for meaning instead of words (needs the smart search consent). */
@@ -33,6 +40,15 @@
 	/** The last meaning search: its text and the ids it found, best first. */
 	let meaning = $state<{ q: string; ids: string[] } | null>(null);
 	let level = $state<Level | ''>('');
+	/** Images split into one section per source project; remembered per browser. */
+	let grouped = $state(false);
+	/** Select mode: pressing a card ticks it instead of opening it. */
+	let selecting = $state(false);
+	const picked = new SvelteSet<string>();
+	let spBusy = $state(false);
+	let spMessage = $state('');
+	/** Pages whose suggestion the user dismissed; remembered per browser. */
+	let dismissed = $state(new Set<string>());
 	let newProject = $state('');
 	let creating = $state(false);
 	let projectError = $state('');
@@ -181,10 +197,76 @@
 				return false;
 			}
 			if (level && i.level !== level) return false;
-			if (q && !i.note.toLowerCase().includes(q) && !i.tags.some((t) => t.includes(q))) return false;
+			if (q && !i.note.toLowerCase().includes(q) && !i.tags.some((t) => t.includes(q)) && !i.source_project?.toLowerCase().includes(q)) return false;
 			return true;
 		});
 	});
+
+	const sourceNames = $derived(sourceProjectNames(data.inspirations));
+	const sections = $derived(
+		grouped ? groupBySourceProject(filtered, { noneName: t('sp.none'), ranked: byMeaning && !!meaning }) : null
+	);
+	const suggestions = $derived(suggestSourceProjects(data.inspirations, dismissed));
+	const imageById = $derived(new Map(data.inspirations.map((i) => [i.id, i])));
+
+	function toggleGrouped() {
+		grouped = !grouped;
+		try {
+			localStorage.setItem(GROUP_KEY, grouped ? '1' : '0');
+		} catch {
+			/* optional: private mode or no quota */
+		}
+	}
+
+	function togglePicked(id: string) {
+		if (picked.has(id)) picked.delete(id);
+		else picked.add(id);
+	}
+
+	function toggleSelecting() {
+		selecting = !selecting;
+		picked.clear();
+		spMessage = '';
+	}
+
+	/** Every id in `ids` is ticked: untick them, else tick them all. */
+	function toggleMany(ids: string[]) {
+		if (ids.every((id) => picked.has(id))) for (const id of ids) picked.delete(id);
+		else for (const id of ids) picked.add(id);
+	}
+
+	function dismissSuggestion(key: string) {
+		dismissed = new Set([...dismissed, key]);
+		try {
+			localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissed]));
+		} catch {
+			/* optional */
+		}
+	}
+
+	/** Set (`name`) or clear (null) the source project of `ids`. Returns true when every image changed. */
+	async function applySourceProject(ids: string[], name: string | null): Promise<boolean> {
+		if (spBusy || !ids.length) return false;
+		spBusy = true;
+		spMessage = '';
+		try {
+			const out = await updateMany(data.pb, ids, { source_project: name });
+			await reloadData();
+			const images = tn('common.images', out.ok.length);
+			spMessage = out.failed.length
+				? t('sp.partial', { ok: out.ok.length, failed: out.failed.length })
+				: name
+					? t('sp.set', { name, images })
+					: t('sp.cleared', { images });
+			return out.failed.length === 0;
+		} finally {
+			spBusy = false;
+		}
+	}
+
+	async function applyPicked(name: string | null) {
+		if (await applySourceProject([...picked], name)) picked.clear();
+	}
 
 	const selectedName = $derived(
 		selected === 'none'
@@ -251,6 +333,13 @@
 		// Most visits go on to the map: fetch its code while the browser is idle, so it opens at once.
 		const idle = globalThis.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1500));
 		idle(() => void preloadCode('/map').catch(() => {}));
+		try {
+			grouped = localStorage.getItem(GROUP_KEY) === '1';
+			const saved: unknown = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '[]');
+			if (Array.isArray(saved)) dismissed = new Set(saved.filter((k): k is string => typeof k === 'string'));
+		} catch {
+			/* optional: private mode, or unreadable value */
+		}
 		if (selected !== 'all' && selected !== 'none') return;
 		try {
 			lastProjectId = localStorage.getItem(LAST_PROJECT_KEY);
@@ -522,6 +611,18 @@
 					<span class="sec-meta">{t('home.countOf', { n: filtered.length, total: data.inspirations.length })}</span>
 				{/if}
 			</div>
+			{#if !selecting}
+				<SourceProjectSuggestions
+					{suggestions}
+					byId={imageById}
+					urls={data.urls}
+					names={sourceNames}
+					busy={spBusy}
+					onapply={(ids, name) => void applySourceProject(ids, name)}
+					ondismiss={dismissSuggestion}
+				/>
+				{#if spMessage}<p class="mhint spmsg" role="status">{spMessage}</p>{/if}
+			{/if}
 			{@render filters()}
 			{@render imageGrid()}
 		</section>
@@ -687,6 +788,20 @@
 		>
 			⌕ {t('search.meaning')}
 		</button>
+		<button
+			type="button"
+			class={['chip', grouped && 'on']}
+			aria-pressed={grouped}
+			title={t('sp.groupTitle')}
+			onclick={toggleGrouped}
+		>
+			{t('sp.group')}
+		</button>
+		{#if data.inspirations.length}
+			<button type="button" class={['chip', selecting && 'on']} aria-pressed={selecting} onclick={toggleSelecting}>
+				{selecting ? t('bulk.done') : t('bulk.select')}
+			</button>
+		{/if}
 		<select bind:value={level} aria-label={t('common.level')}>
 			<option value="">{t('home.allLevels')}</option>
 			{#each levelStore.list as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
@@ -723,35 +838,94 @@
 			{t('home.noMatch')}
 			<a href="/new">{t('home.addImage')}</a>
 		</p>
+	{:else if sections}
+		<div class="psecs">
+			{#each sections as sec (sec.key)}
+				{@const ids = sec.items.map((i) => i.id)}
+				<section class="psec">
+					<h3 class="psec-head">
+						<span class={['psec-name', !sec.key && 'none']}>{sec.name}</span>
+						<span class="sec-meta">{tn('common.images', sec.items.length)}</span>
+						{#if selecting}
+							<button type="button" class="btn ghost" onclick={() => toggleMany(ids)}>
+								{ids.every((id) => picked.has(id)) ? t('sp.bar.sectionNone') : t('sp.bar.sectionAll')}
+							</button>
+						{/if}
+					</h3>
+					<div class="grid">
+						{#each sec.items as item (item.id)}{@render imageCard(item)}{/each}
+					</div>
+				</section>
+			{/each}
+		</div>
 	{:else}
 		<div class="grid">
-			{#each filtered as item (item.id)}
-				<a class="card" href={`/i/${item.id}`}>
-					<div class="thumb">
-						{#if data.urls[item.image_path]}
-							<img src={data.urls[item.image_path]} alt="" loading="lazy" decoding="async" />
-						{:else}
-							<span class="missing">{t('common.noImage')}</span>
-						{/if}
-						{#if levelLabel(item.level)}
-							<span class="badge">{levelLabel(item.level)}</span>
-						{/if}
-					</div>
-					<div class="body">
-						{#if item.note}
-							<p class="note">{item.note.length > 140 ? `${item.note.slice(0, 140).trimEnd()}…` : item.note}</p>
-						{/if}
-						{#if item.tags.length}
-							<p class="tags">{item.tags.slice(0, 4).join(' · ')}</p>
-						{/if}
-					</div>
-				</a>
-			{/each}
+			{#each filtered as item (item.id)}{@render imageCard(item)}{/each}
 		</div>
 	{/if}
 {/snippet}
 
+{#snippet cardBody(item: Inspiration)}
+	<div class="thumb">
+		{#if data.urls[item.image_path]}
+			<img src={data.urls[item.image_path]} alt="" loading="lazy" decoding="async" />
+		{:else}
+			<span class="missing">{t('common.noImage')}</span>
+		{/if}
+		{#if levelLabel(item.level)}
+			<span class="badge">{levelLabel(item.level)}</span>
+		{/if}
+		{#if selecting}
+			<span class="tick" aria-hidden="true">{picked.has(item.id) ? '✓' : ''}</span>
+		{/if}
+	</div>
+	<div class="body">
+		{#if item.note}
+			<p class="note">{item.note.length > 140 ? `${item.note.slice(0, 140).trimEnd()}…` : item.note}</p>
+		{/if}
+		{#if item.source_project && !sections}
+			<p class="sp">{t('sp.on', { name: item.source_project })}</p>
+		{/if}
+		{#if item.tags.length}
+			<p class="tags">{item.tags.slice(0, 4).join(' · ')}</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet imageCard(item: Inspiration)}
+	{#if selecting}
+		<button
+			type="button"
+			class={['card', 'pick', picked.has(item.id) && 'picked']}
+			role="checkbox"
+			aria-checked={picked.has(item.id)}
+			aria-label={`${t('bulk.check')}: ${item.note ? item.note.slice(0, 60) : t('item.alt')}`}
+			onclick={() => togglePicked(item.id)}
+		>
+			{@render cardBody(item)}
+		</button>
+	{:else}
+		<a class="card" href={`/i/${item.id}`}>{@render cardBody(item)}</a>
+	{/if}
+{/snippet}
+
 <a class="fab" href="/new" aria-label={t('common.newImage')}>+</a>
+
+{#if selecting}
+	<SourceProjectBar
+		count={picked.size}
+		names={sourceNames}
+		busy={spBusy}
+		message={spMessage}
+		onset={(name) => void applyPicked(name)}
+		onclear={() => void applyPicked(null)}
+		onall={() => {
+			for (const i of filtered) picked.add(i.id);
+		}}
+		onnone={() => picked.clear()}
+		ondone={toggleSelecting}
+	/>
+{/if}
 
 {#if managingLevels && data.user}
 	<LevelManager pb={data.pb} userId={data.user.id} onclose={() => {
@@ -998,6 +1172,43 @@
 		backdrop-filter: blur(4px);
 	}
 	.body { padding: 10px 12px 12px; }
+	.sp { margin: 6px 0 0; font-size: 0.76rem; color: var(--accent); overflow-wrap: anywhere; }
+	.spmsg { margin: 0 0 12px; }
+	button.card { width: 100%; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+	.card.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
+	.tick {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 999px;
+		background: var(--raised);
+		box-shadow: 0 0 0 1px var(--line-strong);
+		font-size: 14px;
+		line-height: 1;
+	}
+	.card.picked .tick { background: var(--accent); color: #fff; box-shadow: none; }
+	.psec { margin-bottom: 12px; }
+	.psec-head {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		flex-wrap: wrap;
+		margin: 8px 0 12px;
+		padding-top: 12px;
+		border-top: 1px solid var(--line);
+		font-family: var(--font-serif);
+		font-size: 1.05rem;
+		font-weight: 600;
+	}
+	.psec:first-child .psec-head { border-top: 0; padding-top: 0; margin-top: 0; }
+	.psec-name { overflow-wrap: anywhere; min-width: 0; }
+	.psec-name.none { color: var(--muted); }
+	.psec-head .sec-meta { font-family: var(--font-sans); font-weight: 400; }
+	.psec-head .btn { font-family: var(--font-sans); font-size: 0.8rem; font-weight: 400; }
 	.note { margin: 0; font-size: 0.88rem; line-height: 1.45; white-space: pre-line; }
 	.tags { margin: 6px 0 0; color: var(--muted); font-size: 0.76rem; }
 
