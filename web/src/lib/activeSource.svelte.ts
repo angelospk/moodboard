@@ -8,12 +8,8 @@ let stored = $state<ActiveSource | null>(null);
 /** Re-read once a minute so a source that lapses leaves the screen. */
 let now = $state(Date.now());
 
-/** The last write did not reach storage (full or blocked): this page's copy is the truth. */
-let memoryOnly = false;
-
-/** What storage holds now (another tab may have changed it); this page's copy when storage fails. */
+/** What storage holds now (another tab may have changed it); what this page knows when storage is blocked. */
 function read(): ActiveSource | null {
-	if (memoryOnly) return stored;
 	try {
 		return parseActiveSource(localStorage.getItem(KEY));
 	} catch {
@@ -26,10 +22,8 @@ function write(a: ActiveSource | null) {
 	try {
 		if (a) localStorage.setItem(KEY, JSON.stringify(a));
 		else localStorage.removeItem(KEY);
-		memoryOnly = false;
 	} catch {
-		// Private mode, full or blocked storage: the source lasts until the page closes.
-		memoryOnly = true;
+		// Private mode or blocked storage: the source lasts until the page closes.
 	}
 }
 
