@@ -260,12 +260,19 @@ describe('undoStillValid', () => {
 		const now = new Map<string, string | null>([
 			['a', 'Kolumba'],
 			['b', 'Other'],
-			['c', ' kolumba ']
+			['c', ' Kolumba ']
 		]);
 		expect(undoStillValid(batches, 'Kolumba', now)).toEqual([
 			{ name: 'Therme Vals', ids: ['a'] },
 			{ name: null, ids: ['c'] }
 		]);
+	});
+	it('a newer edit of only case or accents is a newer edit too: kept', () => {
+		const now = new Map<string, string | null>([
+			['a', 'KOLUMBA'],
+			['b', 'Kolumba']
+		]);
+		expect(undoStillValid(batches, 'Kolumba', now)).toEqual([{ name: 'Therme Vals', ids: ['b'] }]);
 	});
 	it('a clear (null) is undone only where the image still has no name; gone images are dropped', () => {
 		const now = new Map<string, string | null>([

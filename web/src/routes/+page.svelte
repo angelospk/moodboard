@@ -306,11 +306,16 @@
 		const undo = spUndo;
 		if (spBusy || !undo) return;
 		spBusy = true;
-		spUndo = null;
 		try {
 			// Images changed since (another tab or device) keep their newer name: read them fresh first.
+			// If that fails, the undo stays for another try.
 			await reloadData();
 			await tick();
+			if (data.error) {
+				spMessage = t('common.failed');
+				return;
+			}
+			spUndo = null;
 			const current = new Map(data.inspirations.map((i) => [i.id, i.source_project]));
 			const batches = undoStillValid(undo.batches, undo.set, current);
 			let ok = 0;

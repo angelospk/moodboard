@@ -189,12 +189,9 @@ export function undoStillValid(
 	set: string | null,
 	current: ReadonlyMap<string, string | null>
 ): UndoBatch[] {
-	const key = (v: string | null | undefined) => {
-		const name = cleanSourceProject(v);
-		return name === null ? null : nameKey(name);
-	};
-	const want = key(set);
+	// Exact (cleaned) spelling: an edit of only case or accents is a newer edit too.
+	const want = cleanSourceProject(set);
 	return batches
-		.map((b) => ({ ...b, ids: b.ids.filter((id) => current.has(id) && key(current.get(id)) === want) }))
+		.map((b) => ({ ...b, ids: b.ids.filter((id) => current.has(id) && cleanSourceProject(current.get(id)) === want) }))
 		.filter((b) => b.ids.length);
 }
