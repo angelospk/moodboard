@@ -691,6 +691,7 @@
 		let gone = false;
 		subscribeLive(data.pb, {
 			inspiration: (e) => void onLive(e),
+			position: (e) => board?.applyRemotePosition(e),
 			// Projects change rarely: reload the data (names, counts) once a burst settles.
 			project: () => {
 				clearTimeout(projectsTimer);

@@ -24,6 +24,7 @@
 	import type PocketBase from 'pocketbase';
 	import type { Inspiration } from '#lib/types.js';
 	import { deletePosition, savePositions, thumbUrl } from '#lib/inspirations.js';
+	import { applyPositionEvent } from '#lib/realtime.js';
 	import {
 		anchorForce,
 		CARD_GAP,
@@ -992,6 +993,26 @@
 		mem.delete(key);
 		for (const k of pendingSaves.keys()) if (k.endsWith(`|${key}`)) pendingSaves.delete(k);
 		if (canSave) void serial(() => deletePosition(pb, null, key), t('board.positionNotRemoved'));
+	}
+
+	/** Follow a move made on another tab: pin the card at its new spot, or unpin it when the spot
+	 *  was deleted. Never saved back, so two tabs cannot echo each other. */
+	export function applyRemotePosition(e: Parameters<typeof applyPositionEvent>[2]) {
+		const key = e.record.node_key;
+		if (!seededScope || key === dragId) return;
+		const known: Record<string, { x: number; y: number }> = {};
+		for (const [k, m] of mem) if (m.fx != null && m.fy != null) known[k] = { x: m.fx, y: m.fy };
+		const next = applyPositionEvent(known, seededScope, e);
+		if (next === known) return;
+		const p = next[key];
+		const n = byId.get(key);
+		// mem keeps the latest spot for a card that is not on the board yet.
+		if (p) mem.set(key, { x: p.x, y: p.y, fx: p.x, fy: p.y });
+		else mem.set(key, { x: n?.x, y: n?.y, fx: null, fy: null });
+		if (!n) return;
+		Object.assign(n, mem.get(key));
+		refreshAnchors();
+		reheat(0.3);
 	}
 
 	/** Unpin every card in view, forget their saved spots and lay the board out again. */

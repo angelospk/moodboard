@@ -20,17 +20,42 @@ export function applyEvent(items: Inspiration[], e: { action: string; record: Re
 	return next;
 }
 
+type Positions = Record<string, { x: number; y: number }>;
+type PositionEvent = { action: string; record: { scope: string; node_key: string; x: number; y: number } };
+
+/** The saved positions of one map after a realtime event. Returns the same object when nothing
+ *  changes (another map, a bad row, an own echo of the same spot). */
+export function applyPositionEvent(pos: Positions, scope: string, e: PositionEvent): Positions {
+	const { scope: sc, node_key: key, x, y } = e.record;
+	if (sc !== scope) return pos;
+	if (e.action === 'delete') {
+		if (!(key in pos)) return pos;
+		const { [key]: _gone, ...rest } = pos;
+		return rest;
+	}
+	if (!Number.isFinite(x) || !Number.isFinite(y)) return pos;
+	if (pos[key]?.x === x && pos[key]?.y === y) return pos;
+	return { ...pos, [key]: { x, y } };
+}
+
 export interface LiveHandlers {
 	inspiration: (e: RecordSubscription<RecordModel>) => void;
 	/** A project was created, renamed or deleted. */
 	project: () => void;
+	/** A card was moved (or its spot forgotten) on another tab or device. */
+	position?: (e: PositionEvent) => void;
 }
 
-/** Subscribe to the user's inspirations and projects. Returns an unsubscribe function. */
+/** Subscribe to the user's inspirations, projects and (when asked) map positions. Returns an
+ *  unsubscribe function. */
 export async function subscribeLive(pb: PocketBase, h: LiveHandlers): Promise<() => Promise<void>> {
 	const offs = await Promise.all([
 		pb.collection('inspirations').subscribe('*', h.inspiration),
-		pb.collection('projects').subscribe('*', () => h.project())
+		pb.collection('projects').subscribe('*', () => h.project()),
+		// A failing positions subscription must not break the other two.
+		...(h.position
+			? [pb.collection('map_positions').subscribe('*', (e) => h.position!(e as unknown as PositionEvent)).catch(() => async () => {})]
+			: [])
 	]);
 	return async () => {
 		await Promise.all(offs.map((off) => off().catch(() => {})));
