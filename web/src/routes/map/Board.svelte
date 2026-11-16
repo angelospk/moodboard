@@ -1004,6 +1004,9 @@
 		const busy = new Set<string>();
 		if (dragId) busy.add(dragId);
 		if (zdrag) for (const n of members.get(zdrag.tag) ?? []) busy.add(n.id);
+		// A move of ours not yet sent is newer than what the server says: it is sent next and wins
+		// on every tab, instead of a remote unpin being undone here later (CodeRabbit).
+		for (const p of pendingSaves.values()) if (p.scope === seededScope) busy.add(p.key);
 		const known: Record<string, { x: number; y: number }> = {};
 		for (const [k, m] of mem) if (m.fx != null && m.fy != null) known[k] = { x: m.fx, y: m.fy };
 		const next = applyPositionEvent(known, seededScope, e, busy);
