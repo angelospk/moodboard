@@ -37,6 +37,7 @@ func Register(app core.App) {
 	})
 	bindThumbs(app)
 	bindSemantic(app)
+	app.OnRecordAfterDeleteSuccess("inspirations").BindFunc(dropPositions)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.Router.BindFunc(thumbOnDemand)
@@ -121,7 +122,7 @@ func CleanTags(tags []string) []string {
 	out := []string{}
 	seen := map[string]bool{}
 	for _, t := range tags {
-		t = strings.ToLower(strings.TrimSpace(t))
+		t = strings.ToLower(strings.Join(strings.Fields(t), " ")) // trims, and «a  b» is «a b»
 		if t == "" || seen[t] {
 			continue
 		}

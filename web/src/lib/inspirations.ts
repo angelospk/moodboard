@@ -32,7 +32,7 @@ export type NewFields = Partial<
 
 /** Trim, lowercase and dedupe tags; keep at most 30. */
 export function cleanTags(tags: string[] = []): string[] {
-	return [...new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 30);
+	return [...new Set(tags.map((t) => t.trim().replace(/\s+/g, ' ').toLowerCase()).filter(Boolean))].slice(0, 30);
 }
 
 /** Throws a user-readable (Greek) message when the file cannot be stored. With `beforeCompress`, the
