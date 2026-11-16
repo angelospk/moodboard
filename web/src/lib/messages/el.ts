@@ -79,7 +79,7 @@ export const el = {
 	'new.change': 'Αλλαγή εικόνας',
 	'new.pick': 'Επίλεξε εικόνα',
 	'new.dropHint': 'ή σύρε τη εδώ, ή κάνε επικόλληση (Ctrl+V)',
-	'new.formats': 'png · jpeg · webp · gif · avif — έως 10MB',
+	'new.formats': 'png · jpeg · webp · gif · avif — οι μεγάλες φωτογραφίες μικραίνουν στα 2560 px (όριο 10MB)',
 	'new.note': 'Σημείωση',
 	'new.notePlaceholder': 'Τι σου αρέσει εδώ; Φως, υλικό, αναλογίες…',
 	'new.tagsLimit': '(έως 30)',
@@ -448,6 +448,10 @@ export const el = {
 	'summary.failed': 'Η πρόταση απέτυχε. Δοκίμασε ξανά.',
 	'summary.saveFailed': 'Η περιγραφή δεν αποθηκεύτηκε.',
 	'summary.saved': 'Αποθηκεύτηκε',
+
+	'error.notFound': 'Η σελίδα δεν υπάρχει.',
+	'error.generic': 'Κάτι πήγε στραβά.',
+	'error.home': '← Αρχική',
 
 	'lang.label': 'Γλώσσα'
 }

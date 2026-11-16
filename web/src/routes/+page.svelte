@@ -53,6 +53,8 @@
 	let groupMode = $state<GroupMode>('');
 	/** Select mode: pressing a card ticks it instead of opening it. */
 	let selecting = $state(false);
+	// The new-project form has the focus: the phone «+» button steps aside so it does not cover «Create».
+	let typingProject = $state(false);
 	const picked = new SvelteSet<string>();
 	let spBusy = $state(false);
 	let spMessage = $state('');
@@ -838,7 +840,7 @@
 
 {#snippet newProjectCard()}
 	<article class="pcard new">
-		<form onsubmit={createProject}>
+		<form onsubmit={createProject} onfocusin={() => (typingProject = true)} onfocusout={() => (typingProject = false)}>
 			<label class="np-label" for="new-project-name">{t('common.newProjectPlus')}</label>
 			<div class="np-row">
 				<input
@@ -1036,7 +1038,7 @@
 	{/if}
 {/snippet}
 
-{#if !selecting}<a class="fab" href="/new" aria-label={t('common.newImage')}>+</a>{/if}
+{#if !selecting && !typingProject}<a class="fab" href="/new" aria-label={t('common.newImage')}>+</a>{/if}
 
 {#if selecting}
 	<SourceProjectBar

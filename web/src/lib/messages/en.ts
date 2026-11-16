@@ -80,7 +80,7 @@ export const en: Record<keyof typeof el, string> = {
 	'new.change': 'Change image',
 	'new.pick': 'Choose an image',
 	'new.dropHint': 'or drag it here, or paste it (Ctrl+V)',
-	'new.formats': 'png · jpeg · webp · gif · avif — up to 10MB',
+	'new.formats': 'png · jpeg · webp · gif · avif — large photos are resized to 2560 px (limit 10MB)',
 	'new.note': 'Note',
 	'new.notePlaceholder': 'What do you like here? Light, material, proportions…',
 	'new.tagsLimit': '(up to 30)',
@@ -449,6 +449,10 @@ export const en: Record<keyof typeof el, string> = {
 	'summary.failed': 'The draft failed. Try again.',
 	'summary.saveFailed': 'The description was not saved.',
 	'summary.saved': 'Saved',
+
+	'error.notFound': 'This page does not exist.',
+	'error.generic': 'Something went wrong.',
+	'error.home': '← Home',
 
 	'lang.label': 'Language'
 }
