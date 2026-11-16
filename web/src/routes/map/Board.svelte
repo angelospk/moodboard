@@ -999,10 +999,14 @@
 	 *  was deleted. Never saved back, so two tabs cannot echo each other. */
 	export function applyRemotePosition(e: Parameters<typeof applyPositionEvent>[2]) {
 		const key = e.record.node_key;
-		if (!seededScope || key === dragId) return;
+		if (!seededScope) return;
+		// Cards under the user's pointer stay where the user puts them: a card, or a whole zone.
+		const busy = new Set<string>();
+		if (dragId) busy.add(dragId);
+		if (zdrag) for (const n of members.get(zdrag.tag) ?? []) busy.add(n.id);
 		const known: Record<string, { x: number; y: number }> = {};
 		for (const [k, m] of mem) if (m.fx != null && m.fy != null) known[k] = { x: m.fx, y: m.fy };
-		const next = applyPositionEvent(known, seededScope, e);
+		const next = applyPositionEvent(known, seededScope, e, busy);
 		if (next === known) return;
 		const p = next[key];
 		const n = byId.get(key);

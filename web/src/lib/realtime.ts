@@ -24,10 +24,11 @@ type Positions = Record<string, { x: number; y: number }>;
 type PositionEvent = { action: string; record: { scope: string; node_key: string; x: number; y: number } };
 
 /** The saved positions of one map after a realtime event. Returns the same object when nothing
- *  changes (another map, a bad row, an own echo of the same spot). */
-export function applyPositionEvent(pos: Positions, scope: string, e: PositionEvent): Positions {
+ *  changes (another map, a bad row, an own echo of the same spot, a card this tab is dragging:
+ *  `busy` holds the keys under the user's pointer, alone or with their zone). */
+export function applyPositionEvent(pos: Positions, scope: string, e: PositionEvent, busy?: ReadonlySet<string>): Positions {
 	const { scope: sc, node_key: key, x, y } = e.record;
-	if (sc !== scope) return pos;
+	if (sc !== scope || busy?.has(key)) return pos;
 	if (e.action === 'delete') {
 		if (!(key in pos)) return pos;
 		const { [key]: _gone, ...rest } = pos;

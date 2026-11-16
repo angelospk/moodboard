@@ -26,3 +26,13 @@ describe('applyPositionEvent', () => {
 		expect(applyPositionEvent(pos, 'all', { action: 'update', record: rec('all', 'i:a', NaN, 3) })).toBe(pos);
 	});
 });
+
+describe('applyPositionEvent while the user drags (Codex review)', () => {
+	const pos = { 'i:a': { x: 1, y: 2 } };
+	it('ignores a remote move of a card this tab is dragging, alone or with its zone', () => {
+		const busy = new Set(['i:a', 't:red']);
+		expect(applyPositionEvent(pos, 'all', { action: 'update', record: rec('all', 'i:a', 10, 20) }, busy)).toBe(pos);
+		expect(applyPositionEvent(pos, 'all', { action: 'delete', record: rec('all', 'i:a', 0, 0) }, busy)).toBe(pos);
+		expect(applyPositionEvent(pos, 'all', { action: 'update', record: rec('all', 'i:b', 3, 4) }, busy)).toEqual({ 'i:a': { x: 1, y: 2 }, 'i:b': { x: 3, y: 4 } });
+	});
+});

@@ -675,6 +675,9 @@
 		// The cached rows (and tags) are now old: the next page load asks the server.
 		forceNextLoad();
 		if (e.action === 'delete' && selectedId === e.record.id) select(null);
+		// Deleted on another tab: drop this tab's spot and any save still waiting, so a debounced
+		// save cannot bring the server's cleaned-up row back (QA 2026-11-15 F11).
+		if (e.action === 'delete') board?.forget(e.record.id);
 		if (e.action === 'create' && !data.urls[e.record.image] && !liveUrls[e.record.image]) {
 			try {
 				const urls = await imageUrls(data.pb, [toInspiration(e.record)]);
