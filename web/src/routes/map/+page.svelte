@@ -773,6 +773,7 @@
 	>
 		{#snippet actions()}
 			{#if project !== 'all' && project !== 'none'}
+				<a class="btn" href={`/house?project=${project}`} title={t('house.open3d')}>3D</a>
 				{#key project}<ShareMenu pb={data.pb} projectId={project} />{/key}
 			{/if}
 		{/snippet}

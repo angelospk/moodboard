@@ -101,6 +101,21 @@ when its `updated_at` is newer, so a late echo of an older save cannot undo a ne
 `save_inspiration` downloads only public https images and checks the address it actually
 connects to (no private hosts, no redirects).
 
+## 3D house editor
+
+`/house?project=<id>` (button «3D» on a project board) draws a house as typed elements, not a free
+mesh: walls (polyline on a grid, height and thickness), windows and doors on a wall (they cut the
+wall), floors, pools and volumes, each with a material from a small library
+(`web/src/lib/house/materials.ts`). Mouse, touch and pen use Pointer Events: in a drawing tool one
+pointer draws; in Select one finger or the left button orbits; two fingers always pan and zoom.
+
+Every change saves a draft (one row per project in `house_models`, kind `draft`), so another device
+shows the last state after a refresh. «Εκδόσεις» keeps named copies (kind `version`) and opens an old
+one. «Λήψη» gives a `.glb` (Blender, 3ds Max) and a semantic JSON with IFC class names and metres for
+AI agents and CAD (`docs/house-3d-schema.md`, schema `docs/house-3d-schema.json`). Code:
+`web/src/lib/house/` (model, scene, viewport, exports, store), page `web/src/routes/house/`. Next steps:
+`docs/house-3d-roadmap.md`.
+
 ## Search by meaning
 
 A user who switches on «Έξυπνη αναζήτηση» (`users.embed_enabled`, separate from `ai_enabled`) lets the

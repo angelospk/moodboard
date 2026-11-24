@@ -1,0 +1,308 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://moodboard.haroldpoi.dev/schemas/house-3d-schema.json",
+	"title": "moodboard.house/v1 semantic export",
+	"description": "A house as a flat list of typed building elements (walls, slabs, windows, doors, a pool, boxes). Meant for an AI agent or a person who rebuilds the design in a BIM/CAD tool (Revit, ArchiCAD, ZWCAD). All lengths are in metres, all angles in degrees. Plan coordinates: x east, y north; z is elevation up; the ground is z = 0.",
+	"type": "object",
+	"required": ["$schema", "schema", "name", "units", "coordinateSystem", "generator", "elements"],
+	"additionalProperties": false,
+	"properties": {
+		"$schema": { "type": "string", "description": "URL of this schema." },
+		"schema": { "const": "moodboard.house/v1", "description": "Schema id and version of the document." },
+		"name": { "type": "string", "description": "Name of the house or project; may be empty." },
+		"units": {
+			"type": "object",
+			"description": "Units of every number in the document.",
+			"required": ["length", "angle"],
+			"additionalProperties": false,
+			"properties": {
+				"length": { "const": "m", "description": "All lengths, areas (m2) and volumes (m3) derive from metres." },
+				"angle": { "const": "deg", "description": "All angles are in degrees." }
+			}
+		},
+		"coordinateSystem": { "type": "string", "description": "Human-readable statement of the axes: right-handed, z up, plan x east, y north, ground at z = 0 (the IFC and CAD convention)." },
+		"generator": { "type": "string", "description": "Name of the tool that wrote the document." },
+		"elements": {
+			"type": "array",
+			"description": "Building elements. Order is not meaningful; windows and doors refer to their wall by id.",
+			"items": {
+				"oneOf": [
+					{ "$ref": "#/$defs/wall" },
+					{ "$ref": "#/$defs/window" },
+					{ "$ref": "#/$defs/door" },
+					{ "$ref": "#/$defs/slab" },
+					{ "$ref": "#/$defs/pool" },
+					{ "$ref": "#/$defs/box" }
+				]
+			}
+		}
+	},
+	"$defs": {
+		"number": { "type": "number", "description": "A finite number, rounded to 6 decimals." },
+		"length": { "type": "number", "description": "A length in metres." },
+		"positiveLength": { "type": "number", "exclusiveMinimum": 0, "description": "A length in metres, greater than 0." },
+		"vec2": {
+			"type": "array",
+			"description": "A plan point [x, y] in metres: x east, y north, on the ground plane.",
+			"prefixItems": [
+				{ "type": "number", "description": "x, metres east." },
+				{ "type": "number", "description": "y, metres north." }
+			],
+			"minItems": 2,
+			"maxItems": 2
+		},
+		"vec3": {
+			"type": "array",
+			"description": "A 3D vector [x, y, z]: x east, y north, z up.",
+			"prefixItems": [
+				{ "type": "number", "description": "x, east." },
+				{ "type": "number", "description": "y, north." },
+				{ "type": "number", "description": "z, up." }
+			],
+			"minItems": 3,
+			"maxItems": 3
+		},
+		"material": {
+			"type": "object",
+			"description": "The material of the element, with enough text to pick or create a matching material in the target tool.",
+			"required": ["id", "name", "color", "category", "description"],
+			"additionalProperties": false,
+			"properties": {
+				"id": { "type": "string", "description": "Stable material id of the editor library." },
+				"name": { "type": "string", "description": "English name of the material." },
+				"color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "sRGB colour as #rrggbb." },
+				"category": { "type": "string", "description": "Broad category, close to IFC material categories: plaster, concrete, glass, wood, water, ceramic, masonry, stone, metal, vegetation." },
+				"description": { "type": "string", "description": "What the material stands for in a real building." }
+			}
+		},
+		"commonProps": {
+			"id": { "type": "string", "minLength": 1, "description": "Unique element id. Windows and doors point to their wall with it." },
+			"name": { "type": "string", "description": "Free label given by the author; may be empty." },
+			"material": { "$ref": "#/$defs/material" }
+		},
+		"wall": {
+			"type": "object",
+			"description": "A wall: a polyline on the ground, extruded up by height and thickened around its centreline. Maps to IfcWall (Revit Wall, ArchiCAD Wall). Create one wall per straight segment, or one chain wall.",
+			"required": ["id", "type", "ifcClass", "name", "material", "geometry", "quantities", "openingIds"],
+			"additionalProperties": false,
+			"properties": {
+				"id": { "$ref": "#/$defs/commonProps/id" },
+				"type": { "const": "wall", "description": "Element type." },
+				"ifcClass": { "const": "IfcWall", "description": "IFC class to use in the target tool." },
+				"name": { "$ref": "#/$defs/commonProps/name" },
+				"material": { "$ref": "#/$defs/material" },
+				"geometry": {
+					"type": "object",
+					"description": "Wall geometry.",
+					"required": ["points", "base", "height", "thickness", "axis"],
+					"additionalProperties": false,
+					"properties": {
+						"points": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/vec2" }, "description": "Centreline polyline in plan, metres. Each consecutive pair is one straight segment; segment i runs points[i] to points[i + 1]." },
+						"base": { "$ref": "#/$defs/length", "description": "Elevation z of the wall bottom, metres." },
+						"height": { "$ref": "#/$defs/positiveLength", "description": "Wall height above base, metres." },
+						"thickness": { "$ref": "#/$defs/positiveLength", "description": "Wall thickness, metres, centred on the centreline (half on each side)." },
+						"axis": { "const": "centerline", "description": "The points are the wall centreline, not an outer or inner face." }
+					}
+				},
+				"quantities": {
+					"type": "object",
+					"description": "Computed quantities, so no one has to recompute them.",
+					"required": ["length", "height", "thickness", "grossSideArea", "volume"],
+					"additionalProperties": false,
+					"properties": {
+						"length": { "type": "number", "minimum": 0, "description": "Total centreline length, metres (sum of all segments)." },
+						"height": { "type": "number", "description": "Wall height, metres." },
+						"thickness": { "type": "number", "description": "Wall thickness, metres." },
+						"grossSideArea": { "type": "number", "minimum": 0, "description": "length * height, square metres, one side, openings not subtracted." },
+						"volume": { "type": "number", "minimum": 0, "description": "length * height * thickness, cubic metres, openings not subtracted." }
+					}
+				},
+				"openingIds": { "type": "array", "items": { "type": "string" }, "description": "Ids of the windows and doors hosted by this wall." }
+			}
+		},
+		"opening": {
+			"type": "object",
+			"description": "A window or door hosted by one straight segment of a wall. It cuts a rectangular opening in the wall.",
+			"properties": {
+				"hostId": { "type": "string", "minLength": 1, "description": "Id of the host wall." },
+				"geometry": {
+					"type": "object",
+					"description": "Opening position and size relative to its host wall segment.",
+					"required": ["segment", "offset", "width", "height", "sill"],
+					"additionalProperties": false,
+					"properties": {
+						"segment": { "type": "integer", "minimum": 0, "description": "Index of the host wall segment (points[segment] to points[segment + 1])." },
+						"offset": { "type": "number", "minimum": 0, "description": "Distance in metres along that segment, from its start to the CENTRE of the opening." },
+						"width": { "$ref": "#/$defs/positiveLength", "description": "Opening width along the wall, metres." },
+						"height": { "$ref": "#/$defs/positiveLength", "description": "Opening height, metres." },
+						"sill": { "type": "number", "minimum": 0, "description": "Height of the opening bottom above the wall base, metres (0 for a door)." }
+					}
+				},
+				"placement": {
+					"type": "object",
+					"description": "Absolute placement, derived from the host wall.",
+					"required": ["point", "direction"],
+					"additionalProperties": false,
+					"properties": {
+						"point": { "$ref": "#/$defs/vec3", "description": "Bottom centre of the opening on the wall centreline, metres: x, y from the segment at offset, z = wall base + sill." },
+						"direction": { "$ref": "#/$defs/vec3", "description": "Unit vector along the host segment (the opening's width axis), with z = 0." }
+					}
+				},
+				"quantities": {
+					"type": "object",
+					"description": "Computed quantities.",
+					"required": ["area"],
+					"additionalProperties": false,
+					"properties": { "area": { "type": "number", "minimum": 0, "description": "width * height, square metres." } }
+				}
+			}
+		},
+		"window": {
+			"allOf": [{ "$ref": "#/$defs/opening" }],
+			"type": "object",
+			"description": "A window (IfcWindow) hosted by a wall.",
+			"required": ["id", "type", "ifcClass", "name", "material", "hostId", "geometry", "placement", "quantities"],
+			"unevaluatedProperties": false,
+			"properties": {
+				"id": { "$ref": "#/$defs/commonProps/id" },
+				"type": { "const": "window", "description": "Element type." },
+				"ifcClass": { "const": "IfcWindow", "description": "IFC class to use in the target tool." },
+				"name": { "$ref": "#/$defs/commonProps/name" },
+				"material": { "$ref": "#/$defs/material" }
+			}
+		},
+		"door": {
+			"allOf": [{ "$ref": "#/$defs/opening" }],
+			"type": "object",
+			"description": "A door (IfcDoor) hosted by a wall; its sill is 0.",
+			"required": ["id", "type", "ifcClass", "name", "material", "hostId", "geometry", "placement", "quantities"],
+			"unevaluatedProperties": false,
+			"properties": {
+				"id": { "$ref": "#/$defs/commonProps/id" },
+				"type": { "const": "door", "description": "Element type." },
+				"ifcClass": { "const": "IfcDoor", "description": "IFC class to use in the target tool." },
+				"name": { "$ref": "#/$defs/commonProps/name" },
+				"material": { "$ref": "#/$defs/material" }
+			}
+		},
+		"slab": {
+			"type": "object",
+			"description": "A horizontal slab (floor, terrace, roof plate) with a closed polygon outline. Maps to IfcSlab (Revit Floor, ArchiCAD Slab).",
+			"required": ["id", "type", "ifcClass", "name", "material", "geometry", "quantities"],
+			"additionalProperties": false,
+			"properties": {
+				"id": { "$ref": "#/$defs/commonProps/id" },
+				"type": { "const": "slab", "description": "Element type." },
+				"ifcClass": { "const": "IfcSlab", "description": "IFC class to use in the target tool." },
+				"name": { "$ref": "#/$defs/commonProps/name" },
+				"material": { "$ref": "#/$defs/material" },
+				"geometry": {
+					"type": "object",
+					"description": "Slab geometry.",
+					"required": ["outline", "elevation", "thickness"],
+					"additionalProperties": false,
+					"properties": {
+						"outline": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/vec2" }, "description": "Closed outline in plan, metres. The last point is NOT repeated; the polygon closes itself." },
+						"elevation": { "$ref": "#/$defs/length", "description": "Elevation z of the slab TOP, metres. The slab extends down by thickness." },
+						"thickness": { "$ref": "#/$defs/positiveLength", "description": "Slab thickness, metres." }
+					}
+				},
+				"quantities": {
+					"type": "object",
+					"description": "Computed quantities.",
+					"required": ["area", "perimeter", "thickness", "volume"],
+					"additionalProperties": false,
+					"properties": {
+						"area": { "type": "number", "minimum": 0, "description": "Plan area of the outline, square metres (absolute shoelace value)." },
+						"perimeter": { "type": "number", "minimum": 0, "description": "Length of the outline, metres." },
+						"thickness": { "type": "number", "description": "Slab thickness, metres." },
+						"volume": { "type": "number", "minimum": 0, "description": "area * thickness, cubic metres." }
+					}
+				}
+			}
+		},
+		"placedGeometry": {
+			"center": { "$ref": "#/$defs/vec2", "description": "Centre of the rectangle in plan, metres." },
+			"width": { "$ref": "#/$defs/positiveLength", "description": "Size along plan x before rotation, metres." },
+			"length": { "$ref": "#/$defs/positiveLength", "description": "Size along plan y before rotation, metres." },
+			"rotation": { "type": "number", "description": "Rotation about the centre in degrees, counter-clockwise seen from above." }
+		},
+		"pool": {
+			"type": "object",
+			"description": "A swimming pool: a rectangular basin sunk below the ground. No IFC pool class exists; use IfcBuildingElementProxy with ObjectType SwimmingPool (Revit: a mass or generic model; ArchiCAD: Morph).",
+			"required": ["id", "type", "ifcClass", "objectType", "name", "material", "geometry", "quantities"],
+			"additionalProperties": false,
+			"properties": {
+				"id": { "$ref": "#/$defs/commonProps/id" },
+				"type": { "const": "pool", "description": "Element type." },
+				"ifcClass": { "const": "IfcBuildingElementProxy", "description": "IFC class to use in the target tool." },
+				"objectType": { "const": "SwimmingPool", "description": "IFC ObjectType that tells what the proxy is." },
+				"name": { "$ref": "#/$defs/commonProps/name" },
+				"material": { "$ref": "#/$defs/material" },
+				"geometry": {
+					"type": "object",
+					"description": "Pool geometry.",
+					"required": ["center", "width", "length", "rotation", "depth"],
+					"additionalProperties": false,
+					"properties": {
+						"center": { "$ref": "#/$defs/placedGeometry/center" },
+						"width": { "$ref": "#/$defs/placedGeometry/width" },
+						"length": { "$ref": "#/$defs/placedGeometry/length" },
+						"rotation": { "$ref": "#/$defs/placedGeometry/rotation" },
+						"depth": { "$ref": "#/$defs/positiveLength", "description": "Water depth below the ground (z = 0), metres. The basin spans z = -depth to 0." }
+					}
+				},
+				"quantities": {
+					"type": "object",
+					"description": "Computed quantities.",
+					"required": ["area", "depth", "volume"],
+					"additionalProperties": false,
+					"properties": {
+						"area": { "type": "number", "minimum": 0, "description": "width * length, square metres." },
+						"depth": { "type": "number", "description": "Depth, metres." },
+						"volume": { "type": "number", "minimum": 0, "description": "width * length * depth, cubic metres of water." }
+					}
+				}
+			}
+		},
+		"box": {
+			"type": "object",
+			"description": "A rectangular volume (a mass: roof block, planter, bench, annex). Use IfcBuildingElementProxy with ObjectType Volume (Revit: mass or generic model; ArchiCAD: Morph).",
+			"required": ["id", "type", "ifcClass", "objectType", "name", "material", "geometry", "quantities"],
+			"additionalProperties": false,
+			"properties": {
+				"id": { "$ref": "#/$defs/commonProps/id" },
+				"type": { "const": "box", "description": "Element type." },
+				"ifcClass": { "const": "IfcBuildingElementProxy", "description": "IFC class to use in the target tool." },
+				"objectType": { "const": "Volume", "description": "IFC ObjectType that tells what the proxy is." },
+				"name": { "$ref": "#/$defs/commonProps/name" },
+				"material": { "$ref": "#/$defs/material" },
+				"geometry": {
+					"type": "object",
+					"description": "Box geometry.",
+					"required": ["center", "width", "length", "rotation", "base", "height"],
+					"additionalProperties": false,
+					"properties": {
+						"center": { "$ref": "#/$defs/placedGeometry/center" },
+						"width": { "$ref": "#/$defs/placedGeometry/width" },
+						"length": { "$ref": "#/$defs/placedGeometry/length" },
+						"rotation": { "$ref": "#/$defs/placedGeometry/rotation" },
+						"base": { "$ref": "#/$defs/length", "description": "Elevation z of the box bottom, metres." },
+						"height": { "$ref": "#/$defs/positiveLength", "description": "Box height above base, metres." }
+					}
+				},
+				"quantities": {
+					"type": "object",
+					"description": "Computed quantities.",
+					"required": ["area", "height", "volume"],
+					"additionalProperties": false,
+					"properties": {
+						"area": { "type": "number", "minimum": 0, "description": "Footprint width * length, square metres." },
+						"height": { "type": "number", "description": "Box height, metres." },
+						"volume": { "type": "number", "minimum": 0, "description": "width * length * height, cubic metres." }
+					}
+				}
+			}
+		}
+	}
+}

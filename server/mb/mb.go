@@ -21,6 +21,8 @@ func Register(app core.App) {
 	app.OnRecordUpdateRequest("levels").BindFunc(checkLevel)
 	app.OnRecordCreateRequest("inspirations").BindFunc(checkProjectOwner)
 	app.OnRecordUpdateRequest("inspirations").BindFunc(checkProjectOwner)
+	app.OnRecordCreateRequest("house_models").BindFunc(checkProjectOwner)
+	app.OnRecordUpdateRequest("house_models").BindFunc(checkProjectOwner)
 	app.OnRecordCreateRequest("inspirations").BindFunc(checkLevelOwner)
 	app.OnRecordUpdateRequest("inspirations").BindFunc(checkLevelOwner)
 	app.OnRecordCreate("inspirations").BindFunc(checkStoreRoom)
