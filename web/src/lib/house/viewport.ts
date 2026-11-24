@@ -349,8 +349,8 @@ export class HouseViewport {
 		}
 		const last = this.#points[this.#points.length - 1];
 		const length = last && this.#cursor ? round6(Math.hypot(this.#cursor[0] - last[0], this.#cursor[1] - last[1])) : null;
-		const min = this.tool === 'wall' ? 2 : 3;
-		this.on.draft({ tool: this.tool, points: this.#points.length, length, canFinish: this.#points.length >= min });
+		const canFinish = this.tool === 'wall' ? this.#points.length >= 2 : this.tool === 'slab' && isSimplePolygon(this.#points);
+		this.on.draft({ tool: this.tool, points: this.#points.length, length, canFinish });
 	}
 
 	#ndc(e: PointerEvent): Vector2 {

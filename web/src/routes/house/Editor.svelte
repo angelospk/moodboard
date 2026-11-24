@@ -18,7 +18,7 @@
 		type Vec2,
 		type Wall
 	} from '#lib/house/model.js';
-	import { listVersions, loadVersion, saveDraft, saveVersion, type VersionInfo } from '#lib/house/store.js';
+	import { listVersions, loadVersion, saveDraft, saveVersion, trackDraftSave, type VersionInfo } from '#lib/house/store.js';
 	import { download, fileBase, toGlb } from '#lib/house/export.js';
 	import { toSemantic } from '#lib/house/semantic.js';
 	import type { Key } from '#lib/i18n.js';
@@ -40,11 +40,16 @@
 
 	/** The server's draft, or this browser's recovery copy when it is newer (edits that never reached the server). */
 	function startModel(): { model: HouseModel; recovered: boolean } {
-		const serverAt = data.draftAt ? Date.parse(data.draftAt.replace(' ', 'T')) : 0;
+		// The copy is removed only when the server acknowledged the last edit, so one that is still here
+		// holds edits this browser never got confirmed: it wins unless the server already has the same model.
+		// (Two devices editing one project at once is out of scope: last writer wins.)
 		try {
-			const r = JSON.parse(localStorage.getItem(RECOVERY) ?? 'null') as { at?: number; model?: unknown } | null;
-			if (r && typeof r.at === 'number' && r.at > serverAt) return { model: parseModel(r.model), recovered: true };
-			if (r) localStorage.removeItem(RECOVERY); // older than the server: already saved
+			const r = JSON.parse(localStorage.getItem(RECOVERY) ?? 'null') as { model?: unknown } | null;
+			if (r) {
+				const m = parseModel(r.model);
+				if (JSON.stringify(m) !== JSON.stringify(data.model)) return { model: m, recovered: true };
+				localStorage.removeItem(RECOVERY);
+			}
 		} catch {
 			/* no storage: start from the server */
 		}
@@ -57,21 +62,24 @@
 	let redoStack: HouseModel[] = $state.raw([]);
 	let vp: HouseViewport | null = null;
 
-	const uncut = (m: HouseModel) => {
-		const cut = cutIds(m);
-		return m.elements.filter((e) => (e.type === 'window' || e.type === 'door') && !cut.has(e.id)).length;
-	};
+	/** A change may not take the hole away from a window or door that had one, nor add one without. */
+	function hidesOpening(prev: HouseModel, next: HouseModel): boolean {
+		const before = cutIds(prev);
+		const after = cutIds(next);
+		const existed = new Set(prev.elements.map((e) => e.id));
+		return next.elements.some((e) => (e.type === 'window' || e.type === 'door') && !after.has(e.id) && (before.has(e.id) || !existed.has(e.id)));
+	}
 
 	/**
 	 * The one gate for every change (tools, inspector, versions): parseModel applies the load rules
 	 * (bounds, simple outlines, openings fitted to their wall), and a change that leaves another
-	 * window or door without its hole (an overlap) is refused.
+	 * window or door without its hole (an overlap) is refused. `force` (opening a version) skips that check.
 	 */
-	function commit(raw: HouseModel, select?: string | null) {
+	function commit(raw: HouseModel, select?: string | null, force = false): boolean {
 		const next = parseModel(raw);
-		if (uncut(next) > uncut(model)) {
+		if (!force && hidesOpening(model, next)) {
 			say(t('house.noRoom'));
-			return;
+			return false;
 		}
 		undoStack = [...undoStack.slice(-HISTORY + 1), model];
 		redoStack = [];
@@ -79,6 +87,7 @@
 		if (select !== undefined) selected = select;
 		if (selected && !next.elements.some((e) => e.id === selected)) selected = null;
 		vp?.setSelected(selected);
+		return true;
 	}
 
 	function apply(next: HouseModel) {
@@ -102,6 +111,7 @@
 		redoStack = redoStack.slice(0, -1);
 		undoStack = [...undoStack, model];
 		apply(next);
+		if (selected && !next.elements.some((e) => e.id === selected)) select(null);
 	}
 
 	function select(id: string | null) {
@@ -165,6 +175,7 @@
 				saveState = 'error';
 			}
 		});
+		trackDraftSave(projectId, saving);
 		return saving;
 	}
 
@@ -352,7 +363,7 @@
 		versionBusy = true;
 		try {
 			const m = await loadVersion(data.pb, v.id);
-			commit(m, null);
+			commit(m, null, true);
 			versionsOpen = false;
 			say(t('house.versionOpened', { name: v.name }));
 			setTimeout(() => vp?.view(view), 0);
@@ -364,7 +375,11 @@
 	}
 
 	async function refreshVersions() {
-		versions = await listVersions(data.pb, projectId).catch(() => versions);
+		const fetched = await listVersions(data.pb, projectId).catch(() => null);
+		if (!fetched) return;
+		// Keep a version saved while this request ran (it may be missing from the answer).
+		const ids = new Set(fetched.map((v) => v.id));
+		versions = [...versions.filter((v) => !ids.has(v.id)), ...fetched].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 	}
 
 	const dateFmt = new Intl.DateTimeFormat(lang === 'el' ? 'el-GR' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' });
@@ -449,12 +464,11 @@
 <svelte:document onvisibilitychange={() => document.visibilityState === 'hidden' && void flush()} />
 
 {#snippet swatches(current: string, pick: (id: string) => void)}
-	<div class="swatches" role="radiogroup" aria-label={t('house.material')}>
+	<div class="swatches" role="group" aria-label={t('house.material')}>
 		{#each MATERIALS as m (m.id)}
 			<button
 				type="button"
-				role="radio"
-				aria-checked={current === m.id}
+				aria-pressed={current === m.id}
 				class={['sw', current === m.id && 'on']}
 				title={m.name[lang]}
 				onclick={() => pick(m.id)}

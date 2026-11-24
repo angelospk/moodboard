@@ -27,6 +27,14 @@ async function findDraft(pb: PocketBase, projectId: string) {
  *  and coming back (A → B → A) never shows a draft older than the last edit. */
 const inflight = new Map<string, Promise<unknown>>();
 
+/** Register the editor's whole save queue for a project (also saves not started yet), so a load waits for it. */
+export function trackDraftSave(projectId: string, queue: Promise<unknown>) {
+	inflight.set(projectId, queue);
+	void queue.finally(() => {
+		if (inflight.get(projectId) === queue) inflight.delete(projectId);
+	}).catch(() => {});
+}
+
 export async function loadDraft(pb: PocketBase, projectId: string): Promise<{ id: string; model: HouseModel; updated_at: string } | null> {
 	await inflight.get(projectId)?.catch(() => {});
 	const row = await findDraft(pb, projectId);
@@ -40,10 +48,7 @@ export async function loadDraft(pb: PocketBase, projectId: string): Promise<{ id
  */
 export function saveDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null = null): Promise<string> {
 	const p = writeDraft(pb, userId, projectId, model, knownId);
-	inflight.set(projectId, p);
-	void p.finally(() => {
-		if (inflight.get(projectId) === p) inflight.delete(projectId);
-	}).catch(() => {});
+	if (!inflight.has(projectId)) trackDraftSave(projectId, p); // a tracked queue already covers this write
 	return p;
 }
 

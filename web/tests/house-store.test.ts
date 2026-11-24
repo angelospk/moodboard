@@ -3,7 +3,7 @@ import type PocketBase from 'pocketbase';
 import { beforeAll, describe, expect, inject, it } from 'vitest';
 import { createClient } from '../src/lib/pb';
 import { createProject, signUp } from '../src/lib/inspirations';
-import { listVersions, loadDraft, loadVersion, saveDraft, saveVersion } from '../src/lib/house/store';
+import { listVersions, loadDraft, loadVersion, saveDraft, saveVersion, trackDraftSave } from '../src/lib/house/store';
 import { emptyModel, type HouseModel } from '../src/lib/house/model';
 
 const URL_ = inject('pbUrl');
@@ -59,6 +59,14 @@ describe('house drafts', () => {
 		await saveDraft(a.pb, a.uid, p, withWall(1));
 		void saveDraft(a.pb, a.uid, p, withWall(9));
 		expect((await loadDraft(a.pb, p))!.model).toEqual(withWall(9));
+	});
+
+	it('a load also waits for a tracked save queue whose write has not started yet', async () => {
+		const p = (await createProject(a.pb, a.uid, 'Ουρά')).id;
+		await saveDraft(a.pb, a.uid, p, withWall(1));
+		const queue = new Promise((r) => setTimeout(r, 300)).then(() => saveDraft(a.pb, a.uid, p, withWall(7)));
+		trackDraftSave(p, queue);
+		expect((await loadDraft(a.pb, p))!.model).toEqual(withWall(7));
 	});
 
 	it('two drafts saved at once still leave one row', async () => {
