@@ -4,7 +4,7 @@
 	import { imageUrls, listInspirationsByIds, thumbUrl } from '#lib/inspirations.js';
 	import { similarTo } from '#lib/semantic.js';
 	import type { Inspiration } from '#lib/types.js';
-	import { needSmart, smart } from '#lib/smart.svelte.js';
+	import { smart } from '#lib/smart.svelte.js';
 
 	// Images that look like image `id`, from its own project or from all projects. The server compares
 	// the stored vectors, so this makes no model call.
@@ -22,16 +22,12 @@
 	}
 	let { pb, id, onpick, selectable = false, selected = $bindable([]), selecting = $bindable(false) }: Props = $props();
 	const enabled = $derived(smart.embed);
-	let enabling = $state(false);
+
+	/** At most this many: the server already keeps only images that stand out from the rest. */
+	const LIMIT = 8;
 
 	function toggle(itemId: string) {
 		selected = selected.includes(itemId) ? selected.filter((x) => x !== itemId) : [...selected, itemId];
-	}
-
-	async function enable() {
-		enabling = true;
-		await needSmart('embed');
-		enabling = false;
 	}
 
 	/** Reload the list (after the caller changed some of the images). */
@@ -40,9 +36,11 @@
 	}
 
 	let scope = $state<'project' | 'all'>('project');
-	let phase = $state<'loading' | 'ready' | 'notReady' | 'failed'>('loading');
+	let phase = $state<'loading' | 'ready' | 'hidden'>('loading');
 	let items = $state<Inspiration[]>([]);
 	let urls = $state<Record<string, string>>({});
+	/** This project has none, but other projects do: the row stays, so the user can switch. */
+	let elsewhere = $state(false);
 	let again = $state(0);
 	let latest = 0;
 
@@ -53,40 +51,43 @@
 		selected = [];
 		if (!enabled) {
 			selecting = false;
+			phase = 'hidden';
 			return;
 		}
 		const mine = ++latest;
 		phase = 'loading';
 		(async () => {
 			try {
-				const r = await similarTo(pb, imageId, s);
+				const r = await similarTo(pb, imageId, s, LIMIT);
 				if (mine !== latest) return;
-				if (!r.ready) {
-					items = [];
-					phase = 'notReady';
-					return;
+				// Nothing alike (or no vector yet): no section at all, unless other projects have some.
+				let other = false;
+				if (r.ready && !r.results.length && s === 'project') {
+					const all = await similarTo(pb, imageId, 'all', 1);
+					if (mine !== latest) return;
+					other = all.results.length > 0;
 				}
-				const rows = await listInspirationsByIds(pb, r.results.map((h) => h.id));
+				const rows = r.results.length ? await listInspirationsByIds(pb, r.results.map((h) => h.id)) : [];
 				const u = await imageUrls(pb, rows);
 				if (mine !== latest) return;
-				items = rows;
-				urls = u;
-				phase = 'ready';
+				[items, urls, elsewhere] = [rows, u, other];
+				phase = rows.length || other ? 'ready' : 'hidden';
+				if (!rows.length) selecting = false;
 			} catch {
-				if (mine === latest) phase = 'failed';
+				if (mine === latest) phase = 'hidden';
 			}
 		})();
 	});
 </script>
 
-<section class="similar" aria-label={t('similar.title')}>
-	<div class="head">
-		<span class="lbl">{t('similar.title')}</span>
-		{#if enabled}
+{#if enabled && (phase === 'ready' || (phase === 'loading' && (items.length || elsewhere)))}
+	<section class="similar" class:busy={phase === 'loading'} aria-label={t('similar.title')} aria-busy={phase === 'loading'}>
+		<div class="head">
+			<span class="lbl">{t('similar.title')}</span>
 			<div class="seg" role="group" aria-label={t('similar.title')}>
 				<button type="button" class={['chip', scope === 'project' && 'on']} aria-pressed={scope === 'project'} onclick={() => (scope = 'project')}>{t('similar.scopeProject')}</button>
 				<button type="button" class={['chip', scope === 'all' && 'on']} aria-pressed={scope === 'all'} onclick={() => (scope = 'all')}>{t('similar.scopeAll')}</button>
-				{#if selectable && phase === 'ready' && items.length}
+				{#if selectable && items.length}
 					<button
 						type="button"
 						class={['chip', 'soft', selecting && 'on']}
@@ -100,50 +101,39 @@
 					</button>
 				{/if}
 			</div>
-		{/if}
-	</div>
+		</div>
 
-	{#if !enabled}
-		<p class="msg">
-			{t('similar.off')}
-			<button type="button" class="btn enable" disabled={enabling} onclick={enable}>{t('smart.enable')}</button>
-		</p>
-	{:else if phase === 'loading'}
-		<p class="msg">{t('common.loading')}</p>
-	{:else if phase === 'notReady'}
-		<p class="msg">{t('similar.notReady')} <button type="button" class="again" onclick={() => again++}>↻</button></p>
-	{:else if phase === 'failed'}
-		<p class="msg">{t('similar.failed')} <button type="button" class="again" onclick={() => again++}>↻</button></p>
-	{:else if items.length === 0}
-		<p class="msg">{t('similar.none')}</p>
-	{:else}
-		<ul class="strip">
-			{#each items as it (it.id)}
-				{@const label = it.note ? it.note.slice(0, 60) : t('item.alt')}
-				<li>
-					{#if selecting}
-						<button
-							type="button"
-							class={['tile', selected.includes(it.id) && 'picked']}
-							role="checkbox"
-							aria-checked={selected.includes(it.id)}
-							aria-label={`${t('bulk.check')}: ${label}`}
-							onclick={() => toggle(it.id)}
-						>
-							{@render thumb(it)}
-							<span class="tick" aria-hidden="true">{selected.includes(it.id) ? '✓' : ''}</span>
-						</button>
-					{:else if onpick}
-						<button type="button" class="tile" aria-label={label} onclick={() => onpick(it.id)}>{@render thumb(it)}</button>
-					{:else}
-						<!-- The image page keeps its editor state per page load, so another image needs a fresh load. -->
-						<a class="tile" href={`/i/${it.id}`} data-sveltekit-reload aria-label={label}>{@render thumb(it)}</a>
-					{/if}
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</section>
+		{#if items.length === 0}
+			<p class="msg">{t('similar.onlyElsewhere')}</p>
+		{:else}
+			<ul class="strip">
+				{#each items as it (it.id)}
+					{@const label = it.note ? it.note.slice(0, 60) : t('item.alt')}
+					<li>
+						{#if selecting}
+							<button
+								type="button"
+								class={['tile', selected.includes(it.id) && 'picked']}
+								role="checkbox"
+								aria-checked={selected.includes(it.id)}
+								aria-label={`${t('bulk.check')}: ${label}`}
+								onclick={() => toggle(it.id)}
+							>
+								{@render thumb(it)}
+								<span class="tick" aria-hidden="true">{selected.includes(it.id) ? '✓' : ''}</span>
+							</button>
+						{:else if onpick}
+							<button type="button" class="tile" aria-label={label} onclick={() => onpick(it.id)}>{@render thumb(it)}</button>
+						{:else}
+							<!-- The image page keeps its editor state per page load, so another image needs a fresh load. -->
+							<a class="tile" href={`/i/${it.id}`} data-sveltekit-reload aria-label={label}>{@render thumb(it)}</a>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
+{/if}
 
 {#snippet thumb(it: Inspiration)}
 	{#if urls[it.image_path]}
@@ -157,6 +147,22 @@
 	.similar {
 		display: grid;
 		gap: 8px;
+		animation: sim-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+		transition: opacity 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.similar.busy {
+		opacity: 0.55;
+	}
+	@keyframes sim-in {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.similar {
+			animation: none;
+		}
 	}
 	.head {
 		display: flex;
@@ -179,13 +185,6 @@
 		margin: 0;
 		font-size: 13px;
 		color: var(--muted);
-	}
-	.again {
-		border: 0;
-		background: none;
-		padding: 0 4px;
-		font-size: 15px;
-		color: var(--text);
 	}
 	/* One row under the image, scrolled sideways: the picture above stays the main thing. */
 	.strip {
@@ -256,11 +255,6 @@
 		background: var(--accent);
 		border-color: var(--accent);
 		color: var(--on-accent);
-	}
-	.enable {
-		margin-left: 6px;
-		font-size: 12.5px;
-		padding: 3px 10px;
 	}
 	.strip img {
 		width: 100%;

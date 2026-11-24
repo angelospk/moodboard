@@ -69,7 +69,7 @@ lasts one hour.
 | `POST /api/mb/positions/delete` | forget positions (one scope or all) |
 | `GET /api/mb/search?q=&project=&limit=` | search by meaning (needs `embed_enabled`) |
 | `GET /api/mb/embed/status` | consent, how many images have a vector, model, dimension |
-| `GET /api/mb/inspirations/{id}/similar?scope=project\|all` | images most like this one |
+| `GET /api/mb/inspirations/{id}/similar?scope=project\|all` | images most like this one; only those that stand out from the rest (score ≥ mean + 1.5 SD of all the user's images, when there are 8 or more) |
 | `GET /api/mb/inspirations/{id}/knn-suggest` | tags and level voted by the nearest labeled images (no LLM) |
 | `GET /api/mb/duplicates?project=&id=` | near-duplicate pairs from a 64-bit image hash |
 | `POST /api/mb/projects/{id}/summary-draft` | Gemini Flash drafts a project description (2-3 readings where unsure); the web app saves the picked text into `projects.description` |

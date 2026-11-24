@@ -3,6 +3,7 @@ package mb_test
 import (
 	"encoding/json"
 	"image/color"
+	"math"
 	"net/url"
 	"strings"
 	"testing"
@@ -176,6 +177,37 @@ func TestSimilarScopes(t *testing.T) {
 	}
 	if got := s.e.hits(s.aTok, base+"?scope=all&limit=1", 200).ids(); len(got) != 1 {
 		t.Fatalf("limit: %v", got)
+	}
+}
+
+func TestSimilarCutoff(t *testing.T) {
+	if c := mb.SimilarCutoff([]float64{0.9, 0.1, 0.1}); !math.IsInf(c, -1) {
+		t.Fatalf("a small library keeps every image: %v", c)
+	}
+	// Ten unrelated images and two close ones: only the close ones pass.
+	scores := []float64{0.95, 0.9, 0.5, 0.52, 0.48, 0.5, 0.51, 0.49, 0.5, 0.5, 0.47, 0.53}
+	c := mb.SimilarCutoff(scores)
+	if c <= 0.53 || c >= 0.9 {
+		t.Fatalf("cutoff %v: want between the crowd (0.53) and the close ones (0.9)", c)
+	}
+	// All alike: the cutoff never lets nothing through because of a zero spread.
+	if c := mb.SimilarCutoff([]float64{0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8}); c > 0.8 {
+		t.Fatalf("equal scores: cutoff %v must keep them", c)
+	}
+}
+
+// With a library big enough to tell a close image from the crowd, /similar returns only the close ones.
+func TestSimilarDropsTheCrowd(t *testing.T) {
+	s := newSem(t, mb.EmbedConfig{})
+	for _, c := range []color.RGBA{{0, 0, 200, 255}, {0, 200, 0, 255}, {0, 120, 255, 255}, {0, 255, 120, 255}, {0, 200, 200, 255}, {30, 0, 255, 255}, {0, 90, 160, 255}, {20, 160, 60, 255}} {
+		s.e.uploadImage(s.aTok, map[string]string{"user_id": s.alice, "project_id": s.p1}, solid(16, 16, c))
+	}
+	s.e.settle(s.emb)
+	for _, scope := range []string{"", "?scope=all"} {
+		got := s.e.hits(s.aTok, "/api/mb/inspirations/"+s.red+"/similar"+scope, 200).ids()
+		if len(got) != 1 || got[0] != s.orange {
+			t.Fatalf("scope %q: want only orange, got %v", scope, got)
+		}
 	}
 }
 

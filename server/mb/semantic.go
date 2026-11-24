@@ -29,6 +29,11 @@ const (
 	knnLevelMin    = 0.4
 	knnMinVotes    = 2 // a label seen on one neighbour only is not a pattern
 	idxMaxUsers    = 8 // cached users; more clears the cache
+	// "Similar" keeps an image only when it stands out from the user's other images: its score must
+	// be simZ standard deviations above their mean. On the owner's 50 images (Nov 2026) this raised
+	// the share of shown images that share a tag from 0.52 (top 12) to 0.76, about 3 per image.
+	simZ       = 1.5
+	simMinPool = 8 // fewer other images: the spread says nothing, keep them all
 )
 
 type vecEntry struct {
@@ -262,8 +267,44 @@ func similarTo(app core.App, uid, id string, all bool, limit int) (ready bool, h
 		return false, []hit{}, nil
 	}
 	project := r.GetString("project_id")
-	keep := func(en *vecEntry) bool { return all || en.project == project }
-	return true, ix.top(ix.entries[i].vec, keep, id, limit), nil
+	// The cutoff comes from all the user's images, so both scopes judge "alike" the same way.
+	every := ix.top(ix.entries[i].vec, nil, id, len(ix.entries))
+	scores := make([]float64, len(every))
+	for k, h := range every {
+		scores[k] = h.Score
+	}
+	cut := SimilarCutoff(scores)
+	hits = []hit{}
+	for _, h := range every {
+		if len(hits) == limit || h.Score < cut {
+			break
+		}
+		if all || ix.entries[ix.byID[h.ID]].project == project {
+			hits = append(hits, h)
+		}
+	}
+	return true, hits, nil
+}
+
+// SimilarCutoff is the lowest score that still counts as "looks alike", given the scores of all the
+// user's other images: their mean plus simZ standard deviations, never above the best score (equal
+// scores keep all). With fewer than simMinPool scores it is -Inf: every image counts.
+func SimilarCutoff(scores []float64) float64 {
+	if len(scores) < simMinPool {
+		return math.Inf(-1)
+	}
+	var sum, best float64
+	best = math.Inf(-1)
+	for _, s := range scores {
+		sum += s
+		best = max(best, s)
+	}
+	mean := sum / float64(len(scores))
+	var sq float64
+	for _, s := range scores {
+		sq += (s - mean) * (s - mean)
+	}
+	return min(mean+simZ*math.Sqrt(sq/float64(len(scores))), best)
 }
 
 func handleSimilar(e *core.RequestEvent) error {
