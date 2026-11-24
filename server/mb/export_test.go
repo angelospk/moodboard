@@ -34,3 +34,9 @@ func SetMaxCropPixels(n int) int {
 	maxCropPixels = n
 	return old
 }
+
+// OrientationOf and PolygonMeetsUnitSquare expose the crop helpers to the tests.
+var (
+	OrientationOf          = orientationOf
+	PolygonMeetsUnitSquare = polygonMeetsUnitSquare
+)

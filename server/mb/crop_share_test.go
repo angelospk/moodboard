@@ -192,17 +192,90 @@ func TestCropOfAGIFUsesItsCanvas(t *testing.T) {
 	}
 }
 
-// A transparent PNG stays transparent: the cropped copy must not become a JPEG.
+// A transparent image stays transparent, whatever its name says: a GIF named .jpg must not become a JPEG.
 func TestCropKeepsTransparency(t *testing.T) {
 	f := newShareFixture(t)
 	f.set(t, map[string]any{"public": true})
 	owner, _ := f.e.app.FindRecordById("inspirations", f.insA)
-	clear := pngOf(200, 100, func(int, int) color.Color { return color.NRGBA{0, 0, 255, 0} })
-	r := f.e.uploadImage(f.aTok, map[string]string{"user_id": owner.GetString("user_id"), "project_id": f.projA,
-		"crop": `{"x":0.5,"y":0,"w":0.5,"h":1}`}, clear)
-	img := decoded(t, f.e, "/api/mb/public/"+f.projA+"/files/"+r.Id)
+	pal := color.Palette{color.RGBA{0, 0, 0, 0}, color.RGBA{0, 0, 255, 255}}
+	frame := image.NewPaletted(image.Rect(0, 0, 200, 100), pal) // all transparent
+	var buf bytes.Buffer
+	if err := gif.Encode(&buf, frame, nil); err != nil {
+		t.Fatal(err)
+	}
+	id := f.e.uploadFile(f.aTok, map[string]string{"user_id": owner.GetString("user_id"), "project_id": f.projA,
+		"crop": `{"x":0.5,"y":0,"w":0.5,"h":1}`}, "a.jpg", "image/jpeg", buf.Bytes())
+	mb.WaitThumbs()
+	img := decoded(t, f.e, "/api/mb/public/"+f.projA+"/files/"+id)
 	if _, _, _, a := img.At(10, 10).RGBA(); a != 0 {
 		t.Fatalf("alpha %d, want 0", a)
+	}
+}
+
+// A very thin crop would make a huge 480x0 thumbnail: the thumbnail fails closed, the crop itself is served.
+func TestThinCropThumbnailFailsClosed(t *testing.T) {
+	f, id := croppedFixture(t)
+	if code, out := f.e.json("PATCH", "/api/collections/inspirations/records/"+id, f.aTok, map[string]any{"crop": map[string]float64{"x": 0.5, "y": 0, "w": 0.02, "h": 1}}); code != 200 {
+		t.Fatalf("patch crop: %d %s", code, out)
+	}
+	mb.WaitThumbs()
+	old := mb.SetMaxCropPixels(1_000_000) // the 4x100 crop's 480x12000 thumbnail is over it
+	t.Cleanup(func() { mb.SetMaxCropPixels(old) })
+	base := "/api/mb/public/" + f.projA + "/files/" + id
+	if w := f.e.rawWith("GET", base, nil); w.Code != 200 {
+		t.Fatalf("thin crop: %d, want 200", w.Code)
+	}
+	if w := f.e.rawWith("GET", base+"?thumb=480x0", nil); w.Code != 404 {
+		t.Fatalf("thumbnail over the limit: %d, want 404", w.Code)
+	}
+}
+
+// Removing old crop copies never touches an uploaded original whose own name starts with crops_.
+func TestPruneKeepsAnOriginalNamedLikeACrop(t *testing.T) {
+	f := newShareFixture(t)
+	f.set(t, map[string]any{"public": true})
+	owner, _ := f.e.app.FindRecordById("inspirations", f.insA)
+	id := f.e.uploadFile(f.aTok, map[string]string{"user_id": owner.GetString("user_id"), "project_id": f.projA,
+		"crop": `{"x":0.5,"y":0,"w":0.5,"h":1}`}, "crops_a.png", "image/png", halves())
+	mb.WaitThumbs()
+	decoded(t, f.e, "/api/mb/public/"+f.projA+"/files/"+id)
+	if code, out := f.e.json("PATCH", "/api/collections/inspirations/records/"+id, f.aTok, map[string]any{"crop": nil}); code != 200 {
+		t.Fatalf("patch crop: %d %s", code, out)
+	}
+	mb.WaitThumbs()
+	img := decoded(t, f.e, "/api/mb/public/"+f.projA+"/files/"+id)
+	if b := img.Bounds(); b.Dx() != 200 {
+		t.Fatalf("original lost or changed: %dx%d", b.Dx(), b.Dy())
+	}
+}
+
+// Fill bytes (0xFF) before a JPEG marker are legal; the Orientation after them still counts.
+func TestOrientationReadsPastJPEGFillBytes(t *testing.T) {
+	tiff := []byte("MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00\x00\x00\x00\x00")
+	app1 := append([]byte("Exif\x00\x00"), tiff...)
+	n := len(app1) + 2
+	b := []byte{0xFF, 0xD8, 0xFF, 0xFF, 0xFF, 0xE1, byte(n >> 8), byte(n)}
+	b = append(append(b, app1...), 0xFF, 0xDA, 0x00, 0x02)
+	if o := mb.OrientationOf(b); o != 6 {
+		t.Fatalf("orientation %d, want 6", o)
+	}
+}
+
+func TestPolygonOverlapNeedsArea(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		poly [][2]float64
+		want bool
+	}{
+		{"touches a corner from outside", [][2]float64{{1, 1}, {2, 1}, {1, 2}}, false},
+		{"touches the origin corner from outside", [][2]float64{{0, 0}, {-1, 0}, {0, -1}}, false},
+		{"shares an edge from outside", [][2]float64{{1, 0}, {2, 0}, {2, 1}, {1, 1}}, false},
+		{"covers the square", [][2]float64{{-1, -1}, {3, -1}, {-1, 3}}, true},
+		{"crosses one side", [][2]float64{{-1, 0.4}, {0.2, 0.5}, {-1, 0.6}}, true},
+	} {
+		if got := mb.PolygonMeetsUnitSquare(c.poly); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 

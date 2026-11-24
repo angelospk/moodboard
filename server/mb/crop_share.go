@@ -47,8 +47,8 @@ func cropOf(r *core.Record) *cropRect {
 var maxCropPixels = 40_000_000
 
 // cropKeyOf is the storage key of the cropped copy, named after the exact crop values (two crops
-// that differ only a little never share a copy). JPEG stays JPEG; every other format becomes PNG, so
-// transparency survives.
+// that differ only a little never share a copy). The extension follows the stored name; cropImage
+// picks the encoding from the content, and storage records the real content type.
 func cropKeyOf(r *core.Record, c *cropRect) string {
 	name := r.GetString("image")
 	ext := ".png"
@@ -84,18 +84,19 @@ func ensureCrop(app core.App, fsys *filesystem.System, r *core.Record, c *cropRe
 	}
 	defer func() { <-thumbSlot }()
 	if ok, _ := fsys.Exists(key); !ok {
-		body, err := cropImage(fsys, r.BaseFilesPath()+"/"+r.GetString("image"), c, path.Ext(key) == ".png")
+		body, err := cropImage(fsys, r.BaseFilesPath()+"/"+r.GetString("image"), c)
 		if err != nil {
 			return "", err
 		}
-		// One crop at a time: copies of earlier crops go.
-		_ = fsys.DeletePrefix(path.Dir(key) + "/")
 		if err := fsys.Upload(body, key); err != nil {
 			return "", err
 		}
 	}
 	if thumb {
 		if ok, _ := fsys.Exists(want); !ok {
+			if err := thumbFits(fsys, key); err != nil {
+				return "", err
+			}
 			if err := fsys.CreateThumb(key, want, shareThumb); err != nil {
 				return "", err
 			}
@@ -104,9 +105,26 @@ func ensureCrop(app core.App, fsys *filesystem.System, r *core.Record, c *cropRe
 	return want, nil
 }
 
+// thumbFits refuses a 480x0 thumbnail that would hold more than maxCropPixels (a very thin crop).
+func thumbFits(fsys *filesystem.System, key string) error {
+	rd, err := fsys.GetReader(key)
+	if err != nil {
+		return err
+	}
+	defer rd.Close()
+	cfg, _, err := image.DecodeConfig(rd)
+	if err != nil {
+		return err
+	}
+	if cfg.Width < 1 || float64(480)*480*float64(cfg.Height)/float64(cfg.Width) > float64(maxCropPixels) {
+		return fmt.Errorf("thumbnail of a %dx%d crop is over the limit", cfg.Width, cfg.Height)
+	}
+	return nil
+}
+
 // cropImage decodes the original (on its full canvas, turned upright as a browser shows it), cuts
 // the crop out and encodes it again. The new file holds no metadata.
-func cropImage(fsys *filesystem.System, original string, c *cropRect, asPNG bool) ([]byte, error) {
+func cropImage(fsys *filesystem.System, original string, c *cropRect) ([]byte, error) {
 	rd, err := fsys.GetReader(original)
 	if err != nil {
 		return nil, err
@@ -116,7 +134,7 @@ func cropImage(fsys *filesystem.System, original string, c *cropRect, asPNG bool
 	if err != nil {
 		return nil, err
 	}
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -144,10 +162,10 @@ func cropImage(fsys *filesystem.System, original string, c *cropRect, asPNG bool
 	}
 	out := imaging.Crop(img, rect)
 	var buf bytes.Buffer
-	if asPNG {
-		err = imaging.Encode(&buf, out, imaging.PNG)
-	} else {
+	if format == "jpeg" {
 		err = imaging.Encode(&buf, out, imaging.JPEG, imaging.JPEGQuality(90))
+	} else { // by content, not name: a transparent GIF or WebP keeps its alpha
+		err = imaging.Encode(&buf, out, imaging.PNG)
 	}
 	return buf.Bytes(), err
 }
@@ -179,6 +197,10 @@ func orientationOf(b []byte) int {
 	switch {
 	case bytes.HasPrefix(b, []byte{0xFF, 0xD8}):
 		for i := 2; i+4 <= len(b) && b[i] == 0xFF; {
+			if b[i+1] == 0xFF { // fill byte before the marker
+				i++
+				continue
+			}
 			m := b[i+1]
 			if m == 0xDA || m == 0xD9 { // image data: no more metadata segments
 				return 0
@@ -215,6 +237,10 @@ func orientationOf(b []byte) int {
 
 // pruneCrops removes the stored copies of every crop but the record's current one.
 func pruneCrops(app core.App, r *core.Record) error {
+	r, err := app.FindRecordById(r.Collection(), r.Id) // the latest crop, not the one when the change was queued
+	if err != nil {
+		return nil // deleted: its folder goes with it
+	}
 	fsys, err := app.NewFilesystem()
 	if err != nil {
 		return err
@@ -230,6 +256,10 @@ func pruneCrops(app core.App, r *core.Record) error {
 		keepThumbs = path.Dir(cropThumbKeyOf(keep)) + "/"
 	}
 	for _, o := range objs {
+		// Only files inside a crops_<name>/ folder; an uploaded original may itself be named crops_*.
+		if !strings.Contains(strings.TrimPrefix(o.Key, r.BaseFilesPath()+"/"), "/") {
+			continue
+		}
 		if keep != "" && (o.Key == keep || strings.HasPrefix(o.Key, keepThumbs)) {
 			continue
 		}
@@ -285,7 +315,8 @@ func polygonMeetsUnitSquare(poly [][2]float64) bool {
 		}
 	}
 	sq := [][2]float64{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	for _, q := range sq {
+	const in = 1e-6 // corners moved just inside: a polygon that only touches a corner or an edge does not count
+	for _, q := range [][2]float64{{in, in}, {1 - in, in}, {1 - in, 1 - in}, {in, 1 - in}} {
 		if pointInPolygon(q, poly) {
 			return true
 		}
