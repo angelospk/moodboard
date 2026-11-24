@@ -16,6 +16,7 @@
 	import { duplicatesOf } from '#lib/semantic.js';
 	import { smart } from '#lib/smart.svelte.js';
 	import SourceProjectField from '#lib/components/SourceProjectField.svelte';
+	import CropImg from '#lib/components/CropImg.svelte';
 	import SimilarImages from '#lib/components/SimilarImages.svelte';
 	import SmartSuggest from '#lib/components/SmartSuggest.svelte';
 	import ChatSearch from '#lib/components/ChatSearch.svelte';
@@ -243,6 +244,7 @@
 			<RegionEditor
 				src={data.imageUrl}
 				alt={note || t('item.alt')}
+				crop={item.crop}
 				labels
 				bind:regions={() => regions, (v) => ((regions = v), change('regions', v))}
 				bind:active
@@ -296,7 +298,7 @@
 								<li>
 									<!-- A full load: this page keeps its editor state per page load (see `item`). -->
 									<a href={`/i/${d.id}`} data-sveltekit-reload aria-label={d.note ? d.note.slice(0, 60) : t('item.alt')}>
-										{#if dupUrls[d.image_path]}<img src={thumbUrl(dupUrls[d.image_path])} alt="" loading="lazy" decoding="async" />{/if}
+										{#if dupUrls[d.image_path]}<CropImg src={thumbUrl(dupUrls[d.image_path]) ?? ''} crop={d.crop} fit="cover" />{/if}
 									</a>
 								</li>
 							{/each}
@@ -662,12 +664,6 @@
 		overflow: hidden;
 		border-radius: var(--r-ctl);
 		background: var(--sunk);
-	}
-	.mini img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
 	}
 
 	/* Desktop: image fills the left, the form is a 400px column with its own scroll. */

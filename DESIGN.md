@@ -35,6 +35,8 @@ Layout, top to bottom:
 4. **Dock**: floating pill, bottom centre, 48px: `＋ Εικόνα` (primary) · Σημειώσεις toggle · size slider · Κεντράρισμα · Αυτόματη διάταξη. Tooltips show shortcuts. With < 3 images, a hint beside it: «⌘V επικόλληση · σύρε εικόνες εδώ».
 5. **Panel** (right, 400px, below header+tag row, slides in 180ms; dock shifts left to stay visible). Mobile: bottom sheet 75vh.
 
+**Crop.** A crop (a rectangle on the row; the file stays whole) is the image everywhere: cards, lists, thumbnails, the editor, the viewer, the public board. Only the crop tool (viewer, `C`) shows the whole image. Code: `src/lib/crop.ts`, `CropImg.svelte`.
+
 Cards: "print" look: `--raised` frame with 6px padding, radius 6, card shadow; image whole (natural aspect ratio); note and numbered region notes («1 ματι στο φως») under it when Σημειώσεις is on (12.5px, note 3 lines, each region 2 lines); with Σημειώσεις off the same block appears as a caption under the card on hover (250ms delay). Hovering a region row lights up its box. Hover lifts 2px and shows the region boxes at any size. Selected = 2px accent ring. Regions: count dot top-right when small; boxes when rendered width ≥ 200px; box notes when ≥ 360px.
 
 Interactions (all must be discoverable: tooltip, hint, or context menu):

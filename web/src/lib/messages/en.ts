@@ -284,9 +284,8 @@ export const en: Record<keyof typeof el, string> = {
 	'viewer.tags': 'Images by tag',
 	'viewer.next': 'Next',
 	'viewer.unavailable': 'The image is not available.',
-	'viewer.cropHint': 'Drag the handles or draw a new frame. The map will show only this part.',
+	'viewer.cropHint': 'Drag the handles or draw a new frame. Every view will show only this part.',
 	'viewer.noCrop': 'No crop',
-	'viewer.cropShown': 'The dashed line shows what is visible on the map.',
 
 	'regions.word1': 'not this',
 	'regions.word2': 'probably not',

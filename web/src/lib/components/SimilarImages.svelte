@@ -5,6 +5,7 @@
 	import { similarTo } from '#lib/semantic.js';
 	import type { Inspiration } from '#lib/types.js';
 	import { smart } from '#lib/smart.svelte.js';
+	import CropImg from '#lib/components/CropImg.svelte';
 
 	// Images that look like image `id`, from its own project or from all projects. The server compares
 	// the stored vectors, so this makes no model call.
@@ -137,7 +138,7 @@
 
 {#snippet thumb(it: Inspiration)}
 	{#if urls[it.image_path]}
-		<img src={thumbUrl(urls[it.image_path])} alt="" loading="lazy" decoding="async" />
+		<CropImg src={thumbUrl(urls[it.image_path]) ?? ''} crop={it.crop} fit="cover" />
 	{:else}
 		<span class="missing">{t('common.noImage')}</span>
 	{/if}
@@ -233,7 +234,7 @@
 		outline: 3px solid var(--accent);
 		outline-offset: -3px;
 	}
-	.tile.picked img {
+	.tile.picked :global(img) {
 		opacity: 0.8;
 	}
 	.tick {
@@ -255,12 +256,6 @@
 		background: var(--accent);
 		border-color: var(--accent);
 		color: var(--on-accent);
-	}
-	.strip img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
 	}
 	.missing {
 		display: grid;

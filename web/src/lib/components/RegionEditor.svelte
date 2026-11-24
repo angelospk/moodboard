@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { t } from '#lib/i18n.js';
 	// CONTRACT (fixed). Image shown whole with numbered region boxes; drag on the image draws a new region.
-	import type { Region } from '#lib/types.js';
+	import type { Crop, Region } from '#lib/types.js';
 	import { regionFromStroke, svgPoints, type Pt } from '#lib/shape.js';
+	import { cropAspect, placementStyle, validCrop } from '#lib/crop.js';
 	interface Props {
 		src: string | null;
 		/** Bindable. New regions are appended with note '' and rating null. */
@@ -14,8 +15,25 @@
 		/** Show region notes as labels on the boxes. Default false. */
 		labels?: boolean;
 		alt?: string;
+		/** Show only this part of the image (regions stay in whole-image fractions). */
+		crop?: Crop | null;
 	}
-	let { src, regions = $bindable([]), editable = true, active = $bindable(null), labels = false, alt = '' }: Props = $props();
+	let { src, regions = $bindable([]), editable = true, active = $bindable(null), labels = false, alt = '', crop = null }: Props = $props();
+
+	const c = $derived(validCrop(crop));
+	let imageAspect = $state(0);
+	const ratio = $derived(cropAspect(c, imageAspect));
+	/** The whole image (boxes are placed on it); with a crop it is larger than the stage, which clips it. */
+	let layer = $state<HTMLDivElement | null>(null);
+
+	function measure(el: HTMLImageElement) {
+		const done = () => {
+			if (el.naturalWidth && el.naturalHeight) imageAspect = el.naturalWidth / el.naturalHeight;
+		};
+		if (el.complete) done();
+		el.addEventListener('load', done);
+		return () => el.removeEventListener('load', done);
+	}
 
 	/** A box smaller than this (fraction of the image) on either side is a tap, not a region. */
 	const MIN = 0.02;
@@ -34,9 +52,15 @@
 		return Math.min(Math.max(v, 0), 1);
 	}
 
+	/** The pointer in whole-image fractions, kept inside the shown part. */
 	function point(e: PointerEvent) {
-		const box = stage!.getBoundingClientRect();
-		return { x: clamp01((e.clientX - box.left) / box.width), y: clamp01((e.clientY - box.top) / box.height) };
+		const box = (layer ?? stage!).getBoundingClientRect();
+		const k = c ?? { x: 0, y: 0, w: 1, h: 1 };
+		const clampTo = (v: number, lo: number, size: number) => Math.min(Math.max(v, lo), lo + size);
+		return {
+			x: clamp01(clampTo((e.clientX - box.left) / box.width, k.x, k.w)),
+			y: clamp01(clampTo((e.clientY - box.top) / box.height, k.y, k.h))
+		};
 	}
 
 	function onDown(e: PointerEvent) {
@@ -118,7 +142,8 @@
 	{/if}
 	{#if src}
 		<div
-			class={['stage', editable && 'editable', draft && 'drawing', active !== null && 'focus']}
+			class={['stage', editable && 'editable', draft && 'drawing', active !== null && 'focus', c && 'cropped']}
+			style:--r={ratio}
 			bind:this={stage}
 			role="presentation"
 			onpointerdown={onDown}
@@ -127,46 +152,48 @@
 			onpointercancel={(e) => end(e, false)}
 			onlostpointercapture={(e) => end(e, true)}
 		>
-			<img {src} {alt} draggable="false" />
+			<div class="layer" bind:this={layer} style={c ? placementStyle(c) : undefined}>
+				<img {src} {alt} draggable="false" {@attach measure} />
 
-			{#each regions as r, i (i)}
-				<div
-					class={['box', active === i && 'on', r.points && 'shape']}
-					style:left={pct(r.x)}
-					style:top={pct(r.y)}
-					style:width={pct(r.w)}
-					style:height={pct(r.h)}
-					role="presentation"
-					onpointerenter={() => {
-						if (!draft) active = i;
-					}}
-					onpointerleave={() => {
-						if (!draft && active === i) active = null;
-					}}
-				>
-					<span class="tag">
-						<b>{i + 1}</b>
-						{#if labels && r.note.trim()}<span class="note">{r.note}</span>{/if}
-					</span>
-				</div>
-			{/each}
-
-			<svg class="shapes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
 				{#each regions as r, i (i)}
-					{#if r.points}<polygon points={svgPoints(r.points)} class:on={active === i} />{/if}
+					<div
+						class={['box', active === i && 'on', r.points && 'shape']}
+						style:left={pct(r.x)}
+						style:top={pct(r.y)}
+						style:width={pct(r.w)}
+						style:height={pct(r.h)}
+						role="presentation"
+						onpointerenter={() => {
+							if (!draft) active = i;
+						}}
+						onpointerleave={() => {
+							if (!draft && active === i) active = null;
+						}}
+					>
+						<span class="tag">
+							<b>{i + 1}</b>
+							{#if labels && r.note.trim()}<span class="note">{r.note}</span>{/if}
+						</span>
+					</div>
 				{/each}
-				{#if stroke.length > 1}<polyline points={svgPoints(stroke)} class="draft" />{/if}
-			</svg>
 
-			{#if draft && tool === 'box'}
-				<div
-					class={['box', 'draft', (draft.w < MIN || draft.h < MIN) && 'tiny']}
-					style:left={pct(draft.x)}
-					style:top={pct(draft.y)}
-					style:width={pct(draft.w)}
-					style:height={pct(draft.h)}
-				></div>
-			{/if}
+				<svg class="shapes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+					{#each regions as r, i (i)}
+						{#if r.points}<polygon points={svgPoints(r.points)} class:on={active === i} />{/if}
+					{/each}
+					{#if stroke.length > 1}<polyline points={svgPoints(stroke)} class="draft" />{/if}
+				</svg>
+
+				{#if draft && tool === 'box'}
+					<div
+						class={['box', 'draft', (draft.w < MIN || draft.h < MIN) && 'tiny']}
+						style:left={pct(draft.x)}
+						style:top={pct(draft.y)}
+						style:width={pct(draft.w)}
+						style:height={pct(draft.h)}
+					></div>
+				{/if}
+			</div>
 		</div>
 	{:else}
 		<div class="missing">{t('editor.notFound')}</div>
@@ -206,6 +233,24 @@
 		width: auto;
 		height: auto;
 		pointer-events: none;
+	}
+	.layer {
+		position: relative;
+	}
+	/* Cropped: the stage takes the crop's shape at the size the whole image would get, and clips the
+	   whole image, which is made larger and moved so the kept part fills it. */
+	.stage.cropped {
+		aspect-ratio: var(--r);
+		width: min(100%, calc(var(--re-max-h, 70vh) * var(--r)));
+	}
+	.cropped .layer {
+		position: absolute;
+	}
+	.cropped img {
+		width: 100%;
+		height: 100%;
+		max-width: none;
+		max-height: none;
 	}
 
 	.box {

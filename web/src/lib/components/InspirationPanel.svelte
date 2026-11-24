@@ -271,6 +271,7 @@
 			<RegionEditor
 				src={imageUrl}
 				alt={note || t('item.alt')}
+				crop={item.crop}
 				bind:regions={() => regions, (v) => ((regions = v), change('regions', v))}
 				bind:active
 			/>

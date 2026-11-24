@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { t } from '#lib/i18n.js';
 	// Full-screen view of one image, with a crop tool. The crop is only a rectangle stored on the row
-	// (fractions of the image); the file stays whole, and cards on the map show just that part.
+	// (fractions of the image); the file stays whole. The viewer, like every other view, shows only the
+	// crop; the crop tool alone shows the whole image.
 	import type { Crop, Region } from '#lib/types.js';
+	import { cropAspect, placementStyle, validCrop } from '#lib/crop.js';
 	import { svgPoints } from '#lib/shape.js';
 	import { thumbUrl } from '#lib/inspirations.js';
 	import { Prefetcher } from '#lib/prefetch.js';
@@ -52,6 +54,21 @@
 	type Handle = 'move' | 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se' | 'new';
 
 	let editing = $state(false);
+	/** Width / height of the whole image, from the first of the image or its thumbnail to load. */
+	let imageAspect = $state(0);
+	/** What is shown: the crop, or the whole image while the crop tool is open. */
+	const viewCrop = $derived(editing ? null : validCrop(crop));
+	const ratio = $derived(cropAspect(viewCrop, imageAspect));
+	let layer = $state<HTMLDivElement | null>(null);
+
+	function measure(el: HTMLImageElement) {
+		const done = () => {
+			if (el.naturalWidth && el.naturalHeight) imageAspect = el.naturalWidth / el.naturalHeight;
+		};
+		if (el.complete) done();
+		el.addEventListener('load', done);
+		return () => el.removeEventListener('load', done);
+	}
 	let showMarks = $state(true);
 	let hotMark = $state<number | null>(null);
 	let box = $state<Crop>({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
@@ -65,6 +82,7 @@
 		if (src !== shown) {
 			shown = src ?? '';
 			editing = false;
+			imageAspect = 0;
 		}
 	});
 
@@ -100,7 +118,7 @@
 	const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
 	function point(e: PointerEvent) {
-		const r = stage!.getBoundingClientRect();
+		const r = (layer ?? stage!).getBoundingClientRect();
 		return { x: clamp((e.clientX - r.left) / r.width, 0, 1), y: clamp((e.clientY - r.top) / r.height, 0, 1) };
 	}
 
@@ -253,6 +271,8 @@
 			<div
 				class="stage"
 				class:editing
+				class:clip={editing || !!viewCrop}
+				style:--r={ratio}
 				bind:this={stage}
 				onpointerdown={(e) => down(e, 'new')}
 				onpointermove={move}
@@ -260,48 +280,49 @@
 				onpointercancel={up}
 				role="presentation"
 			>
-				<img {src} {alt} draggable="false" class:ready onload={() => (loadedSrc = src ?? '')} onerror={() => (loadedSrc = src ?? '')} />
-				{#if editing}
-					<div class="crop" style={rect(box)} onpointerdown={(e) => down(e, 'move')} role="presentation">
-						<span class="third v1"></span><span class="third v2"></span>
-						<span class="third h1"></span><span class="third h2"></span>
-						{#each HANDLES as h (h)}
-							<span class="handle {h}" onpointerdown={(e) => down(e, h)} role="presentation"></span>
-						{/each}
-					</div>
-				{:else if crop}
-					<div class="outline" style={rect(crop)} aria-hidden="true"></div>
-				{/if}
-				{#if !editing && showMarks && regions.length}
-					<svg class="shapes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
-						{#each regions as r, i (i)}
-							{#if r.points}
-								<polygon points={svgPoints(r.points)} class:hot={hotMark === i} />
-							{:else}
-								<rect x={r.x} y={r.y} width={r.w} height={r.h} class:hot={hotMark === i} />
-							{/if}
-						{/each}
-					</svg>
-					{#each regions as r, i (i)}
-						<div
-							class="mark"
-							class:hot={hotMark === i}
-							style={rect(r)}
-							role="presentation"
-							onpointerenter={() => (hotMark = i)}
-							onpointerleave={() => (hotMark = null)}
-						>
-							<span class="mtag">
-								<b>{i + 1}</b>
-								{#if r.note?.trim()}<span class="mnote">{r.note}</span>{/if}
-							</span>
+				<!-- The whole image; with a crop it is larger than the stage, which shows only the kept part. -->
+				<div class="layer" bind:this={layer} style={placementStyle(viewCrop)}>
+					{#if !ready && placeholder && placeholder !== src}
+						<img class="ph" src={placeholder} alt="" aria-hidden="true" draggable="false" {@attach measure} />
+					{/if}
+					<img class="main" {src} {alt} draggable="false" class:ready onload={() => (loadedSrc = src ?? '')} onerror={() => (loadedSrc = src ?? '')} {@attach measure} />
+					{#if editing}
+						<div class="crop" style={rect(box)} onpointerdown={(e) => down(e, 'move')} role="presentation">
+							<span class="third v1"></span><span class="third v2"></span>
+							<span class="third h1"></span><span class="third h2"></span>
+							{#each HANDLES as h (h)}
+								<span class="handle {h}" onpointerdown={(e) => down(e, h)} role="presentation"></span>
+							{/each}
 						</div>
-					{/each}
-				{/if}
+					{/if}
+					{#if !editing && showMarks && regions.length}
+						<svg class="shapes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+							{#each regions as r, i (i)}
+								{#if r.points}
+									<polygon points={svgPoints(r.points)} class:hot={hotMark === i} />
+								{:else}
+									<rect x={r.x} y={r.y} width={r.w} height={r.h} class:hot={hotMark === i} />
+								{/if}
+							{/each}
+						</svg>
+						{#each regions as r, i (i)}
+							<div
+								class="mark"
+								class:hot={hotMark === i}
+								style={rect(r)}
+								role="presentation"
+								onpointerenter={() => (hotMark = i)}
+								onpointerleave={() => (hotMark = null)}
+							>
+								<span class="mtag">
+									<b>{i + 1}</b>
+									{#if r.note?.trim()}<span class="mnote">{r.note}</span>{/if}
+								</span>
+							</div>
+						{/each}
+					{/if}
+				</div>
 			</div>
-			{#if !ready && placeholder && placeholder !== src}
-				<img class="ph" src={placeholder} alt="" aria-hidden="true" draggable="false" />
-			{/if}
 		{:else}
 			<p class="missing">{t('viewer.unavailable')}</p>
 		{/if}
@@ -321,8 +342,6 @@
 				<button type="button" class="tool" onclick={() => (editing = false)}>{t('common.cancel')}</button>
 				<button type="button" class="tool primary" onclick={save}>{t('common.save')} <span class="kbd">↵</span></button>
 			</div>
-		{:else if crop}
-			<p class="hint">{t('viewer.cropShown')}</p>
 		{/if}
 	</footer>
 </div>
@@ -501,33 +520,41 @@
 		min-height: 0;
 		padding: 0 64px;
 	}
+	/* The stage has the shape of what is shown (the crop, or the whole image in the crop tool) and is as
+	   large as fits; the layer inside holds the whole image and everything placed on it. */
 	.stage {
+		--max-w: calc(100vw - 128px);
+		--max-h: calc(100vh - 136px);
 		position: relative;
+		aspect-ratio: var(--r);
+		width: min(var(--max-w), calc(var(--max-h) * var(--r)));
 		line-height: 0;
 		touch-action: none;
 		user-select: none;
-	}
-	.stage img {
-		display: block;
-		max-width: calc(100vw - 128px);
-		max-height: calc(100vh - 136px);
-		object-fit: contain;
 		border-radius: var(--r-img);
+	}
+	.stage.clip {
+		overflow: hidden;
+	}
+	.layer {
+		position: absolute;
+	}
+	.layer img {
+		position: absolute;
+		inset: 0;
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+	.main {
 		opacity: 0;
 	}
-	.stage img.ready {
+	.main.ready {
 		opacity: 1;
 		transition: opacity 140ms ease-out;
 	}
 	/* The blurred thumbnail under a slow image: it appears only after 150 ms, so a cached image never flashes it. */
 	.ph {
-		position: absolute;
-		top: 0;
-		bottom: 0;
-		left: 64px;
-		width: calc(100% - 128px);
-		height: 100%;
-		object-fit: contain;
 		filter: blur(8px);
 		opacity: 0;
 		pointer-events: none;
@@ -538,13 +565,6 @@
 	}
 	.stage.editing {
 		cursor: crosshair;
-		overflow: hidden;
-	}
-	.outline {
-		position: absolute;
-		border: 1.5px dashed rgb(255 255 255 / 0.85);
-		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.4);
-		pointer-events: none;
 	}
 	.crop {
 		position: absolute;
@@ -620,14 +640,13 @@
 	.missing {
 		color: rgb(236 232 224 / 0.7);
 	}
-	.hastags .stage img {
-		max-height: calc(100vh - 176px);
+	.hastags .stage {
+		--max-h: calc(100vh - 176px);
 	}
 	@media (max-width: 640px) {
 		.frame { padding: 0 8px; }
-		.ph { left: 8px; width: calc(100% - 16px); }
-		.stage img { max-width: calc(100vw - 16px); max-height: calc(100vh - 180px); }
-		.hastags .stage img { max-height: calc(100vh - 220px); }
+		.stage { --max-w: calc(100vw - 16px); --max-h: calc(100vh - 180px); }
+		.hastags .stage { --max-h: calc(100vh - 220px); }
 		.tagbar { justify-content: flex-start; }
 		.nav { display: none; }
 		footer { flex-direction: column; align-items: stretch; }

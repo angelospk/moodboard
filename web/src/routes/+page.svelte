@@ -12,6 +12,7 @@
 	import ProjectSummary from '#lib/components/ProjectSummary.svelte';
 	import { searchByMeaning, SmartSearchError } from '#lib/semantic.js';
 	import { needSmart, smart } from '#lib/smart.svelte.js';
+	import CropImg from '#lib/components/CropImg.svelte';
 	import SourceProjectBar from '#lib/components/SourceProjectBar.svelte';
 	import SourceProjectSuggestions from '#lib/components/SourceProjectSuggestions.svelte';
 	import {
@@ -731,13 +732,7 @@
 		{:else}
 			{#each images.slice(0, 3) as img, idx (img.id)}
 				{#if data.urls[img.image_path]}
-					<img
-						class:cover={idx === 0}
-						src={data.urls[img.image_path]}
-						alt=""
-						loading="lazy"
-						decoding="async"
-					/>
+					<span class="cell" class:cover={idx === 0}><CropImg src={data.urls[img.image_path]} crop={img.crop} fit="cover" /></span>
 				{:else}
 					<span class="ph-missing" class:cover={idx === 0}></span>
 				{/if}
@@ -995,7 +990,7 @@
 {#snippet cardBody(item: Inspiration)}
 	<div class="thumb">
 		{#if data.urls[item.image_path]}
-			<img src={data.urls[item.image_path]} alt="" loading="lazy" decoding="async" />
+			<CropImg src={data.urls[item.image_path]} crop={item.crop} />
 		{:else}
 			<span class="missing">{t('common.noImage')}</span>
 		{/if}
@@ -1173,7 +1168,7 @@
 		grid-template-columns: 2fr 1fr;
 		grid-template-rows: minmax(0, 1fr);
 	}
-	.collage[data-count='2'] img,
+	.collage[data-count='2'] .cell,
 	.collage[data-count='2'] .ph-missing { grid-row: span 1; }
 	.collage[data-count='3'] {
 		grid-template-columns: 2fr 1fr;
@@ -1187,7 +1182,7 @@
 		color: var(--muted);
 		font-size: 0.8rem;
 	}
-	.collage img { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; display: block; }
+	.collage .cell { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; display: block; }
 	.ph-missing { display: block; width: 100%; height: 100%; min-height: 0; background: var(--surface); }
 	.pcard.resume .collage { height: 260px; }
 	/* The resume card is wide: three equal tiles, so no small source image is stretched into a blur. */
@@ -1287,7 +1282,6 @@
 	}
 	.card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.07); }
 	.thumb { position: relative; background: var(--bg); }
-	.thumb img { display: block; width: 100%; height: auto; }
 	.missing { display: block; padding: 40px 12px; text-align: center; color: var(--muted); font-size: 0.8rem; }
 	.badge {
 		position: absolute;

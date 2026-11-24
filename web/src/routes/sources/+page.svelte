@@ -5,6 +5,7 @@
 	import type { Inspiration } from '#lib/types.js';
 	import { filterItems, groupSources, itemsOfPage, type Source, type SourceSort } from '#lib/sources.js';
 	import { sourceProjectNames } from '#lib/sourceProjects.js';
+	import CropImg from '#lib/components/CropImg.svelte';
 	import SourcePageProject from '#lib/components/SourcePageProject.svelte';
 	import type { PageProps } from './$types';
 
@@ -85,7 +86,7 @@
 			<li>
 				<a href={`/i/${item.id}`} title={item.note || item.source_title || t('sources.image')}>
 					{#if data.urls[item.image_path]}
-						<img src={data.urls[item.image_path]} alt={item.note || ''} loading="lazy" decoding="async" />
+						<CropImg src={data.urls[item.image_path]} crop={item.crop} alt={item.note || ''} />
 					{:else}
 						<span class="missing" aria-hidden="true"></span>
 					{/if}
@@ -480,7 +481,8 @@
 	.strip a:hover {
 		transform: translateY(-2px);
 	}
-	.strip img,
+	.strip :global(img.plain),
+	.strip :global(.ci.natural),
 	.strip .missing {
 		display: block;
 		height: 96px;
@@ -560,7 +562,8 @@
 	.pages .strip {
 		margin-top: 6px;
 	}
-	.pages .strip img,
+	.pages .strip :global(img.plain),
+	.pages .strip :global(.ci.natural),
 	.pages .strip .missing,
 	.pages .strip .more {
 		height: 72px;
