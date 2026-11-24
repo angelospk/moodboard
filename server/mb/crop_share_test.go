@@ -272,6 +272,7 @@ func TestPolygonOverlapNeedsArea(t *testing.T) {
 		{"shares an edge from outside", [][2]float64{{1, 0}, {2, 0}, {2, 1}, {1, 1}}, false},
 		{"covers the square", [][2]float64{{-1, -1}, {3, -1}, {-1, 3}}, true},
 		{"crosses one side", [][2]float64{{-1, 0.4}, {0.2, 0.5}, {-1, 0.6}}, true},
+		{"a band whose corners sit on the square's sides", [][2]float64{{0, 0.4}, {1, 0.4}, {1, 0.6}, {0, 0.6}}, true},
 	} {
 		if got := mb.PolygonMeetsUnitSquare(c.poly); got != c.want {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)

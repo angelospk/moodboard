@@ -305,12 +305,15 @@ func regionsInCrop(raw any, c *cropRect) []map[string]any {
 	return out
 }
 
-// polygonMeetsUnitSquare tells whether a polygon overlaps the open square (0,1)x(0,1): a vertex
-// inside it, a corner of it inside the polygon, or two edges that cross.
+// polygonMeetsUnitSquare tells whether a polygon overlaps the open square (0,1)x(0,1): a vertex or
+// an edge's middle inside it, a corner of it inside the polygon, or two edges that cross.
 func polygonMeetsUnitSquare(poly [][2]float64) bool {
 	const eps = 1e-9
-	for _, p := range poly {
-		if p[0] > eps && p[0] < 1-eps && p[1] > eps && p[1] < 1-eps {
+	inside := func(p [2]float64) bool { return p[0] > eps && p[0] < 1-eps && p[1] > eps && p[1] < 1-eps }
+	for i, p := range poly {
+		q := poly[(i+1)%len(poly)]
+		// a vertex inside, or the middle of an edge (a chord between two points on the square's sides)
+		if inside(p) || inside([2]float64{(p[0] + q[0]) / 2, (p[1] + q[1]) / 2}) {
 			return true
 		}
 	}
