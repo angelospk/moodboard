@@ -4,7 +4,7 @@
 // sent through the tunnel for every viewer. This Worker lets Cloudflare do it:
 //   - it asks the VPS once per image and size (the VPS still decides public/private: a 404 passes
 //     through and is never cached),
-//   - Cloudflare resizes the image (cf.image) to 1600 px (480 px for ?thumb=480x0), converts it to
+//   - Cloudflare resizes the image (cf.image) to 1600 px (480 px for ?thumb=480x0, 4096 px for ?thumb=hi), converts it to
 //     AVIF/WebP when the client accepts it, and drops all metadata (GPS, camera) in the same step,
 //   - the result is kept at the edge for TTL seconds, and a browser gets only the freshness that is
 //     left, so turning a board private takes effect within about TTL seconds. Cloudflare documents a
@@ -47,6 +47,7 @@ export function parseTarget(url) {
 	if (!FILE_PATH.test(url.pathname)) return null;
 	const thumb = url.searchParams.get('thumb');
 	if (thumb === null) return { width: 1600 };
+	if (thumb === 'hi') return { width: 4096 }; // asked only when a visitor zooms in the viewer
 	return thumb === '480x0' ? { width: 480 } : null;
 }
 

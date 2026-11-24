@@ -21,6 +21,7 @@ describe('parseTarget', () => {
 	it('knows the allowed sizes of a stored image', () => {
 		expect(parseTarget(new URL(FILE + '?w=480'))).toEqual({ width: 480, quality: 75 });
 		expect(parseTarget(new URL(FILE + '?w=2048'))).toEqual({ width: 2048, quality: 82 });
+		expect(parseTarget(new URL(FILE + '?w=4096'))).toEqual({ width: 4096, quality: 85 });
 	});
 	it('ignores other sizes, other paths and thumbs_ files', () => {
 		expect(parseTarget(new URL(FILE))).toBeNull();

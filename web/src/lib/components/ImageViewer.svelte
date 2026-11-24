@@ -6,7 +6,8 @@
 	import type { Crop, Region } from '#lib/types.js';
 	import { cropAspect, placementStyle, validCrop } from '#lib/crop.js';
 	import { svgPoints } from '#lib/shape.js';
-	import { thumbUrl } from '#lib/inspirations.js';
+	import { hiResUrl, thumbUrl } from '#lib/inspirations.js';
+	import { DBLCLICK_ZOOM, panBy, RESET, wheelFactor, zoomAt, zoomTo, type View } from '#lib/zoom.js';
 	import { Prefetcher } from '#lib/prefetch.js';
 	interface Props {
 		src: string | null;
@@ -61,6 +62,100 @@
 	const ratio = $derived(cropAspect(viewCrop, imageAspect));
 	let layer = $state<HTMLDivElement | null>(null);
 
+	// ---------- zoom: wheel toward the cursor, drag to pan, pinch, double-click / Esc / 0 to reset ----------
+	let view = $state<View>({ ...RESET });
+	const zoomed = $derived(view.k > 1.001);
+	/** Animate the change (double-click, buttons, keys); a wheel or a drag follows the hand at once. */
+	let smooth = $state(false);
+	let panning = $state(false);
+	/** The large copy loads only once the user zooms in, and stays for this image. */
+	const hiSrc = $derived(src ? hiResUrl(src) : null);
+	let wantHi = $state(false);
+	let hiLoaded = $state('');
+	const hiReady = $derived(!!hiSrc && hiLoaded === hiSrc);
+	$effect(() => {
+		if (zoomed) wantHi = true;
+	});
+	const pointers = new Map<number, { x: number; y: number }>();
+	/** When this image came up: the second click of a double-click that opened it must not zoom. */
+	let shownAt = performance.now();
+	let pinch: { dist: number; from: View } | null = null;
+
+	function frameSize() {
+		const r = stage!.getBoundingClientRect();
+		return { r, w: r.width, h: r.height };
+	}
+	function setView(v: View, animate: boolean) {
+		smooth = animate;
+		view = v;
+	}
+	/** Zoom by a factor around the centre (buttons and keys). */
+	function zoomStep(factor: number) {
+		if (!stage || editing) return;
+		const { w, h } = frameSize();
+		setView(zoomAt(view, factor, w / 2, h / 2, w, h), true);
+	}
+	function resetZoom() {
+		setView({ ...RESET }, true);
+	}
+
+	function attachWheel(el: HTMLElement) {
+		const onWheel = (e: WheelEvent) => {
+			if (editing || !stage) return;
+			e.preventDefault();
+			const { r, w, h } = frameSize();
+			// A trackpad pinch arrives as a wheel event with ctrlKey and small deltas: zoom a bit faster.
+			const f = wheelFactor(e.ctrlKey ? e.deltaY * 4 : e.deltaY, e.deltaMode);
+			setView(zoomAt(view, f, e.clientX - r.left, e.clientY - r.top, w, h), false);
+		};
+		el.addEventListener('wheel', onWheel, { passive: false });
+		return () => el.removeEventListener('wheel', onWheel);
+	}
+
+	function stageDown(e: PointerEvent) {
+		if (editing) return down(e, 'new');
+		if (!stage || (e.pointerType === 'mouse' && e.button !== 0)) return;
+		e.preventDefault(); // no text selection while dragging
+		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		stage.setPointerCapture(e.pointerId);
+		if (pointers.size === 2) {
+			const [a, b] = [...pointers.values()];
+			pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, from: view };
+		}
+		panning = pointers.size === 1 && zoomed;
+	}
+
+	function stageMove(e: PointerEvent) {
+		if (editing) return move(e);
+		const last = pointers.get(e.pointerId);
+		if (!last || !stage) return;
+		const now = { x: e.clientX, y: e.clientY };
+		pointers.set(e.pointerId, now);
+		const { r, w, h } = frameSize();
+		if (pinch && pointers.size === 2) {
+			const [a, b] = [...pointers.values()];
+			const k = (pinch.from.k * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.dist;
+			setView(zoomTo(view, k, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, w, h), false);
+		} else if (zoomed) {
+			setView(panBy(view, now.x - last.x, now.y - last.y, w, h), false);
+		}
+	}
+
+	function stageUp(e: PointerEvent) {
+		if (editing) return up(e);
+		if (!pointers.delete(e.pointerId)) return;
+		if (stage?.hasPointerCapture(e.pointerId)) stage.releasePointerCapture(e.pointerId);
+		if (pointers.size < 2) pinch = null;
+		panning = false;
+	}
+
+	function stageDblClick(e: MouseEvent) {
+		if (editing || !stage || performance.now() - shownAt < 500) return;
+		if (zoomed) return resetZoom();
+		const { r, w, h } = frameSize();
+		setView(zoomTo(view, DBLCLICK_ZOOM, e.clientX - r.left, e.clientY - r.top, w, h), true);
+	}
+
 	function measure(el: HTMLImageElement) {
 		const done = () => {
 			if (el.naturalWidth && el.naturalHeight) imageAspect = el.naturalWidth / el.naturalHeight;
@@ -83,6 +178,9 @@
 			shown = src ?? '';
 			editing = false;
 			imageAspect = 0;
+			view = { ...RESET };
+			wantHi = false;
+			shownAt = performance.now();
 		}
 	});
 
@@ -99,6 +197,7 @@
 	});
 
 	function startCrop() {
+		view = { ...RESET };
 		box = crop ? { ...crop } : { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
 		editing = true;
 	}
@@ -177,6 +276,7 @@
 			e.preventDefault();
 			e.stopPropagation();
 			if (editing) editing = false;
+			else if (zoomed) resetZoom();
 			else onclose();
 		} else if (editing && e.key === 'Enter') {
 			e.preventDefault();
@@ -188,6 +288,10 @@
 		} else if (!editing && regions.length && e.code === 'KeyM' && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
 			showMarks = !showMarks;
+		} else if (!editing && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0')) {
+			e.preventDefault();
+			if (e.key === '0') resetZoom();
+			else zoomStep(e.key === '-' ? 1 / 1.5 : 1.5);
 		} else if (!editing && e.key === 'ArrowLeft' && onprev) {
 			e.preventDefault();
 			onprev();
@@ -271,56 +375,65 @@
 			<div
 				class="stage"
 				class:editing
-				class:clip={editing || !!viewCrop}
+				class:zoomed
+				class:panning
+				class:clip={editing || zoomed || !!viewCrop}
 				style:--r={ratio}
 				bind:this={stage}
-				onpointerdown={(e) => down(e, 'new')}
-				onpointermove={move}
-				onpointerup={up}
-				onpointercancel={up}
+				onpointerdown={stageDown}
+				onpointermove={stageMove}
+				onpointerup={stageUp}
+				onpointercancel={stageUp}
+				ondblclick={stageDblClick}
+				{@attach attachWheel}
 				role="presentation"
 			>
-				<!-- The whole image; with a crop it is larger than the stage, which shows only the kept part. -->
-				<div class="layer" bind:this={layer} style={placementStyle(viewCrop)}>
-					{#if !ready && placeholder && placeholder !== src}
-						<img class="ph" src={placeholder} alt="" aria-hidden="true" draggable="false" {@attach measure} />
-					{/if}
-					<img class="main" {src} {alt} draggable="false" class:ready onload={() => (loadedSrc = src ?? '')} onerror={() => (loadedSrc = src ?? '')} {@attach measure} />
-					{#if editing}
-						<div class="crop" style={rect(box)} onpointerdown={(e) => down(e, 'move')} role="presentation">
-							<span class="third v1"></span><span class="third v2"></span>
-							<span class="third h1"></span><span class="third h2"></span>
-							{#each HANDLES as h (h)}
-								<span class="handle {h}" onpointerdown={(e) => down(e, h)} role="presentation"></span>
-							{/each}
-						</div>
-					{/if}
-					{#if !editing && showMarks && regions.length}
-						<svg class="shapes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
-							{#each regions as r, i (i)}
-								{#if r.points}
-									<polygon points={svgPoints(r.points)} class:hot={hotMark === i} />
-								{:else}
-									<rect x={r.x} y={r.y} width={r.w} height={r.h} class:hot={hotMark === i} />
-								{/if}
-							{/each}
-						</svg>
-						{#each regions as r, i (i)}
-							<div
-								class="mark"
-								class:hot={hotMark === i}
-								style={rect(r)}
-								role="presentation"
-								onpointerenter={() => (hotMark = i)}
-								onpointerleave={() => (hotMark = null)}
-							>
-								<span class="mtag">
-									<b>{i + 1}</b>
-									{#if r.note?.trim()}<span class="mnote">{r.note}</span>{/if}
-								</span>
+				<div class="zoom" class:smooth style:transform="translate({view.x}px, {view.y}px) scale({view.k})" style:--k={view.k}>
+					<!-- The whole image; with a crop it is larger than the stage, which shows only the kept part. -->
+					<div class="layer" bind:this={layer} style={placementStyle(viewCrop)}>
+						{#if !ready && placeholder && placeholder !== src}
+							<img class="ph" src={placeholder} alt="" aria-hidden="true" draggable="false" {@attach measure} />
+						{/if}
+						<img class="main" {src} {alt} draggable="false" class:ready onload={() => (loadedSrc = src ?? '')} onerror={() => (loadedSrc = src ?? '')} {@attach measure} />
+						{#if wantHi && hiSrc && hiSrc !== src}
+							<img class="hi" class:ready={hiReady} src={hiSrc} alt="" aria-hidden="true" draggable="false" onload={() => (hiLoaded = hiSrc ?? '')} />
+						{/if}
+						{#if editing}
+							<div class="crop" style={rect(box)} onpointerdown={(e) => down(e, 'move')} role="presentation">
+								<span class="third v1"></span><span class="third v2"></span>
+								<span class="third h1"></span><span class="third h2"></span>
+								{#each HANDLES as h (h)}
+									<span class="handle {h}" onpointerdown={(e) => down(e, h)} role="presentation"></span>
+								{/each}
 							</div>
-						{/each}
-					{/if}
+						{/if}
+						{#if !editing && showMarks && regions.length}
+							<svg class="shapes" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+								{#each regions as r, i (i)}
+									{#if r.points}
+										<polygon points={svgPoints(r.points)} class:hot={hotMark === i} />
+									{:else}
+										<rect x={r.x} y={r.y} width={r.w} height={r.h} class:hot={hotMark === i} />
+									{/if}
+								{/each}
+							</svg>
+							{#each regions as r, i (i)}
+								<div
+									class="mark"
+									class:hot={hotMark === i}
+									style={rect(r)}
+									role="presentation"
+									onpointerenter={() => (hotMark = i)}
+									onpointerleave={() => (hotMark = null)}
+								>
+									<span class="mtag">
+										<b>{i + 1}</b>
+										{#if r.note?.trim()}<span class="mnote">{r.note}</span>{/if}
+									</span>
+								</div>
+							{/each}
+						{/if}
+					</div>
 				</div>
 			</div>
 		{:else}
@@ -341,6 +454,19 @@
 				<button type="button" class="tool" onclick={() => ((box = { x: 0, y: 0, w: 1, h: 1 }), save())}>{t('viewer.noCrop')}</button>
 				<button type="button" class="tool" onclick={() => (editing = false)}>{t('common.cancel')}</button>
 				<button type="button" class="tool primary" onclick={save}>{t('common.save')} <span class="kbd">↵</span></button>
+			</div>
+		{:else if src}
+			<p class="hint">{t('viewer.zoomHint')}</p>
+			<div class="zoombar" role="group" aria-label={t('viewer.zoom')}>
+				<button type="button" class="tool icon" aria-label={t('viewer.zoomOut')} title={`${t('viewer.zoomOut')} (−)`} disabled={!zoomed} onclick={() => zoomStep(1 / 1.5)}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" /></svg>
+				</button>
+				<button type="button" class="level" title={`${t('viewer.zoomReset')} (0)`} disabled={!zoomed} onclick={resetZoom} aria-live="polite">
+					{Math.round(view.k * 100)}%{#if zoomed && wantHi && hiSrc !== src && !hiReady}<span class="dot" title={t('viewer.hiLoading')}></span>{/if}
+				</button>
+				<button type="button" class="tool icon" aria-label={t('viewer.zoomIn')} title={`${t('viewer.zoomIn')} (+)`} disabled={view.k >= 7.99} onclick={() => zoomStep(1.5)}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" /></svg>
+				</button>
 			</div>
 		{/if}
 	</footer>
@@ -546,12 +672,89 @@
 		width: 100%;
 		height: 100%;
 	}
-	.main {
+	.main,
+	.layer .hi {
 		opacity: 0;
 	}
-	.main.ready {
+	.main.ready,
+	.layer .hi.ready {
 		opacity: 1;
 		transition: opacity 140ms ease-out;
+	}
+	.zoom {
+		position: absolute;
+		inset: 0;
+		transform-origin: 0 0;
+	}
+	.zoom.smooth {
+		transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.zoom.smooth {
+			transition: none;
+		}
+	}
+	.stage:not(.editing) {
+		cursor: zoom-in;
+	}
+	.stage.zoomed:not(.editing) {
+		cursor: grab;
+	}
+	.stage.panning:not(.editing) {
+		cursor: grabbing;
+	}
+	.zoombar {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px;
+		border-radius: var(--r-pill);
+		border: 1px solid rgb(255 255 255 / 0.12);
+		background: rgb(255 255 255 / 0.04);
+	}
+	.zoombar .tool.icon {
+		width: 32px;
+		min-height: 32px;
+		border-radius: var(--r-pill);
+		border-color: transparent;
+		background: none;
+	}
+	.zoombar .tool.icon:hover:not(:disabled) {
+		background: rgb(255 255 255 / 0.12);
+	}
+	.zoombar .level {
+		position: relative;
+		min-width: 64px;
+		height: 32px;
+		border: 0;
+		border-radius: var(--r-pill);
+		background: none;
+		color: inherit;
+		font: inherit;
+		font-size: 13px;
+		font-variant-numeric: tabular-nums;
+		cursor: pointer;
+	}
+	.zoombar .level:hover:not(:disabled) {
+		background: rgb(255 255 255 / 0.12);
+	}
+	.zoombar .level:disabled {
+		cursor: default;
+		color: rgb(236 232 224 / 0.6);
+	}
+	/* The large copy is still loading. */
+	.zoombar .dot {
+		position: absolute;
+		top: 6px;
+		right: 8px;
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		background: var(--accent);
+		animation: pulse 1s ease-in-out infinite alternate;
+	}
+	@keyframes pulse {
+		to { opacity: 0.25; }
 	}
 	/* The blurred thumbnail under a slow image: it appears only after 150 ms, so a cached image never flashes it. */
 	.ph {
@@ -633,6 +836,9 @@
 		font-size: 13px;
 		color: rgb(236 232 224 / 0.7);
 	}
+	footer {
+		user-select: none;
+	}
 	footer:empty {
 		min-height: 0;
 		padding: 0;
@@ -650,6 +856,7 @@
 		.tagbar { justify-content: flex-start; }
 		.nav { display: none; }
 		footer { flex-direction: column; align-items: stretch; }
+		.zoombar { align-self: center; }
 		.actions { justify-content: flex-end; flex-wrap: wrap; }
 	}
 	@media (prefers-reduced-motion: reduce) {
@@ -666,7 +873,8 @@
 	.shapes :is(polygon, rect) {
 		fill: rgb(255 255 255 / 0.06);
 		stroke: rgb(255 255 255 / 0.9);
-		stroke-width: 1.5;
+		/* The zoom is a CSS transform, which non-scaling-stroke does not undo: divide by the zoom. */
+		stroke-width: calc(1.5 / var(--k, 1));
 		vector-effect: non-scaling-stroke;
 		stroke-linejoin: round;
 		filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.7));
@@ -674,7 +882,7 @@
 	}
 	.shapes :is(polygon, rect).hot {
 		fill: rgb(255 255 255 / 0.16);
-		stroke-width: 2.5;
+		stroke-width: calc(2.5 / var(--k, 1));
 	}
 	.mark {
 		position: absolute;
@@ -684,6 +892,9 @@
 		position: absolute;
 		left: 0;
 		top: 0;
+		/* Labels keep their size on screen at any zoom. */
+		scale: calc(1 / var(--k, 1));
+		transform-origin: 0 0;
 		display: flex;
 		align-items: stretch;
 		max-width: max(100%, 14rem);

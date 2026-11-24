@@ -284,6 +284,12 @@ export const el = {
 	'viewer.next': 'Επόμενη',
 	'viewer.unavailable': 'Η εικόνα δεν είναι διαθέσιμη.',
 	'viewer.cropHint': 'Σύρε τις λαβές ή ζωγράφισε νέο πλαίσιο. Παντού θα φαίνεται μόνο αυτό το κομμάτι.',
+	'viewer.zoom': 'Ζουμ',
+	'viewer.zoomIn': 'Μεγέθυνση',
+	'viewer.zoomOut': 'Σμίκρυνση',
+	'viewer.zoomReset': 'Ολόκληρη η εικόνα',
+	'viewer.zoomHint': 'Ροδέλα ή τσίμπημα για ζουμ · σύρε για μετακίνηση · διπλό κλικ ή Esc για επαναφορά',
+	'viewer.hiLoading': 'Φορτώνει η μεγάλη ανάλυση…',
 	'viewer.noCrop': 'Χωρίς περικοπή',
 
 	'regions.word1': 'όχι αυτό',

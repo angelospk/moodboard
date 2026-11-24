@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cdnFor, imageUrl, imageUrls, thumbUrl } from '../src/lib/inspirations';
+import { cdnFor, hiResUrl, imageUrl, imageUrls, thumbUrl } from '../src/lib/inspirations';
 
 const CDN = 'https://images.example.dev';
 const row = { id: 'rec123abc456def', image_path: 'photo_ab12cd34ef.png' };
@@ -38,5 +38,15 @@ describe('image CDN urls', () => {
 		} as never;
 		const urls = await imageUrls(pb, [{ id: 'r1', image_path: 'a.png' } as never]);
 		expect(urls['a.png']).toBe('https://images.haroldpoi.dev/mbinspirations/r1/a.png?w=2048');
+	});
+
+	it('hiResUrl asks for the 4096 px copy, the public board for its large copy, the API for the original', () => {
+		const url = `${CDN}/mbinspirations/rec123abc456def/photo_ab12cd34ef.png?w=2048`;
+		expect(hiResUrl(url, CDN)).toBe(`${CDN}/mbinspirations/rec123abc456def/photo_ab12cd34ef.png?w=4096`);
+		expect(hiResUrl('https://api/api/mb/public/p1/files/i1', CDN)).toBe('https://api/api/mb/public/p1/files/i1?thumb=hi');
+		expect(hiResUrl('https://api/api/files/x/y/z.png?token=t&thumb=480x0', CDN)).toBe('https://api/api/files/x/y/z.png?token=t');
+		expect(hiResUrl('https://api/api/files/x/y/z.png?token=t', CDN)).toBe('https://api/api/files/x/y/z.png?token=t');
+		expect(hiResUrl('blob:abc', CDN)).toBe('blob:abc');
+		expect(hiResUrl(null, CDN)).toBeNull();
 	});
 });

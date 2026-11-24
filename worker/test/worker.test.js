@@ -37,6 +37,7 @@ describe('parseTarget', () => {
 	it('knows public file URLs and their size', () => {
 		expect(parseTarget(new URL(FILE))).toEqual({ width: 1600 });
 		expect(parseTarget(new URL(FILE + '?thumb=480x0'))).toEqual({ width: 480 });
+		expect(parseTarget(new URL(FILE + '?thumb=hi'))).toEqual({ width: 4096 });
 	});
 	it('ignores everything else', () => {
 		for (const u of [

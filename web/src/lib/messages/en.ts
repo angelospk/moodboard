@@ -285,6 +285,12 @@ export const en: Record<keyof typeof el, string> = {
 	'viewer.next': 'Next',
 	'viewer.unavailable': 'The image is not available.',
 	'viewer.cropHint': 'Drag the handles or draw a new frame. Every view will show only this part.',
+	'viewer.zoom': 'Zoom',
+	'viewer.zoomIn': 'Zoom in',
+	'viewer.zoomOut': 'Zoom out',
+	'viewer.zoomReset': 'Whole image',
+	'viewer.zoomHint': 'Wheel or pinch to zoom · drag to move · double-click or Esc to reset',
+	'viewer.hiLoading': 'Loading the full resolution…',
 	'viewer.noCrop': 'No crop',
 
 	'regions.word1': 'not this',
