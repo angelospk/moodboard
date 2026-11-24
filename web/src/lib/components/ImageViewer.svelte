@@ -237,6 +237,7 @@
 			// The loupe may still be on: it needs the large copy of the new image too.
 			wantHi = loupeOn || loupeKey;
 			hiNatural = 0;
+			hiLoaded = '';
 			hiFailed = false;
 			pastCap = false;
 			shownAt = performance.now();

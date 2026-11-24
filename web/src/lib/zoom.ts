@@ -76,7 +76,6 @@ export function pinchView(
 	max = MAX_ZOOM
 ): View {
 	const k = clamp(from.k * scale, 1, max);
-	if (k === 1) return { ...RESET };
 	const px = (m0.x - from.x) / from.k;
 	const py = (m0.y - from.y) / from.k;
 	return clampPan({ k, x: m1.x - px * k, y: m1.y - py * k }, w, h);

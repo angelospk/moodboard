@@ -194,10 +194,12 @@ func TestSimilarCutoff(t *testing.T) {
 	if c := mb.SimilarCutoff([]float64{0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8}); c > 0.8 {
 		t.Fatalf("equal scores: cutoff %v must keep them", c)
 	}
-	// Equal scores that float rounding makes uneven by a hair still keep all.
-	hair := []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1 + 1e-16}
-	if c := mb.SimilarCutoff(hair); c > 0.1+1e-16 {
-		t.Fatalf("near-equal scores: cutoff %v must keep them", c)
+	// Two adjacent float32 scores, four of each: the spread is tiny but real, so nothing stands out.
+	a := float64(float32(0.01))
+	b := float64(math.Nextafter32(float32(0.01), 1))
+	adj := []float64{a, a, a, a, b, b, b, b}
+	if c := mb.SimilarCutoff(adj); c <= b {
+		t.Fatalf("adjacent float32 groups: cutoff %v must be above %v (no match)", c, b)
 	}
 	// Two near-equal groups: nothing stands out, so no match (the best must not be forced through).
 	if c := mb.SimilarCutoff([]float64{0.10, 0.10, 0.10, 0.10, 0.12, 0.12, 0.12, 0.12}); c <= 0.12 {

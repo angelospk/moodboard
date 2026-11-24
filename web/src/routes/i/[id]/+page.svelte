@@ -124,7 +124,8 @@
 			change('source_url', src);
 			change('source_title', null);
 		}
-		const [out, selfSaved] = await Promise.all([updateMany(data.pb, picked, fields), saver.flush()]);
+		const sent = picked;
+		const [out, selfSaved] = await Promise.all([updateMany(data.pb, sent, fields), saver.flush()]);
 		bulkBusy = false;
 		const ok = out.ok.length + (selfSaved ? 1 : 0);
 		const failed = out.failed.length + (selfSaved ? 0 : 1);
@@ -135,7 +136,8 @@
 			picking = false;
 			picked = [];
 			similar?.refresh();
-		} else {
+		} else if (picked === sent) {
+			// Keep the failed ones ticked, unless the list changed meanwhile (then they may not be shown).
 			picked = out.failed;
 		}
 	}
