@@ -253,6 +253,34 @@
 					· <a href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 				{/if}
 			</p>
+			<div class="similar">
+				<SimilarImages bind:this={similar} pb={data.pb} id={item.id} selectable bind:selected={picked} bind:selecting={picking} />
+				{#if picking}
+					<form class="bulk" onsubmit={applyBulk}>
+						<p class="msg">{picked.length ? t('bulk.count', { n: picked.length }) : t('bulk.hint')}</p>
+						{#if picked.length}
+							<select bind:value={bulkProject} aria-label={t('bulk.moveTo')}>
+								<option value="">{t('bulk.moveTo')}</option>
+								{#each data.projects.filter((p) => !p.archived) as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+								<option value="-">{t('common.noProject')}</option>
+							</select>
+							<!-- type=text: the browser's URL check would refuse "pinterest.com/…"; cleanSource checks it. -->
+							<input
+								type="text"
+								inputmode="url"
+								bind:value={bulkSource}
+								placeholder={`${t('bulk.source')}: https://…`}
+								aria-label={t('bulk.source')}
+								maxlength="2000"
+							/>
+							<button type="submit" class="btn primary" disabled={bulkBusy || (!bulkProject && !bulkSource.trim())}>
+								{bulkBusy ? '…' : t('bulk.apply')}
+							</button>
+						{/if}
+					</form>
+				{/if}
+				{#if bulkMsg}<p class="msg" role="status">{bulkMsg}</p>{/if}
+			</div>
 		</section>
 
 		<aside>
@@ -357,32 +385,6 @@
 					</div>
 				{/if}
 
-				<SimilarImages bind:this={similar} pb={data.pb} id={item.id} selectable bind:selected={picked} bind:selecting={picking} />
-				{#if picking}
-					<form class="bulk" onsubmit={applyBulk}>
-						<p class="msg">{picked.length ? t('bulk.count', { n: picked.length }) : t('bulk.hint')}</p>
-						{#if picked.length}
-							<select bind:value={bulkProject} aria-label={t('bulk.moveTo')}>
-								<option value="">{t('bulk.moveTo')}</option>
-								{#each data.projects.filter((p) => !p.archived) as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-								<option value="-">{t('common.noProject')}</option>
-							</select>
-							<!-- type=text: the browser's URL check would refuse "pinterest.com/…"; cleanSource checks it. -->
-							<input
-								type="text"
-								inputmode="url"
-								bind:value={bulkSource}
-								placeholder={`${t('bulk.source')}: https://…`}
-								aria-label={t('bulk.source')}
-								maxlength="2000"
-							/>
-							<button type="submit" class="btn primary" disabled={bulkBusy || (!bulkProject && !bulkSource.trim())}>
-								{bulkBusy ? '…' : t('bulk.apply')}
-							</button>
-						{/if}
-					</form>
-				{/if}
-				{#if bulkMsg}<p class="msg" role="status">{bulkMsg}</p>{/if}
 
 				<div class="field">
 					<button type="button" class="btn" onclick={() => (chatOpen = true)}>{t('chat.button')}</button>
@@ -501,6 +503,16 @@
 		padding: 16px;
 		min-width: 0;
 		--re-max-h: 62vh;
+	}
+	/* Look-alike images sit right under the picture, as wide as a comfortable reading line. */
+	.similar {
+		width: min(100%, 880px);
+		display: grid;
+		gap: 8px;
+		--sim-tile: 88px;
+	}
+	.similar .bulk {
+		background: var(--surface);
 	}
 	.hint {
 		margin: 0;
@@ -670,7 +682,10 @@
 		}
 		.stage {
 			padding: 24px;
-			--re-max-h: calc(100dvh - 56px - 48px - 36px);
+			justify-content: safe center;
+			overflow-y: auto;
+			/* Room under the picture for the hint and one row of look-alike images. */
+			--re-max-h: max(320px, calc(100dvh - 56px - 48px - 36px - 164px));
 		}
 		aside {
 			border-left: 1px solid var(--line);

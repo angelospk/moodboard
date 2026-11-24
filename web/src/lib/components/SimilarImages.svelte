@@ -117,7 +117,7 @@
 	{:else if items.length === 0}
 		<p class="msg">{t('similar.none')}</p>
 	{:else}
-		<ul class="grid">
+		<ul class="strip">
 			{#each items as it (it.id)}
 				{@const label = it.note ? it.note.slice(0, 60) : t('item.alt')}
 				<li>
@@ -187,13 +187,22 @@
 		font-size: 15px;
 		color: var(--text);
 	}
-	.grid {
+	/* One row under the image, scrolled sideways: the picture above stays the main thing. */
+	.strip {
 		list-style: none;
 		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		padding: 0 0 4px;
+		display: flex;
 		gap: 6px;
+		overflow-x: auto;
+		scroll-snap-type: x proximity;
+		scrollbar-width: thin;
+		scrollbar-color: var(--line-strong) transparent;
+	}
+	.strip li {
+		flex: none;
+		width: var(--sim-tile, 72px);
+		scroll-snap-align: start;
 	}
 	.tile {
 		position: relative;
@@ -206,6 +215,20 @@
 		border-radius: var(--r-ctl);
 		background: var(--sunk);
 		cursor: pointer;
+		transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+	.tile:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px -12px rgb(0 0 0 / 0.25);
+	}
+	.tile:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.tile {
+			transition: none;
+		}
 	}
 	.tile.picked {
 		outline: 3px solid var(--accent);
@@ -239,7 +262,7 @@
 		font-size: 12.5px;
 		padding: 3px 10px;
 	}
-	.grid img {
+	.strip img {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;

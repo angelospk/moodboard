@@ -276,6 +276,8 @@
 			/>
 		</div>
 
+		<SimilarImages {pb} id={item.id} {onpick} />
+
 		<label class="field">
 			<span class="lbl">{t('panel.noteLabel')}</span>
 			<textarea
@@ -358,8 +360,6 @@
 				<a class="src" href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 			</div>
 		{/if}
-
-		<SimilarImages {pb} id={item.id} {onpick} />
 
 		{#if actionError}<p class="banner" role="alert">{actionError}</p>{/if}
 	</div>
