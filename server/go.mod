@@ -3,6 +3,7 @@ module moodboard/server
 go 1.27
 
 require (
+	github.com/disintegration/imaging v1.6.2
 	github.com/go-ozzo/ozzo-validation/v4 v4.5.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pocketbase/dbx v1.12.0
@@ -14,7 +15,6 @@ require (
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/domodwyer/mailyak/v3 v3.6.2 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect

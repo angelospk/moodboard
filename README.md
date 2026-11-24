@@ -69,7 +69,7 @@ lasts one hour.
 | `POST /api/mb/positions/delete` | forget positions (one scope or all) |
 | `GET /api/mb/search?q=&project=&limit=` | search by meaning (needs `embed_enabled`) |
 | `GET /api/mb/embed/status` | consent, how many images have a vector, model, dimension |
-| `GET /api/mb/inspirations/{id}/similar?scope=project\|all` | images most like this one |
+| `GET /api/mb/inspirations/{id}/similar?scope=project\|all` | images most like this one; only those that stand out from the rest (score ≥ mean + 1.5 SD of all the user's images, when there are 8 or more) |
 | `GET /api/mb/inspirations/{id}/knn-suggest` | tags and level voted by the nearest labeled images (no LLM) |
 | `GET /api/mb/duplicates?project=&id=` | near-duplicate pairs from a 64-bit image hash |
 | `POST /api/mb/projects/{id}/summary-draft` | Gemini Flash drafts a project description (2-3 readings where unsure); the web app saves the picked text into `projects.description` |
@@ -154,7 +154,9 @@ Images live in the R2 bucket `moodboard-images` (`images.haroldpoi.dev/mbinspira
 readable by anyone who knows the path. A public board never shows the stored file name (JSON field
 and download name are neutral), because that name is the key to the original there.
 
-The app asks for `?w=480` (cards) and `?w=2048` (panel, viewer). A second Worker,
+The app asks for `?w=480` (cards) and `?w=2048` (panel, viewer), and `?w=4096` only when the user zooms in
+the viewer (wheel toward the cursor, drag to pan, pinch, double-click or Esc to reset); a public board asks
+`?thumb=hi` for the same. The web app stores uploads at up to 4096 px (WebP, quality 0.88; it was 2560 px). A second Worker,
 `worker/src/images.js` (`npx wrangler deploy -c wrangler.images.jsonc`, route
 `images.haroldpoi.dev/mbinspirations/*`), resizes the stored file with Cloudflare Image Transformations and
 sends AVIF, WebP or JPEG by the Accept header, cached for a year. A 2.1 MB PNG became 8 KB (480 px) and

@@ -27,3 +27,16 @@ func SetStoreLimit(n int64) {
 
 // SetIndexBuildHook runs fn after the index query and before the index is cached (nil = none).
 func SetIndexBuildHook(fn func()) { idxBuildHook = fn }
+
+// SetMaxCropPixels sets the largest image (in pixels) a public crop may decode; it returns the old value.
+func SetMaxCropPixels(n int) int {
+	old := maxCropPixels
+	maxCropPixels = n
+	return old
+}
+
+// OrientationOf and PolygonMeetsUnitSquare expose the crop helpers to the tests.
+var (
+	OrientationOf          = orientationOf
+	PolygonMeetsUnitSquare = polygonMeetsUnitSquare
+)

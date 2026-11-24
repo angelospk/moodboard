@@ -77,6 +77,14 @@ func handlePublicBoard(e *core.RequestEvent) error {
 		if !hideRegions {
 			item["regions"] = r.Get("regions")
 		}
+		// The served file is already the crop (see crop_share.go): no crop for the client to apply,
+		// and regions in fractions of the crop.
+		if c := cropOf(r); c != nil {
+			item["crop"] = nil
+			if !hideRegions {
+				item["regions"] = regionsInCrop(r.Get("regions"), c)
+			}
+		}
 		if !hideTags {
 			tags := stringList(r.Get("tags"))
 			item["tags"], item["level"] = tags, lv[r.GetString("level")]
@@ -142,6 +150,11 @@ func handlePublicSrc(e *core.RequestEvent) error {
 	if r == nil {
 		return publicNotFound(e)
 	}
+	e.Response.Header().Set("Cache-Control", "no-store")
+	if cropOf(r) != nil {
+		// The bucket holds the whole original: the Worker must ask for the cropped file instead.
+		return e.JSON(http.StatusOK, map[string]string{"key": "", "thumb": ""})
+	}
 	fsys, err := e.App.NewFilesystem()
 	if err != nil {
 		return e.InternalServerError("", err)
@@ -152,7 +165,6 @@ func handlePublicSrc(e *core.RequestEvent) error {
 	if ok, _ := fsys.Exists(thumb); !ok {
 		thumb = ""
 	}
-	e.Response.Header().Set("Cache-Control", "no-store")
 	return e.JSON(http.StatusOK, map[string]string{"key": r.BaseFilesPath() + "/" + r.GetString("image"), "thumb": thumb})
 }
 
@@ -171,6 +183,19 @@ func handlePublicFile(e *core.RequestEvent) error {
 	key := r.BaseFilesPath() + "/" + name
 	// The download name is neutral: the stored name is the key to the original in the image bucket.
 	download := "image" + path.Ext(name)
+	if c := cropOf(r); c != nil {
+		// Only the crop leaves the server; with no cropped copy, nothing does (fail closed).
+		k, err := ensureCrop(e.App, fsys, r, c, e.Request.URL.Query().Get("thumb") == shareThumb, e.Request.Context().Done())
+		if err != nil || k == "" {
+			return publicNotFound(e)
+		}
+		e.Response.Header().Set("Cache-Control", "private, max-age=60")
+		e.Response.Header().Del("X-Frame-Options")
+		if err := fsys.Serve(e.Response, e.Request, k, "image"+path.Ext(k)); err != nil {
+			return publicNotFound(e)
+		}
+		return nil
+	}
 	if e.Request.URL.Query().Get("thumb") == shareThumb {
 		thumb := thumbKeyOf(r)
 		_, _ = ensureThumb(e.App, r, e.Request.Context().Done())

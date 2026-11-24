@@ -271,10 +271,13 @@
 			<RegionEditor
 				src={imageUrl}
 				alt={note || t('item.alt')}
+				crop={item.crop}
 				bind:regions={() => regions, (v) => ((regions = v), change('regions', v))}
 				bind:active
 			/>
 		</div>
+
+		<SimilarImages {pb} id={item.id} {onpick} />
 
 		<label class="field">
 			<span class="lbl">{t('panel.noteLabel')}</span>
@@ -358,8 +361,6 @@
 				<a class="src" href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 			</div>
 		{/if}
-
-		<SimilarImages {pb} id={item.id} {onpick} />
 
 		{#if actionError}<p class="banner" role="alert">{actionError}</p>{/if}
 	</div>

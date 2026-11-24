@@ -37,6 +37,7 @@ describe('parseTarget', () => {
 	it('knows public file URLs and their size', () => {
 		expect(parseTarget(new URL(FILE))).toEqual({ width: 1600 });
 		expect(parseTarget(new URL(FILE + '?thumb=480x0'))).toEqual({ width: 480 });
+		expect(parseTarget(new URL(FILE + '?thumb=hi'))).toEqual({ width: 4096 });
 	});
 	it('ignores everything else', () => {
 		for (const u of [
@@ -82,6 +83,8 @@ describe('handle', () => {
 		expect(calls[0].init.headers.accept).toBe('image/avif,image/webp');
 		expect(deps.cache.m.size).toBe(1);
 		expect([...deps.cache.m.keys()][0]).toContain('w=1600');
+		// v=2: copies stored before public crops were enforced (whole originals) are never read.
+		expect([...deps.cache.m.keys()][0]).toContain('v=2');
 	});
 
 	it('serves the second request from the cache without calling the origin', async () => {

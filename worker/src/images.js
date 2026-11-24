@@ -1,7 +1,7 @@
 // Moodboard private images. Sits in front of the R2 bucket's custom domain (images.haroldpoi.dev).
 //
-// The app asks for GET /mbinspirations/<record>/<file>?w=480 (a card thumbnail) or ?w=2048 (the
-// image in the panel and the viewer). Cloudflare resizes the stored file (cf.image), picks AVIF,
+// The app asks for GET /mbinspirations/<record>/<file>?w=480 (a card thumbnail), ?w=2048 (the
+// image in the panel and the viewer) or ?w=4096 (only when the user zooms in the viewer). Cloudflare resizes the stored file (cf.image), picks AVIF,
 // WebP or JPEG from the Accept header, and drops metadata. The browser and the edge keep the result
 // for a year: the path holds a random file name, so a file never changes under the same URL.
 // If resizing is not possible (quota used up, unsupported file, error), the stored file is served
@@ -28,7 +28,7 @@ export function pickFormat(accept, { avif = true } = {}) {
 
 const FILE_PATH = /^\/mbinspirations\/[a-z0-9]+\/[^/]+$/;
 /** Sizes the app may ask for, and the quality of each. Any other ?w passes through unchanged. */
-export const SIZES = { 480: 75, 2048: 82 };
+export const SIZES = { 480: 75, 2048: 82, 4096: 85 };
 
 /** The size to make, or null when this request is not a resize request. */
 export function parseTarget(url) {

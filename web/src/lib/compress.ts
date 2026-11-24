@@ -2,11 +2,12 @@
 // Any failure returns the original file, so compression never blocks an upload.
 import { IMAGE_EXT } from '#lib/inspirations.js';
 
-/** Longest edge, in pixels, of a stored image. */
-export const MAX_EDGE = 2560;
+/** Longest edge, in pixels, of a stored image. Large enough to zoom into details in the viewer; the
+ *  lists and cards load small copies (see thumbUrl), so the size costs nothing there. */
+export const MAX_EDGE = 4096;
 /** A file at or under this size, with pixels that fit MAX_EDGE, is kept as it is. */
 const KEEP_BYTES = 1.5 * 1024 * 1024;
-const QUALITY = 0.86;
+const QUALITY = 0.88;
 
 export type ResizePlan = { width: number; height: number; type: string; quality: number };
 

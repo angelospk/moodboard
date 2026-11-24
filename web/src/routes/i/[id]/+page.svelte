@@ -16,6 +16,7 @@
 	import { duplicatesOf } from '#lib/semantic.js';
 	import { smart } from '#lib/smart.svelte.js';
 	import SourceProjectField from '#lib/components/SourceProjectField.svelte';
+	import CropImg from '#lib/components/CropImg.svelte';
 	import SimilarImages from '#lib/components/SimilarImages.svelte';
 	import SmartSuggest from '#lib/components/SmartSuggest.svelte';
 	import ChatSearch from '#lib/components/ChatSearch.svelte';
@@ -123,7 +124,8 @@
 			change('source_url', src);
 			change('source_title', null);
 		}
-		const [out, selfSaved] = await Promise.all([updateMany(data.pb, picked, fields), saver.flush()]);
+		const sent = picked;
+		const [out, selfSaved] = await Promise.all([updateMany(data.pb, sent, fields), saver.flush()]);
 		bulkBusy = false;
 		const ok = out.ok.length + (selfSaved ? 1 : 0);
 		const failed = out.failed.length + (selfSaved ? 0 : 1);
@@ -134,7 +136,8 @@
 			picking = false;
 			picked = [];
 			similar?.refresh();
-		} else {
+		} else if (picked === sent) {
+			// Keep the failed ones ticked, unless the list changed meanwhile (then they may not be shown).
 			picked = out.failed;
 		}
 	}
@@ -243,6 +246,7 @@
 			<RegionEditor
 				src={data.imageUrl}
 				alt={note || t('item.alt')}
+				crop={item.crop}
 				labels
 				bind:regions={() => regions, (v) => ((regions = v), change('regions', v))}
 				bind:active
@@ -253,6 +257,34 @@
 					· <a href={safeSource} target="_blank" rel="noopener noreferrer">{sourceLabel}</a>
 				{/if}
 			</p>
+			<div class="similar">
+				<SimilarImages bind:this={similar} pb={data.pb} id={item.id} selectable bind:selected={picked} bind:selecting={picking} />
+				{#if picking}
+					<form class="bulk" onsubmit={applyBulk}>
+						<p class="msg">{picked.length ? t('bulk.count', { n: picked.length }) : t('bulk.hint')}</p>
+						{#if picked.length}
+							<select bind:value={bulkProject} aria-label={t('bulk.moveTo')}>
+								<option value="">{t('bulk.moveTo')}</option>
+								{#each data.projects.filter((p) => !p.archived) as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+								<option value="-">{t('common.noProject')}</option>
+							</select>
+							<!-- type=text: the browser's URL check would refuse "pinterest.com/…"; cleanSource checks it. -->
+							<input
+								type="text"
+								inputmode="url"
+								bind:value={bulkSource}
+								placeholder={`${t('bulk.source')}: https://…`}
+								aria-label={t('bulk.source')}
+								maxlength="2000"
+							/>
+							<button type="submit" class="btn primary" disabled={bulkBusy || (!bulkProject && !bulkSource.trim())}>
+								{bulkBusy ? '…' : t('bulk.apply')}
+							</button>
+						{/if}
+					</form>
+				{/if}
+				{#if bulkMsg}<p class="msg" role="status">{bulkMsg}</p>{/if}
+			</div>
 		</section>
 
 		<aside>
@@ -268,7 +300,7 @@
 								<li>
 									<!-- A full load: this page keeps its editor state per page load (see `item`). -->
 									<a href={`/i/${d.id}`} data-sveltekit-reload aria-label={d.note ? d.note.slice(0, 60) : t('item.alt')}>
-										{#if dupUrls[d.image_path]}<img src={thumbUrl(dupUrls[d.image_path])} alt="" loading="lazy" decoding="async" />{/if}
+										{#if dupUrls[d.image_path]}<CropImg src={thumbUrl(dupUrls[d.image_path]) ?? ''} crop={d.crop} fit="cover" />{/if}
 									</a>
 								</li>
 							{/each}
@@ -357,32 +389,6 @@
 					</div>
 				{/if}
 
-				<SimilarImages bind:this={similar} pb={data.pb} id={item.id} selectable bind:selected={picked} bind:selecting={picking} />
-				{#if picking}
-					<form class="bulk" onsubmit={applyBulk}>
-						<p class="msg">{picked.length ? t('bulk.count', { n: picked.length }) : t('bulk.hint')}</p>
-						{#if picked.length}
-							<select bind:value={bulkProject} aria-label={t('bulk.moveTo')}>
-								<option value="">{t('bulk.moveTo')}</option>
-								{#each data.projects.filter((p) => !p.archived) as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-								<option value="-">{t('common.noProject')}</option>
-							</select>
-							<!-- type=text: the browser's URL check would refuse "pinterest.com/…"; cleanSource checks it. -->
-							<input
-								type="text"
-								inputmode="url"
-								bind:value={bulkSource}
-								placeholder={`${t('bulk.source')}: https://…`}
-								aria-label={t('bulk.source')}
-								maxlength="2000"
-							/>
-							<button type="submit" class="btn primary" disabled={bulkBusy || (!bulkProject && !bulkSource.trim())}>
-								{bulkBusy ? '…' : t('bulk.apply')}
-							</button>
-						{/if}
-					</form>
-				{/if}
-				{#if bulkMsg}<p class="msg" role="status">{bulkMsg}</p>{/if}
 
 				<div class="field">
 					<button type="button" class="btn" onclick={() => (chatOpen = true)}>{t('chat.button')}</button>
@@ -501,6 +507,16 @@
 		padding: 16px;
 		min-width: 0;
 		--re-max-h: 62vh;
+	}
+	/* Look-alike images sit right under the picture, as wide as a comfortable reading line. */
+	.similar {
+		width: min(100%, 880px);
+		display: grid;
+		gap: 8px;
+		--sim-tile: 88px;
+	}
+	.similar .bulk {
+		background: var(--surface);
 	}
 	.hint {
 		margin: 0;
@@ -651,12 +667,6 @@
 		border-radius: var(--r-ctl);
 		background: var(--sunk);
 	}
-	.mini img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
-	}
 
 	/* Desktop: image fills the left, the form is a 400px column with its own scroll. */
 	@media (min-width: 900px) {
@@ -670,7 +680,10 @@
 		}
 		.stage {
 			padding: 24px;
-			--re-max-h: calc(100dvh - 56px - 48px - 36px);
+			justify-content: safe center;
+			overflow-y: auto;
+			/* Room under the picture for the hint and one row of look-alike images. */
+			--re-max-h: max(320px, calc(100dvh - 56px - 48px - 36px - 164px));
 		}
 		aside {
 			border-left: 1px solid var(--line);

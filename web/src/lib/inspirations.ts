@@ -290,6 +290,18 @@ export function thumbUrl(url: string | null | undefined, cdn = IMAGE_CDN): strin
 	return u.toString();
 }
 
+/** The largest copy of an image URL, for zooming in the viewer: the CDN's 4096 px copy, the public
+ *  board's large copy, or the API's original file. Other URLs (blob: previews) stay as they are. */
+export function hiResUrl(url: string | null | undefined, cdn = IMAGE_CDN): string | null {
+	if (!url) return null;
+	if (!/^https?:/.test(url)) return url;
+	if (cdn && url.startsWith(`${cdn}/`)) return `${url.split('?')[0]}?w=4096`;
+	const u = new URL(url);
+	if (/\/api\/mb\/public\/[^/]+\/files\/[^/]+$/.test(u.pathname)) u.searchParams.set('thumb', 'hi');
+	else u.searchParams.delete('thumb');
+	return u.toString();
+}
+
 export function imageUrl(pb: PocketBase, r: Pick<Inspiration, 'id' | 'image_path'>, token: string, cdn = cdnFor(pb)): string {
 	// The CDN (Cloudflare R2) serves the file by its unguessable path: no token, no API call.
 	// ?w=2048: the image Worker sends it at most 2048 px wide, as AVIF or WebP (about 15x smaller than a PNG).

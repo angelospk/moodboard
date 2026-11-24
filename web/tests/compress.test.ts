@@ -15,18 +15,18 @@ describe('resizePlan', () => {
 	});
 
 	it('scales the long edge down to MAX_EDGE and keeps the aspect ratio', () => {
-		expect(MAX_EDGE).toBe(2560);
+		expect(MAX_EDGE).toBe(4096);
 		expect(resizePlan({ width: 6000, height: 4000, type: 'image/jpeg', size: 7 * MB })).toEqual({
-			width: 2560,
-			height: 1707,
+			width: 4096,
+			height: 2731,
 			type: 'image/webp',
-			quality: 0.86
+			quality: 0.88
 		});
-		expect(resizePlan({ width: 3000, height: 5120, type: 'image/png', size: 2 * MB })).toEqual({
-			width: 1500,
-			height: 2560,
+		expect(resizePlan({ width: 4000, height: 8192, type: 'image/png', size: 2 * MB })).toEqual({
+			width: 2000,
+			height: 4096,
 			type: 'image/webp',
-			quality: 0.86
+			quality: 0.88
 		});
 	});
 
@@ -35,7 +35,7 @@ describe('resizePlan', () => {
 			width: 2000,
 			height: 1500,
 			type: 'image/webp',
-			quality: 0.86
+			quality: 0.88
 		});
 	});
 
