@@ -21,6 +21,8 @@
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@types/d3-force": "^3.0.10",
 		"@types/node": "^26.6.6",
+		"@types/three": "^0.187.0",
+		"ajv": "^8.20.0",
 		"svelte": "^5.57.2",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
@@ -29,6 +31,7 @@
 	},
 	"dependencies": {
 		"d3-force": "^3.0.1",
-		"pocketbase": "^0.28.2"
+		"pocketbase": "^0.28.2",
+		"three": "^0.187.0"
 	}
 }
