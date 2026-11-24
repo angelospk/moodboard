@@ -74,6 +74,9 @@ func bindThumbs(app core.App) {
 	after := func(e *core.RecordEvent) error {
 		a, r := e.App, e.Record.Fresh()
 		run(func() {
+			if err := pruneCrops(a, r); err != nil {
+				a.Logger().Warn("removing old crops failed", "record", r.Id, "error", err)
+			}
 			if _, err := ensureThumb(a, r, stop); err != nil {
 				a.Logger().Warn("thumbnail after upload failed", "record", r.Id, "error", err)
 			}

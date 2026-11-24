@@ -83,6 +83,8 @@ describe('handle', () => {
 		expect(calls[0].init.headers.accept).toBe('image/avif,image/webp');
 		expect(deps.cache.m.size).toBe(1);
 		expect([...deps.cache.m.keys()][0]).toContain('w=1600');
+		// v=2: copies stored before public crops were enforced (whole originals) are never read.
+		expect([...deps.cache.m.keys()][0]).toContain('v=2');
 	});
 
 	it('serves the second request from the cache without calling the origin', async () => {

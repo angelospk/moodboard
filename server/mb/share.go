@@ -150,6 +150,11 @@ func handlePublicSrc(e *core.RequestEvent) error {
 	if r == nil {
 		return publicNotFound(e)
 	}
+	e.Response.Header().Set("Cache-Control", "no-store")
+	if cropOf(r) != nil {
+		// The bucket holds the whole original: the Worker must ask for the cropped file instead.
+		return e.JSON(http.StatusOK, map[string]string{"key": "", "thumb": ""})
+	}
 	fsys, err := e.App.NewFilesystem()
 	if err != nil {
 		return e.InternalServerError("", err)
@@ -159,11 +164,6 @@ func handlePublicSrc(e *core.RequestEvent) error {
 	thumb := thumbKeyOf(r)
 	if ok, _ := fsys.Exists(thumb); !ok {
 		thumb = ""
-	}
-	e.Response.Header().Set("Cache-Control", "no-store")
-	if cropOf(r) != nil {
-		// The bucket holds the whole original: the Worker must ask for the cropped file instead.
-		return e.JSON(http.StatusOK, map[string]string{"key": "", "thumb": ""})
 	}
 	return e.JSON(http.StatusOK, map[string]string{"key": r.BaseFilesPath() + "/" + r.GetString("image"), "thumb": thumb})
 }

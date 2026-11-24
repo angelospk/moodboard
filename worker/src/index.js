@@ -222,7 +222,8 @@ export async function handle(request, env, ctx, { fetch, cache, now = Date.now }
 	}
 
 	const accept = request.headers.get('accept');
-	const key = new Request(`${env.ORIGIN}${url.pathname}?w=${target.width}`);
+	// v=2: never read copies stored before public crops were enforced (they hold whole originals).
+	const key = new Request(`${env.ORIGIN}${url.pathname}?w=${target.width}&v=2`);
 	const hit = await cache.match(key);
 	if (hit) {
 		const age = ageOf(hit, now);

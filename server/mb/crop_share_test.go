@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"image"
 	"image/color"
+	"image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"strings"
 	"testing"
 
 	"moodboard/server/mb"
@@ -34,7 +36,7 @@ func croppedFixture(t *testing.T) (*shareFixture, string) {
 		"user_id":    owner.GetString("user_id"),
 		"project_id": f.projA,
 		"crop":       `{"x":0.5,"y":0,"w":0.5,"h":1}`,
-		"regions":    `[{"x":0.6,"y":0.1,"w":0.2,"h":0.2,"note":"μέσα"},{"x":0.1,"y":0.1,"w":0.2,"h":0.2,"note":"έξω"},{"x":0.4,"y":0.4,"w":0.1,"h":0.1,"note":"στην άκρη"}]`,
+		"regions":    `[{"x":0.6,"y":0.1,"w":0.2,"h":0.2,"note":"μέσα"},{"x":0.1,"y":0.1,"w":0.2,"h":0.2,"note":"έξω"},{"x":0.4,"y":0.4,"w":0.1,"h":0.1,"note":"στην άκρη"},{"x":0.3,"y":0.6,"w":0.4,"h":0.3,"note":"πολύγωνο έξω","points":[[0.3,0.6],[0.45,0.6],[0.3,0.9]]}]`,
 	}, halves())
 	return f, r.Id
 }
@@ -83,16 +85,134 @@ func TestPublicImageServesOnlyTheCrop(t *testing.T) {
 	}
 }
 
+// cropFiles lists the stored cropped copies of a record.
+func cropFiles(t *testing.T, e *env, id string) []string {
+	t.Helper()
+	fsys, err := e.app.NewFilesystem()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+	objs, err := fsys.List("mbinspirations/" + id + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, o := range objs {
+		if strings.Contains(o.Key, "/crops_") {
+			out = append(out, o.Key)
+		}
+	}
+	return out
+}
+
 func TestPublicImageFollowsANewCrop(t *testing.T) {
 	f, id := croppedFixture(t)
+	base := "/api/mb/public/" + f.projA + "/files/" + id
+	decoded(t, f.e, base)
+	decoded(t, f.e, base+"?thumb=480x0")
+	if n := len(cropFiles(t, f.e, id)); n != 2 {
+		t.Fatalf("after warming: %d cropped files, want 2 (copy and thumbnail)", n)
+	}
 	if code, out := f.e.json("PATCH", "/api/collections/inspirations/records/"+id, f.aTok, map[string]any{"crop": map[string]float64{"x": 0, "y": 0, "w": 0.5, "h": 1}}); code != 200 {
 		t.Fatalf("patch crop: %d %s", code, out)
 	}
 	mb.WaitThumbs()
+	if left := cropFiles(t, f.e, id); len(left) != 0 {
+		t.Fatalf("copies of the old crop left behind: %v", left)
+	}
+	for _, u := range []string{base, base + "?thumb=480x0"} {
+		img := decoded(t, f.e, u)
+		r, _, bl, _ := img.At(img.Bounds().Dx()/2, img.Bounds().Dy()/2).RGBA()
+		if r>>8 < 200 || bl>>8 > 60 {
+			t.Fatalf("%s: after the new crop (left half) the image must be red, got r=%d b=%d", u, r>>8, bl>>8)
+		}
+	}
+}
+
+// Two crops that differ by less than a rounding step are different crops: never one copy for both.
+func TestNearlyEqualCropsGetTheirOwnCopy(t *testing.T) {
+	f, id := croppedFixture(t)
+	base := "/api/mb/public/" + f.projA + "/files/" + id
+	decoded(t, f.e, base)
+	if code, out := f.e.json("PATCH", "/api/collections/inspirations/records/"+id, f.aTok, map[string]any{"crop": map[string]float64{"x": 0.50001, "y": 0, "w": 0.49999, "h": 1}}); code != 200 {
+		t.Fatalf("patch crop: %d %s", code, out)
+	}
+	mb.WaitThumbs()
+	if left := cropFiles(t, f.e, id); len(left) != 0 {
+		t.Fatalf("a nearly equal crop reused the old copy: %v", left)
+	}
+}
+
+// The browser shows a PNG turned by its eXIf Orientation; the crop is drawn on that view.
+func TestCropFollowsTheOrientationOfAPNG(t *testing.T) {
+	f := newShareFixture(t)
+	f.set(t, map[string]any{"public": true})
+	owner, _ := f.e.app.FindRecordById("inspirations", f.insA)
+	raw := halves() // 200x100, red left, blue right
+	// Orientation 6: shown turned 90 degrees clockwise, so 100x200 with red on top, blue below.
+	tiff := []byte("MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00\x00\x00\x00\x00")
+	withExif := append(append(append([]byte{}, raw[:33]...), pngChunk("eXIf", tiff)...), raw[33:]...)
+	r := f.e.uploadImage(f.aTok, map[string]string{"user_id": owner.GetString("user_id"), "project_id": f.projA,
+		"crop": `{"x":0,"y":0.5,"w":1,"h":0.5}`}, withExif)
+	u := "/api/mb/public/" + f.projA + "/files/" + r.Id
+	img := decoded(t, f.e, u)
+	if b := img.Bounds(); b.Dx() != 100 || b.Dy() != 100 {
+		t.Fatalf("crop of the turned image is %dx%d, want 100x100", b.Dx(), b.Dy())
+	}
+	noRed(t, u, img)
+}
+
+// A GIF frame may sit inside a larger canvas; the crop is a fraction of the canvas.
+func TestCropOfAGIFUsesItsCanvas(t *testing.T) {
+	f := newShareFixture(t)
+	f.set(t, map[string]any{"public": true})
+	owner, _ := f.e.app.FindRecordById("inspirations", f.insA)
+	pal := color.Palette{color.RGBA{0, 0, 0, 0}, color.RGBA{0, 0, 255, 255}}
+	frame := image.NewPaletted(image.Rect(100, 0, 200, 100), pal) // only the right half is drawn
+	for y := 0; y < 100; y++ {
+		for x := 100; x < 200; x++ {
+			frame.SetColorIndex(x, y, 1)
+		}
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, &gif.GIF{Image: []*image.Paletted{frame}, Delay: []int{0}, Config: image.Config{ColorModel: pal, Width: 200, Height: 100}}); err != nil {
+		t.Fatal(err)
+	}
+	id := f.e.uploadFile(f.aTok, map[string]string{"user_id": owner.GetString("user_id"), "project_id": f.projA,
+		"crop": `{"x":0.5,"y":0,"w":0.5,"h":1}`}, "a.gif", "image/gif", buf.Bytes())
+	mb.WaitThumbs()
 	img := decoded(t, f.e, "/api/mb/public/"+f.projA+"/files/"+id)
-	r, _, bl, _ := img.At(img.Bounds().Dx()/2, img.Bounds().Dy()/2).RGBA()
-	if r>>8 < 200 || bl>>8 > 60 {
-		t.Fatalf("after the new crop (left half) the image must be red, got r=%d b=%d", r>>8, bl>>8)
+	if b := img.Bounds(); b.Dx() != 100 || b.Dy() != 100 {
+		t.Fatalf("crop is %dx%d, want 100x100 (the right half of the 200x100 canvas)", b.Dx(), b.Dy())
+	}
+	_, _, bl, a := img.At(50, 50).RGBA()
+	if bl>>8 < 200 || a>>8 < 200 {
+		t.Fatalf("crop centre must be opaque blue")
+	}
+}
+
+// A transparent PNG stays transparent: the cropped copy must not become a JPEG.
+func TestCropKeepsTransparency(t *testing.T) {
+	f := newShareFixture(t)
+	f.set(t, map[string]any{"public": true})
+	owner, _ := f.e.app.FindRecordById("inspirations", f.insA)
+	clear := pngOf(200, 100, func(int, int) color.Color { return color.NRGBA{0, 0, 255, 0} })
+	r := f.e.uploadImage(f.aTok, map[string]string{"user_id": owner.GetString("user_id"), "project_id": f.projA,
+		"crop": `{"x":0.5,"y":0,"w":0.5,"h":1}`}, clear)
+	img := decoded(t, f.e, "/api/mb/public/"+f.projA+"/files/"+r.Id)
+	if _, _, _, a := img.At(10, 10).RGBA(); a != 0 {
+		t.Fatalf("alpha %d, want 0", a)
+	}
+}
+
+// An image too large to decode safely is not served at all (never the uncropped file).
+func TestHugeCroppedImageFailsClosed(t *testing.T) {
+	f, id := croppedFixture(t)
+	old := mb.SetMaxCropPixels(100 * 100)
+	t.Cleanup(func() { mb.SetMaxCropPixels(old) })
+	if w := f.e.rawWith("GET", "/api/mb/public/"+f.projA+"/files/"+id, nil); w.Code != 404 {
+		t.Fatalf("over the pixel limit: %d, want 404", w.Code)
 	}
 }
 

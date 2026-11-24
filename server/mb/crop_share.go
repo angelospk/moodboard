@@ -2,11 +2,17 @@ package mb
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/draw"
+	"io"
 	"math"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/disintegration/imaging"
@@ -37,17 +43,21 @@ func cropOf(r *core.Record) *cropRect {
 	return &c
 }
 
-// cropKeyOf is the storage key of the cropped copy. PNG stays PNG (it may be transparent); every
-// other format becomes JPEG.
+// maxCropPixels is the largest image (width x height) a public crop decodes; a larger one is not served.
+var maxCropPixels = 40_000_000
+
+// cropKeyOf is the storage key of the cropped copy, named after the exact crop values (two crops
+// that differ only a little never share a copy). JPEG stays JPEG; every other format becomes PNG, so
+// transparency survives.
 func cropKeyOf(r *core.Record, c *cropRect) string {
 	name := r.GetString("image")
-	ext := ".jpg"
-	if strings.EqualFold(path.Ext(name), ".png") {
-		ext = ".png"
+	ext := ".png"
+	if e := strings.ToLower(path.Ext(name)); e == ".jpg" || e == ".jpeg" {
+		ext = ".jpg"
 	}
-	q := func(v float64) int { return int(math.Round(v * 10000)) }
-	tag := fmt.Sprintf("%d_%d_%d_%d", q(c.X), q(c.Y), q(c.W), q(c.H))
-	return r.BaseFilesPath() + "/crops_" + name + "/" + tag + "_" + strings.TrimSuffix(name, path.Ext(name)) + ext
+	f := func(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
+	sum := sha256.Sum256([]byte(f(c.X) + "," + f(c.Y) + "," + f(c.W) + "," + f(c.H)))
+	return r.BaseFilesPath() + "/crops_" + name + "/" + hex.EncodeToString(sum[:8]) + "_" + strings.TrimSuffix(name, path.Ext(name)) + ext
 }
 
 func cropThumbKeyOf(key string) string {
@@ -57,6 +67,7 @@ func cropThumbKeyOf(key string) string {
 
 // ensureCrop makes the cropped copy (and, with thumb, its 480x0 thumbnail) if missing, and returns
 // the key to serve. "" means none could be made: the caller must not fall back to the original.
+// Copies of earlier crops are removed by pruneCrops after the record changes, not here.
 func ensureCrop(app core.App, fsys *filesystem.System, r *core.Record, c *cropRect, thumb bool, done <-chan struct{}) (string, error) {
 	key := cropKeyOf(r, c)
 	want := key
@@ -93,18 +104,37 @@ func ensureCrop(app core.App, fsys *filesystem.System, r *core.Record, c *cropRe
 	return want, nil
 }
 
-// cropImage decodes the original (turned upright, as a browser shows it), cuts the crop out and
-// encodes it again. The new file holds no metadata.
+// cropImage decodes the original (on its full canvas, turned upright as a browser shows it), cuts
+// the crop out and encodes it again. The new file holds no metadata.
 func cropImage(fsys *filesystem.System, original string, c *cropRect, asPNG bool) ([]byte, error) {
 	rd, err := fsys.GetReader(original)
 	if err != nil {
 		return nil, err
 	}
-	defer rd.Close()
-	img, err := imaging.Decode(rd, imaging.AutoOrientation(true))
+	raw, err := io.ReadAll(rd)
+	rd.Close()
 	if err != nil {
 		return nil, err
 	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Width < 1 || cfg.Height < 1 || cfg.Width > maxCropPixels/cfg.Height {
+		return nil, fmt.Errorf("image %dx%d is over the crop limit", cfg.Width, cfg.Height)
+	}
+	img, err := imaging.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	// A GIF frame may cover only part of its canvas; the crop is a fraction of the canvas.
+	canvas := image.Rect(0, 0, cfg.Width, cfg.Height)
+	if img.Bounds() != canvas {
+		full := image.NewNRGBA(canvas)
+		draw.Draw(full, img.Bounds(), img, img.Bounds().Min, draw.Src)
+		img = full
+	}
+	img = upright(img, orientationOf(raw))
 	b := img.Bounds()
 	w, h := float64(b.Dx()), float64(b.Dy())
 	px := func(v, size float64, lo int) int { return lo + int(math.Round(math.Min(math.Max(v, 0), 1)*size)) }
@@ -122,8 +152,96 @@ func cropImage(fsys *filesystem.System, original string, c *cropRect, asPNG bool
 	return buf.Bytes(), err
 }
 
+// upright applies an Exif Orientation (2..8) the way a browser does.
+func upright(img image.Image, o int) image.Image {
+	switch o {
+	case 2:
+		return imaging.FlipH(img)
+	case 3:
+		return imaging.Rotate180(img)
+	case 4:
+		return imaging.FlipV(img)
+	case 5:
+		return imaging.Transpose(img)
+	case 6:
+		return imaging.Rotate270(img)
+	case 7:
+		return imaging.Transverse(img)
+	case 8:
+		return imaging.Rotate90(img)
+	}
+	return img
+}
+
+// orientationOf reads the Exif Orientation of a JPEG (first Exif APP1 that has one), PNG (eXIf) or
+// WebP (EXIF chunk), the same tags stripmeta keeps; 0 when absent.
+func orientationOf(b []byte) int {
+	switch {
+	case bytes.HasPrefix(b, []byte{0xFF, 0xD8}):
+		for i := 2; i+4 <= len(b) && b[i] == 0xFF; {
+			m := b[i+1]
+			if m == 0xDA || m == 0xD9 { // image data: no more metadata segments
+				return 0
+			}
+			n := int(b[i+2])<<8 | int(b[i+3])
+			if n < 2 || i+2+n > len(b) {
+				return 0
+			}
+			if m == 0xE1 {
+				if o := exifOrientation(b[i+4 : i+2+n]); o != 0 {
+					return o
+				}
+			}
+			i += 2 + n
+		}
+	case bytes.HasPrefix(b, pngSig):
+		if c := pngRotationChunk(b, len(pngSig)); len(c) > 12 {
+			return tiffOrientation(c[8 : len(c)-4])
+		}
+	case len(b) >= 12 && string(b[:4]) == "RIFF" && string(b[8:12]) == "WEBP":
+		for i := 12; i+8 <= len(b); {
+			n := int(binary.LittleEndian.Uint32(b[i+4 : i+8]))
+			if n < 0 || i+8+n > len(b) {
+				return 0
+			}
+			if string(b[i:i+4]) == "EXIF" {
+				return tiffOrientation(b[i+8 : i+8+n])
+			}
+			i += 8 + n + n%2
+		}
+	}
+	return 0
+}
+
+// pruneCrops removes the stored copies of every crop but the record's current one.
+func pruneCrops(app core.App, r *core.Record) error {
+	fsys, err := app.NewFilesystem()
+	if err != nil {
+		return err
+	}
+	defer fsys.Close()
+	objs, err := fsys.List(r.BaseFilesPath() + "/crops_")
+	if err != nil {
+		return err
+	}
+	keep, keepThumbs := "", ""
+	if c := cropOf(r); c != nil {
+		keep = cropKeyOf(r, c)
+		keepThumbs = path.Dir(cropThumbKeyOf(keep)) + "/"
+	}
+	for _, o := range objs {
+		if keep != "" && (o.Key == keep || strings.HasPrefix(o.Key, keepThumbs)) {
+			continue
+		}
+		if err := fsys.Delete(o.Key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // regionsInCrop moves the regions (fractions of the whole image) into fractions of the crop, and
-// drops the ones that fall fully outside it.
+// drops the ones that fall fully outside it (a polygon by its own shape, not its bounding box).
 func regionsInCrop(raw any, c *cropRect) []map[string]any {
 	b, _ := json.Marshal(raw)
 	var in []map[string]any
@@ -139,15 +257,66 @@ func regionsInCrop(raw any, c *cropRect) []map[string]any {
 		}
 		reg["x"], reg["y"], reg["w"], reg["h"] = x, y, w, h
 		if pts, ok := reg["points"].([]any); ok {
+			var poly [][2]float64
 			for _, p := range pts {
 				if xy, ok := p.([]any); ok && len(xy) == 2 {
 					px, _ := xy[0].(float64)
 					py, _ := xy[1].(float64)
 					xy[0], xy[1] = (px-c.X)/c.W, (py-c.Y)/c.H
+					poly = append(poly, [2]float64{xy[0].(float64), xy[1].(float64)})
 				}
+			}
+			if len(poly) >= 3 && !polygonMeetsUnitSquare(poly) {
+				continue
 			}
 		}
 		out = append(out, reg)
 	}
 	return out
+}
+
+// polygonMeetsUnitSquare tells whether a polygon overlaps the open square (0,1)x(0,1): a vertex
+// inside it, a corner of it inside the polygon, or two edges that cross.
+func polygonMeetsUnitSquare(poly [][2]float64) bool {
+	const eps = 1e-9
+	for _, p := range poly {
+		if p[0] > eps && p[0] < 1-eps && p[1] > eps && p[1] < 1-eps {
+			return true
+		}
+	}
+	sq := [][2]float64{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	for _, q := range sq {
+		if pointInPolygon(q, poly) {
+			return true
+		}
+	}
+	for i := range poly {
+		a, b := poly[i], poly[(i+1)%len(poly)]
+		for j := range sq {
+			if segmentsCross(a, b, sq[j], sq[(j+1)%4]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func pointInPolygon(q [2]float64, poly [][2]float64) bool {
+	in := false
+	for i, j := 0, len(poly)-1; i < len(poly); j, i = i, i+1 {
+		a, b := poly[i], poly[j]
+		if (a[1] > q[1]) != (b[1] > q[1]) && q[0] < (b[0]-a[0])*(q[1]-a[1])/(b[1]-a[1])+a[0] {
+			in = !in
+		}
+	}
+	return in
+}
+
+// segmentsCross is true when the two segments cross at a point inside both (touching is not crossing).
+func segmentsCross(a, b, c, d [2]float64) bool {
+	side := func(p, q, r [2]float64) float64 { return (q[0]-p[0])*(r[1]-p[1]) - (q[1]-p[1])*(r[0]-p[0]) }
+	const eps = 1e-12
+	d1, d2 := side(c, d, a), side(c, d, b)
+	d3, d4 := side(a, b, c), side(a, b, d)
+	return (d1 > eps && d2 < -eps || d1 < -eps && d2 > eps) && (d3 > eps && d4 < -eps || d3 < -eps && d4 > eps)
 }
