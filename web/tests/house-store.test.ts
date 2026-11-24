@@ -42,6 +42,18 @@ describe('house drafts', () => {
 		expect(rows).toHaveLength(1);
 	});
 
+	it('saveDraft returns the row id; with it the next save is one update of the same row', async () => {
+		const p = (await createProject(a.pb, a.uid, 'Με id')).id;
+		const id = await saveDraft(a.pb, a.uid, p, withWall(1));
+		expect(await saveDraft(a.pb, a.uid, p, withWall(2), id)).toBe(id);
+		expect((await loadDraft(a.pb, p))!.model).toEqual(withWall(2));
+		// A known id whose row is gone: create the draft again.
+		await a.pb.collection('house_models').delete(id);
+		const again = await saveDraft(a.pb, a.uid, p, withWall(3), id);
+		expect(again).not.toBe(id);
+		expect((await loadDraft(a.pb, p))!.model).toEqual(withWall(3));
+	});
+
 	it('two drafts saved at once still leave one row', async () => {
 		const p = (await createProject(a.pb, a.uid, 'Παράλληλο')).id;
 		await Promise.all([saveDraft(a.pb, a.uid, p, withWall(1)), saveDraft(a.pb, a.uid, p, withWall(2))]);
@@ -82,6 +94,22 @@ describe('house rules', () => {
 		expect(await loadDraft(b.pb, project)).toBeNull();
 		await expect(saveVersion(b.pb, b.uid, project, 'ξένο', withWall(1))).rejects.toThrow();
 		await expect(saveDraft(b.pb, b.uid, project, withWall(1))).rejects.toThrow();
+	});
+
+	it('another user cannot get, update or delete my rows by id', async () => {
+		const v = await saveVersion(a.pb, a.uid, project, 'μυστικό', withWall(2));
+		const col = b.pb.collection('house_models');
+		await expect(col.getOne(v.id)).rejects.toMatchObject({ status: 404 });
+		await expect(col.update(v.id, { name: 'κλεμμένο' })).rejects.toMatchObject({ status: 404 });
+		await expect(col.delete(v.id)).rejects.toMatchObject({ status: 404 });
+		expect(await loadVersion(a.pb, v.id)).toEqual(withWall(2));
+	});
+
+	it('a model cannot move to a project of another user', async () => {
+		const foreign = (await createProject(b.pb, b.uid, 'Ξένο')).id;
+		const v = await saveVersion(a.pb, a.uid, project, 'δικό', withWall(1));
+		await expect(a.pb.collection('house_models').update(v.id, { project_id: foreign })).rejects.toThrow();
+		expect((await a.pb.collection('house_models').getOne(v.id)).project_id).toBe(project);
 	});
 
 	it('a model needs a project I own and cannot move to another user', async () => {

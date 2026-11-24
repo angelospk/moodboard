@@ -28,20 +28,33 @@ export async function loadDraft(pb: PocketBase, projectId: string): Promise<{ id
 	return row ? { id: row.id, model: parseModel(row.model), updated_at: row.updated_at } : null;
 }
 
-/** Create or overwrite the project's one draft. */
-export async function saveDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel): Promise<void> {
+/**
+ * Create or overwrite the project's one draft and return its id. With `knownId` (from an earlier
+ * load or save) it is a single update. Drafts are last-writer-wins: the editor sends its saves one at
+ * a time, and two devices editing at once is out of scope (no realtime merge yet).
+ */
+export async function saveDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null = null): Promise<string> {
+	if (knownId) {
+		try {
+			await pb.collection(COLLECTION).update(knownId, { model });
+			return knownId;
+		} catch (e) {
+			if (!isNotFound(e)) throw e; // the row is gone: create it again below
+		}
+	}
 	const existing = await findDraft(pb, projectId);
 	if (existing) {
 		await pb.collection(COLLECTION).update(existing.id, { model });
-		return;
+		return existing.id;
 	}
 	try {
-		await pb.collection(COLLECTION).create({ user_id: userId, project_id: projectId, kind: 'draft', name: '', model });
+		return (await pb.collection(COLLECTION).create({ user_id: userId, project_id: projectId, kind: 'draft', name: '', model })).id;
 	} catch (e) {
 		// A concurrent save created the draft first: the unique index rejects ours with 400. Update that row.
 		const raced = await findDraft(pb, projectId);
 		if (!raced) throw e;
 		await pb.collection(COLLECTION).update(raced.id, { model });
+		return raced.id;
 	}
 }
 

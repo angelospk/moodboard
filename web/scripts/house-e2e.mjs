@@ -1,7 +1,7 @@
 // Browser check of the 3D house editor with real CDP input: mouse, touch (one and two fingers) and pen.
 // Not part of CI. Needs a running backend + dev server, a user angelos-test@example.com / password123,
 // and puppeteer-core outside the repo:  mkdir /tmp/e2e && cd /tmp/e2e && bun add puppeteer-core
-// Run:  NODE_PATH=/tmp/e2e/node_modules node web/scripts/house-e2e.mjs <appUrl> <pbUrl> docs/screenshots
+// Run (ESM resolves imports next to the script):  cp web/scripts/house-e2e.mjs /tmp/e2e/ && node /tmp/e2e/house-e2e.mjs <appUrl> <pbUrl> <screenshotDir>
 import puppeteer from 'puppeteer-core';
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -77,6 +77,8 @@ await clickText(desk, 'Κάτοψη');
 await sleep(300);
 
 // Walls: a closed 8 × 6 m loop, mouse clicks; the last click on the first corner closes it.
+await desk.evaluate(() => (window.__canvas = document.querySelector('.vp canvas')));
+const topY = (await desk.evaluate(() => window.__house.vp.camera.position.y));
 await clickText(desk, 'Τοίχος');
 for (const [x, y] of [[0, 0], [8, 0], [8, 6], [0, 6], [0, 0]]) {
 	const p = await screen(desk, x, y);
@@ -88,6 +90,8 @@ let m = await model(desk);
 ok(m.elements.length === 1 && m.elements[0].type === 'wall', 'one wall drawn with the mouse');
 ok(JSON.stringify(m.elements[0].points) === '[[0,0],[8,0],[8,6],[0,6],[0,0]]', 'wall snapped to the grid and closed: ' + JSON.stringify(m.elements[0].points));
 const wallId = m.elements[0].id;
+ok(await desk.evaluate(() => window.__canvas === document.querySelector('.vp canvas') && window.__canvas.isConnected), 'edits keep the same renderer (canvas not rebuilt)');
+ok(Math.abs((await desk.evaluate(() => window.__house.vp.camera.position.y)) - topY) < 1e-6, 'edits keep the plan camera');
 
 // Window on the south wall, door on the east wall (click on the wall top in plan view).
 await clickText(desk, 'Παράθυρο');
@@ -121,7 +125,10 @@ await sleep(150);
 m = await model(desk);
 ok(m.elements.find((e) => e.id === wallId).material === 'brick', 'wall painted brick');
 
-// Pool by dragging a rectangle.
+// Pool by dragging a rectangle (frame the house first: the plan camera stays where it was).
+await desk.keyboard.press('Escape'); // close the floor's inspector
+await desk.click('button[aria-label="Κεντράρισμα"]');
+await sleep(200);
 await clickText(desk, 'Πισίνα');
 const a = await screen(desk, 10, 0);
 const b = await screen(desk, 13, 6);

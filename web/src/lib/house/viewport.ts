@@ -45,6 +45,7 @@ import {
 	fitOpening,
 	nearestOnWall,
 	newElementId,
+	polygonArea,
 	round6,
 	snapAngle,
 	snapPoint,
@@ -214,7 +215,18 @@ export class HouseViewport {
 		this.controls.dispose();
 		disposeHouse(this.#house);
 		this.#clearGhost();
+		this.#selectBox?.dispose();
+		this.#ghostMat.dispose();
+		// Grid, ground and lights: everything else the scene owns.
+		this.#scene.traverse((o) => {
+			const m = o as Partial<Mesh>;
+			m.geometry?.dispose();
+			const mat = m.material as { dispose?: () => void } | { dispose?: () => void }[] | undefined;
+			for (const x of Array.isArray(mat) ? mat : mat ? [mat] : []) x.dispose?.();
+			(o as { shadow?: { dispose?: () => void } }).shadow?.dispose?.();
+		});
 		this.renderer.dispose();
+		this.renderer.forceContextLoss();
 		this.renderer.domElement.remove();
 		this.#label.remove();
 	}
@@ -251,7 +263,7 @@ export class HouseViewport {
 			const d = DEFAULTS.wall;
 			const w: Wall = { id: newElementId(), type: 'wall', name: '', material: d.material, points: this.#points, height: d.height, thickness: d.thickness, base: d.base };
 			this.#commitAdd(w);
-		} else if (this.tool === 'slab' && this.#points.length >= 3) {
+		} else if (this.tool === 'slab' && this.#points.length >= 3 && polygonArea(this.#points) >= 0.01) {
 			const d = DEFAULTS.slab;
 			this.#commitAdd({ id: newElementId(), type: 'slab', name: '', material: d.material, outline: this.#points, elevation: d.elevation, thickness: d.thickness });
 		}
@@ -428,19 +440,20 @@ export class HouseViewport {
 			const hit = this.#pickElement(e);
 			if (hit) this.#paint(hit.userData.id as string);
 		} else if (this.tool === 'wall' || this.tool === 'slab') {
-			if (double) return this.finishDraft();
 			const raw = this.#groundAt(e);
 			if (!raw) return;
 			const p = this.#snapped(raw);
 			const first = this.#points[0];
-			const min = this.tool === 'wall' ? 2 : 3;
-			if (first && this.#points.length >= min && Math.hypot(p[0] - first[0], p[1] - first[1]) < 1e-6) {
+			const last = this.#points[this.#points.length - 1];
+			const same = (q: Vec2 | undefined) => !!q && Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.05;
+			// A double tap is a second quick tap on the corner just placed: finish there.
+			if (double && same(last)) return this.finishDraft();
+			if (same(first) && this.#points.length >= 3) {
 				// Back at the start: close the shape. A wall repeats its first point (a closed loop).
 				if (this.tool === 'wall') this.#points.push([first[0], first[1]]);
 				return this.finishDraft();
 			}
-			const last = this.#points[this.#points.length - 1];
-			if (last && Math.hypot(p[0] - last[0], p[1] - last[1]) < 0.05) return; // same point twice
+			if (same(last) || same(first)) return; // same point twice, or back at the start too early
 			this.#points.push(p);
 			this.#cursor = p;
 			this.#preview(e);

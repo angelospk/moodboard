@@ -169,13 +169,17 @@ export function nearestOnWall(wall: Wall, p: Vec2): { segment: number; offset: n
 	return best;
 }
 
-/** Keep an opening inside its segment and its wall height. Returns a new opening. */
+/**
+ * Keep an opening inside its segment and its wall height. Returns a new opening. The end gap is half
+ * the wall thickness plus OPENING_MARGIN: at a corner the next wall fills half its thickness.
+ */
 export function fitOpening(o: Opening, wall: Wall): Opening {
 	const seg = segments(wall)[o.segment];
 	const len = seg?.length ?? 0;
-	const width = Math.max(0.1, Math.min(o.width, len - 2 * OPENING_MARGIN));
+	const gap = wall.thickness / 2 + OPENING_MARGIN;
+	const width = Math.max(0.1, Math.min(o.width, len - 2 * gap));
 	const half = width / 2;
-	const offset = Math.max(half + OPENING_MARGIN, Math.min(len - half - OPENING_MARGIN, o.offset));
+	const offset = Math.max(half + gap, Math.min(len - half - gap, o.offset));
 	const sill = o.type === 'door' ? 0 : Math.max(0, Math.min(o.sill, wall.height - 0.2));
 	const height = Math.max(0.1, Math.min(o.height, wall.height - sill - OPENING_MARGIN));
 	return { ...o, width: round6(width), offset: round6(offset), sill: round6(sill), height: round6(height) };
@@ -184,20 +188,24 @@ export function fitOpening(o: Opening, wall: Wall): Opening {
 /**
  * The face of one wall segment, seen from its front, as a 2D polygon in segment space (u along the
  * segment from 0 to length, v up from the wall bottom). Doors cut notches into the outline (they reach
- * the bottom edge, which a hole may not); windows are holes. Openings that overlap an earlier one on
- * the same segment are skipped.
+ * the bottom edge, which a hole may not; so does a window with no sill); windows are holes. Openings
+ * that leave the face or overlap an earlier one are skipped; `openings` lists the ones that were cut,
+ * with their `id`, so the scene draws a glass or door panel only where the wall has a hole.
  */
-export function wallFace(length: number, height: number, openings: Pick<Opening, 'type' | 'offset' | 'width' | 'height' | 'sill'>[]) {
-	const placed: { u0: number; u1: number; v0: number; v1: number; door: boolean }[] = [];
+export function wallFace(length: number, height: number, openings: (Pick<Opening, 'type' | 'offset' | 'width' | 'height' | 'sill'> & { id?: string })[]) {
+	const placed: { id?: string; u0: number; u1: number; v0: number; v1: number; door: boolean }[] = [];
 	for (const o of [...openings].sort((x, y) => x.offset - y.offset)) {
 		const u0 = o.offset - o.width / 2;
 		const u1 = o.offset + o.width / 2;
-		const door = o.type === 'door';
-		const v0 = door ? 0 : o.sill;
+		const v0 = o.type === 'door' ? 0 : o.sill;
+		const door = v0 < 0.001; // reaches the bottom edge: a notch, not a hole
 		const v1 = Math.min(height - OPENING_MARGIN, v0 + o.height);
 		if (u0 < OPENING_MARGIN / 2 || u1 > length - OPENING_MARGIN / 2 || v1 <= v0) continue;
-		if (placed.some((p) => u0 < p.u1 + 0.01 && u1 > p.u0 - 0.01)) continue;
-		placed.push({ u0, u1, v0, v1, door });
+		// Two holes may share a column (a window over a door) but must not touch; a notch takes its whole column.
+		const clash = (p: (typeof placed)[number]) =>
+			u0 < p.u1 + 0.01 && u1 > p.u0 - 0.01 && (door || p.door || (v0 < p.v1 + 0.01 && v1 > p.v0 - 0.01));
+		if (placed.some(clash)) continue;
+		placed.push({ id: o.id, u0, u1, v0, v1, door });
 	}
 	const outline: Vec2[] = [[0, 0]];
 	for (const p of placed.filter((p) => p.door)) outline.push([p.u0, 0], [p.u0, p.v1], [p.u1, p.v1], [p.u1, 0]);
@@ -217,6 +225,17 @@ export function wallFace(length: number, height: number, openings: Pick<Opening,
 
 export function openingsOf(model: HouseModel, wallId: string): Opening[] {
 	return model.elements.filter((e): e is Opening => (e.type === 'window' || e.type === 'door') && e.host === wallId);
+}
+
+/** Area of a simple polygon (shoelace), always ≥ 0. */
+export function polygonArea(points: Vec2[]): number {
+	let a = 0;
+	for (let i = 0; i < points.length; i++) {
+		const [x0, y0] = points[i];
+		const [x1, y1] = points[(i + 1) % points.length];
+		a += x0 * y1 - x1 * y0;
+	}
+	return Math.abs(a) / 2;
 }
 
 /** Remove an element; removing a wall also removes its windows and doors. */
@@ -257,7 +276,8 @@ export function parseModel(raw: unknown): HouseModel {
 		const t = e.type;
 		if (t === 'wall') {
 			const points = vecs(e.points);
-			if (points.length < 2) continue;
+			// A dropped point would shift the segment indexes that windows and doors refer to.
+			if (points.length < 2 || points.length !== (e.points as unknown[]).length) continue;
 			const d = DEFAULTS.wall;
 			m.elements.push({ id, type: t, name, material: str(e.material, d.material), points,
 				height: num(e.height, 0.1, 100, d.height), thickness: num(e.thickness, 0.02, 5, d.thickness), base: num(e.base, -100, 1000, d.base) });
@@ -265,10 +285,10 @@ export function parseModel(raw: unknown): HouseModel {
 			const d = DEFAULTS[t];
 			m.elements.push({ id, type: t, name, material: str(e.material, d.material), host: str(e.host, '', 40),
 				segment: Math.trunc(num(e.segment, 0, 10000, 0)), offset: num(e.offset, 0, 10000, 0),
-				width: num(e.width, 0.1, 50, d.width), height: num(e.height, 0.1, 50, d.height), sill: num(e.sill, 0, 50, d.sill) });
+				width: num(e.width, 0.1, 50, d.width), height: num(e.height, 0.1, 50, d.height), sill: t === 'door' ? 0 : num(e.sill, 0, 50, d.sill) });
 		} else if (t === 'slab') {
 			const outline = vecs(e.outline);
-			if (outline.length < 3) continue;
+			if (outline.length < 3 || polygonArea(outline) < 0.01) continue;
 			const d = DEFAULTS.slab;
 			m.elements.push({ id, type: t, name, material: str(e.material, d.material), outline,
 				elevation: num(e.elevation, -100, 1000, d.elevation), thickness: num(e.thickness, 0.02, 5, d.thickness) });
@@ -279,7 +299,7 @@ export function parseModel(raw: unknown): HouseModel {
 			if (t === 'pool') {
 				const d = DEFAULTS.pool;
 				m.elements.push({ ...common, type: t, material: str(e.material, d.material),
-					width: num(e.width, 0.5, 100, d.width), length: num(e.length, 0.5, 100, d.length), depth: num(e.depth, 0.1, 10, d.depth) });
+					width: num(e.width, 0.25, 100, d.width), length: num(e.length, 0.25, 100, d.length), depth: num(e.depth, 0.1, 10, d.depth) });
 			} else {
 				const d = DEFAULTS.box;
 				m.elements.push({ ...common, type: t, material: str(e.material, d.material),

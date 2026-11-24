@@ -180,6 +180,7 @@
 			"properties": {
 				"id": { "$ref": "#/$defs/commonProps/id" },
 				"type": { "const": "door", "description": "Element type." },
+				"geometry": { "properties": { "sill": { "const": 0, "description": "A door starts at the wall base." } } },
 				"ifcClass": { "const": "IfcDoor", "description": "IFC class to use in the target tool." },
 				"name": { "$ref": "#/$defs/commonProps/name" },
 				"material": { "$ref": "#/$defs/material" }

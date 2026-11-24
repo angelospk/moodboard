@@ -112,7 +112,8 @@ function closed(points: Vec2[]): boolean {
 	return points.length > 3 && Math.hypot(f[0] - l[0], f[1] - l[1]) < 1e-6;
 }
 
-function buildWall(w: Wall, openings: Opening[], mats: Materials, opts: BuildOptions): Group {
+/** Builds the wall and adds to `cut` the ids of the openings its faces really have a hole for. */
+function buildWall(w: Wall, openings: Opening[], mats: Materials, opts: BuildOptions, cut: Set<string>): Group {
 	const g = holder(w);
 	const segs = segments(w);
 	const loop = closed(w.points);
@@ -123,6 +124,7 @@ function buildWall(w: Wall, openings: Opening[], mats: Materials, opts: BuildOpt
 		const ext1 = s.index < segs.length - 1 || loop ? w.thickness / 2 : 0;
 		const own = openings.filter((o) => o.segment === s.index).map((o) => ({ ...o, offset: o.offset + ext0 }));
 		const face = wallFace(s.length + ext0 + ext1, w.height, own);
+		for (const o of face.openings) if (o.id) cut.add(o.id);
 		const shape = new Shape(face.outline.map(([u, v]) => new Vector2(u, v)));
 		for (const h of face.holes) shape.holes.push(new Path(h.map(([u, v]) => new Vector2(u, v))));
 		const geo = new ExtrudeGeometry(shape, { depth: w.thickness, bevelEnabled: false });
@@ -139,7 +141,7 @@ function buildOpening(o: Opening, wall: Wall, mats: Materials, opts: BuildOption
 	const g = holder(o);
 	const s = segments(wall)[o.segment];
 	if (!s) return g;
-	const sill = o.type === 'door' ? 0 : o.sill;
+	const sill = o.type === 'door' ? 0 : o.sill; // as in wallFace
 	const geo = new BoxGeometry(o.width, o.height, PANEL);
 	geo.translate(o.offset, sill + o.height / 2, 0);
 	geo.applyMatrix4(segmentFrame(s.a, s.dir, wall.base));
@@ -186,12 +188,16 @@ export function buildHouse(model: HouseModel, opts: BuildOptions = {}): Group {
 	root.name = 'house';
 	const mats = new Materials();
 	const walls = new Map(model.elements.filter((e): e is Wall => e.type === 'wall').map((w) => [w.id, w]));
+	// Walls first: an opening gets a panel only where its wall has a hole for it.
+	const cut = new Set<string>();
+	const built = new Map<string, Group>();
+	for (const w of walls.values()) built.set(w.id, buildWall(w, openingsOf(model, w.id), mats, opts, cut));
 	for (const e of model.elements) {
 		let g: Group | null = null;
-		if (e.type === 'wall') g = buildWall(e, openingsOf(model, e.id), mats, opts);
+		if (e.type === 'wall') g = built.get(e.id) ?? null;
 		else if (e.type === 'window' || e.type === 'door') {
 			const w = walls.get(e.host);
-			if (w) g = buildOpening(e, w, mats, opts);
+			if (w && cut.has(e.id)) g = buildOpening(e, w, mats, opts);
 		} else if (e.type === 'slab') g = buildSlab(e, mats, opts);
 		else if (e.type === 'pool') g = buildPool(e, mats, opts);
 		else if (e.type === 'box') g = buildBox(e, mats, opts);

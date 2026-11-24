@@ -79,6 +79,15 @@ describe('semantic JSON', () => {
 
 	it('an invalid document fails the schema', () => {
 		expect(validate({ ...doc, elements: [{ id: 'x', type: 'wall' }] })).toBe(false);
+		const door = doc.elements.find((e) => e.type === 'door')!;
+		const raised = { ...door, geometry: { ...(door as { geometry: object }).geometry, sill: 0.9 } };
+		expect(validate({ ...doc, elements: [raised] })).toBe(false);
+	});
+
+	it('the schema the export points to is published with the app, same as docs/', () => {
+		expect(doc.$schema).toBe('https://moodboard.haroldpoi.dev/schemas/house-3d-schema.json');
+		const published = JSON.parse(readFileSync(new URL('../static/schemas/house-3d-schema.json', import.meta.url), 'utf8'));
+		expect(published).toEqual(schema);
 	});
 });
 
@@ -100,6 +109,18 @@ describe('glb', () => {
 		const m = meshes[0].material as MeshStandardMaterial;
 		expect(m.name).toBe('roof_tile');
 		expect('#' + m.color.getHexString()).toBe('#b4532a');
+	});
+
+	it('an opening the wall has no hole for gets no panel', async () => {
+		const clash: HouseModel = { ...emptyModel(), elements: [
+			house.elements[0],
+			{ id: 'a', type: 'window', name: '', material: 'glass', host: 'w1', segment: 0, offset: 3, width: 1.2, height: 1.4, sill: 0.9 },
+			{ id: 'b', type: 'window', name: '', material: 'glass', host: 'w1', segment: 0, offset: 3.4, width: 1.2, height: 1.4, sill: 0.9 }
+		] };
+		const gltf = await new GLTFLoader().parseAsync(await toGlb(clash), '');
+		const ids: string[] = [];
+		gltf.scene.traverse((o) => { if (o.userData?.id) ids.push(o.userData.id as string); });
+		expect(ids.sort()).toEqual(['a', 'w1']);
 	});
 
 	it('Y up: a 3 m wall reaches y = 3, and plan y maps to -z', async () => {
