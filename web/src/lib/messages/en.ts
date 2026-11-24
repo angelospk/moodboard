@@ -454,6 +454,8 @@ export const en: Record<keyof typeof el, string> = {
 	'summary.saveFailed': 'The description was not saved.',
 	'summary.saved': 'Saved',
 
+	'house.noRoom': 'No room there: it overlaps another opening.',
+	'house.recovered': 'Recovered changes that were not saved.',
 	'house.title': '3D house',
 	'house.open3d': '3D house',
 	'house.tools': 'Tools',

@@ -453,6 +453,8 @@ export const el = {
 	'summary.saveFailed': 'Η περιγραφή δεν αποθηκεύτηκε.',
 	'summary.saved': 'Αποθηκεύτηκε',
 
+	'house.noRoom': 'Δεν χωράει εκεί: πέφτει πάνω σε άλλο άνοιγμα.',
+	'house.recovered': 'Ανακτήθηκαν αλλαγές που δεν είχαν αποθηκευτεί.',
 	'house.title': '3D σπίτι',
 	'house.open3d': '3D σπίτι',
 	'house.tools': 'Εργαλεία',

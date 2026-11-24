@@ -184,6 +184,25 @@ await sleep(500);
 m = await model(desk);
 ok(!m.elements.some((e) => e.type === 'box') && m.elements.some((e) => e.type === 'pool'), 'opened version 1 (no volume, pool kept)');
 
+// Query-only navigation A → B with an edit still waiting for its save: B stays empty, A keeps the edit.
+await clickText(desk, 'Κάτοψη');
+await clickText(desk, 'Όγκος');
+p = await screen(desk, 4, 3);
+await desk.mouse.click(p.x, p.y);
+const projectB = await desk.evaluate(async () => {
+	const { pb } = await import('/src/lib/pb.ts');
+	const { createProject } = await import('/src/lib/inspirations.ts');
+	return (await createProject(pb, pb.authStore.record.id, 'Άλλο ' + Date.now().toString(36))).id;
+});
+const goVia = (id) => desk.evaluate((u) => { const a = document.createElement('a'); a.href = u; document.body.append(a); a.click(); a.remove(); }, `/house?project=${id}`);
+await goVia(projectB);
+await desk.waitForFunction((id) => location.search.includes(id) && window.__house && window.__house.model().elements.length === 0, { timeout: 15000 }, projectB);
+ok(true, 'switching project in-app shows the other project empty');
+await sleep(1500);
+await goVia(projectId);
+await desk.waitForFunction(() => window.__house && window.__house.model().elements.some((e) => e.type === 'box'), { timeout: 15000 });
+ok(true, 'back on the first project: the pending edit was saved there');
+
 // Exports.
 const cdp = await desk.createCDPSession();
 await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL });
@@ -203,7 +222,19 @@ await tab.goto(`${APP}/house?project=${projectId}`, { waitUntil: 'networkidle0' 
 await wait(tab);
 await sleep(400);
 m = await model(tab);
-ok(m.elements.some((e) => e.type === 'pool') && !m.elements.some((e) => e.type === 'box'), 'tablet sees the last saved state after load');
+ok(m.elements.some((e) => e.type === 'pool') && m.elements.some((e) => e.type === 'box'), 'tablet sees the last saved state after load (pool and the volume added before the switch)');
+
+// Reload right after an edit (before the autosave delay): the edit survives.
+tab.on('dialog', (d) => void d.accept());
+const before0 = (await model(tab)).elements.length;
+await clickText(tab, 'Κάτοψη');
+await clickText(tab, 'Όγκος');
+const qv = await screen(tab, -3, -3);
+await tab.touchscreen.tap(qv.x, qv.y);
+await tab.reload({ waitUntil: 'networkidle0' });
+await wait(tab);
+await sleep(300);
+ok((await model(tab)).elements.length === before0 + 1, 'an edit made just before a reload is kept');
 
 const tcdp = await tab.createCDPSession();
 const touch = (type, pts) => tcdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i + 1, radiusX: 4, radiusY: 4, force: 1 })) });

@@ -169,17 +169,29 @@ export function nearestOnWall(wall: Wall, p: Vec2): { segment: number; offset: n
 	return best;
 }
 
-/**
- * Keep an opening inside its segment and its wall height. Returns a new opening. The end gap is half
- * the wall thickness plus OPENING_MARGIN: at a corner the next wall fills half its thickness.
- */
+/** A wall whose last point is its first: a closed loop, every corner is a joint. */
+export function isClosed(points: Vec2[]): boolean {
+	const f = points[0];
+	const l = points[points.length - 1];
+	return points.length > 3 && Math.hypot(f[0] - l[0], f[1] - l[1]) < 1e-6;
+}
+
+/** Clear length at each end of a segment: at a joint the next wall fills half its thickness. */
+export function endGaps(wall: Pick<Wall, 'points' | 'thickness'>, segment: number): [number, number] {
+	const loop = isClosed(wall.points);
+	const last = wall.points.length - 2;
+	const joint = wall.thickness / 2 + OPENING_MARGIN;
+	return [segment > 0 || loop ? joint : OPENING_MARGIN, segment < last || loop ? joint : OPENING_MARGIN];
+}
+
+/** Keep an opening inside its segment (clear of joints) and its wall height. Returns a new opening. */
 export function fitOpening(o: Opening, wall: Wall): Opening {
 	const seg = segments(wall)[o.segment];
 	const len = seg?.length ?? 0;
-	const gap = wall.thickness / 2 + OPENING_MARGIN;
-	const width = Math.max(0.1, Math.min(o.width, len - 2 * gap));
+	const [g0, g1] = endGaps(wall, o.segment);
+	const width = Math.max(0.1, Math.min(o.width, len - g0 - g1));
 	const half = width / 2;
-	const offset = Math.max(half + gap, Math.min(len - half - gap, o.offset));
+	const offset = Math.max(half + g0, Math.min(len - half - g1, o.offset));
 	const sill = o.type === 'door' ? 0 : Math.max(0, Math.min(o.sill, wall.height - 0.2));
 	const height = Math.max(0.1, Math.min(o.height, wall.height - sill - OPENING_MARGIN));
 	return { ...o, width: round6(width), offset: round6(offset), sill: round6(sill), height: round6(height) };
@@ -225,6 +237,49 @@ export function wallFace(length: number, height: number, openings: (Pick<Opening
 
 export function openingsOf(model: HouseModel, wallId: string): Opening[] {
 	return model.elements.filter((e): e is Opening => (e.type === 'window' || e.type === 'door') && e.host === wallId);
+}
+
+/** True when no two non-adjacent edges of the closed polygon touch or cross, and it has an area. */
+export function isSimplePolygon(points: Vec2[]): boolean {
+	const n = points.length;
+	if (n < 3 || polygonArea(points) < 1e-9) return false;
+	const cross = (a: Vec2, b: Vec2, c: Vec2) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+	const onSeg = (a: Vec2, b: Vec2, c: Vec2) =>
+		Math.min(a[0], b[0]) - 1e-9 <= c[0] && c[0] <= Math.max(a[0], b[0]) + 1e-9 && Math.min(a[1], b[1]) - 1e-9 <= c[1] && c[1] <= Math.max(a[1], b[1]) + 1e-9;
+	const meet = (a: Vec2, b: Vec2, c: Vec2, d: Vec2) => {
+		const d1 = cross(c, d, a), d2 = cross(c, d, b), d3 = cross(a, b, c), d4 = cross(a, b, d);
+		if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+		return (Math.abs(d1) < 1e-12 && onSeg(c, d, a)) || (Math.abs(d2) < 1e-12 && onSeg(c, d, b)) || (Math.abs(d3) < 1e-12 && onSeg(a, b, c)) || (Math.abs(d4) < 1e-12 && onSeg(a, b, d));
+	};
+	for (let i = 0; i < n; i++) {
+		for (let j = i + 1; j < n; j++) {
+			if (j === i + 1 || (i === 0 && j === n - 1)) continue; // neighbours share a corner
+			if (meet(points[i], points[(i + 1) % n], points[j], points[(j + 1) % n])) return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * The openings a wall segment really cuts (by id), given all openings of the wall. Uses the plain
+ * segment length; the scene's corner extension only adds room, so whatever passes here is cut there.
+ */
+export function cutOpenings(wall: Wall, openings: Opening[], segment: number): Set<string> {
+	const s = segments(wall)[segment];
+	if (!s) return new Set();
+	const face = wallFace(s.length, wall.height, openings.filter((o) => o.segment === segment));
+	return new Set(face.openings.map((o) => o.id!).filter(Boolean));
+}
+
+/** Ids of all openings the model's walls really cut. Scene, export and editor use the same set. */
+export function cutIds(model: HouseModel): Set<string> {
+	const out = new Set<string>();
+	for (const w of model.elements) {
+		if (w.type !== 'wall') continue;
+		const own = openingsOf(model, w.id);
+		for (const seg of new Set(own.map((o) => o.segment))) for (const id of cutOpenings(w, own, seg)) out.add(id);
+	}
+	return out;
 }
 
 /** Area of a simple polygon (shoelace), always ≥ 0. */
@@ -288,7 +343,7 @@ export function parseModel(raw: unknown): HouseModel {
 				width: num(e.width, 0.1, 50, d.width), height: num(e.height, 0.1, 50, d.height), sill: t === 'door' ? 0 : num(e.sill, 0, 50, d.sill) });
 		} else if (t === 'slab') {
 			const outline = vecs(e.outline);
-			if (outline.length < 3 || polygonArea(outline) < 0.01) continue;
+			if (!isSimplePolygon(outline)) continue;
 			const d = DEFAULTS.slab;
 			m.elements.push({ id, type: t, name, material: str(e.material, d.material), outline,
 				elevation: num(e.elevation, -100, 1000, d.elevation), thickness: num(e.thickness, 0.02, 5, d.thickness) });
@@ -308,12 +363,14 @@ export function parseModel(raw: unknown): HouseModel {
 			}
 		}
 	}
-	// Openings need a wall that exists and a segment it has.
+	// Openings need a wall that exists and a segment it has, and are fitted to it (clear of joints,
+	// inside its height). One that its wall cannot cut (it overlaps an earlier one) is kept: the
+	// editor shows it as a problem to fix, and export drops it with the rest of the scene.
 	const walls = new Map(m.elements.filter((e): e is Wall => e.type === 'wall').map((w) => [w.id, w]));
-	m.elements = m.elements.filter((e) => {
-		if (e.type !== 'window' && e.type !== 'door') return true;
+	m.elements = m.elements.flatMap((e): Element[] => {
+		if (e.type !== 'window' && e.type !== 'door') return [e];
 		const w = walls.get(e.host);
-		return !!w && e.segment < w.points.length - 1;
+		return w && e.segment < w.points.length - 1 ? [fitOpening(e, w)] : [];
 	});
 	return m;
 }

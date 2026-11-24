@@ -45,7 +45,7 @@ import {
 	fitOpening,
 	nearestOnWall,
 	newElementId,
-	polygonArea,
+	isSimplePolygon,
 	round6,
 	snapAngle,
 	snapPoint,
@@ -131,7 +131,8 @@ export class HouseViewport {
 	#rectStart: Vec2 | null = null;
 	#press: { id: number; x: number; y: number; type: string; cancelled: boolean; plan: Vec2 | null } | null = null;
 	#touches = new Set<number>();
-	#lastTap = { t: 0, x: 0, y: 0 };
+	/** When the last wall/slab corner was placed: a quick second tap on it finishes the draft. */
+	#placedAt = 0;
 	#shift = false;
 
 	constructor(
@@ -213,6 +214,7 @@ export class HouseViewport {
 		window.removeEventListener('keydown', this.#key);
 		window.removeEventListener('keyup', this.#key);
 		this.controls.dispose();
+		this.#scene.remove(this.#house, this.#ghost, this.#helpers);
 		disposeHouse(this.#house);
 		this.#clearGhost();
 		this.#selectBox?.dispose();
@@ -257,13 +259,15 @@ export class HouseViewport {
 		this.render();
 	}
 
-	/** Finish the wall or slab being drawn (the «Τέλος» button, Enter, double tap). */
+	/** Finish the wall or slab being drawn (the «Τέλος» button, Enter, double tap). Too few corners: keep drawing. */
 	finishDraft() {
-		if (this.tool === 'wall' && this.#points.length >= 2) {
+		const ok = this.tool === 'wall' ? this.#points.length >= 2 : this.tool === 'slab' ? isSimplePolygon(this.#points) : false;
+		if (!ok) return;
+		if (this.tool === 'wall') {
 			const d = DEFAULTS.wall;
 			const w: Wall = { id: newElementId(), type: 'wall', name: '', material: d.material, points: this.#points, height: d.height, thickness: d.thickness, base: d.base };
 			this.#commitAdd(w);
-		} else if (this.tool === 'slab' && this.#points.length >= 3 && polygonArea(this.#points) >= 0.01) {
+		} else {
 			const d = DEFAULTS.slab;
 			this.#commitAdd({ id: newElementId(), type: 'slab', name: '', material: d.material, outline: this.#points, elevation: d.elevation, thickness: d.thickness });
 		}
@@ -430,8 +434,6 @@ export class HouseViewport {
 		if (!tap) return;
 
 		const now = performance.now();
-		const double = now - this.#lastTap.t < DOUBLE_TAP_MS && Math.hypot(e.clientX - this.#lastTap.x, e.clientY - this.#lastTap.y) < 24;
-		this.#lastTap = { t: double ? 0 : now, x: e.clientX, y: e.clientY };
 
 		if (this.tool === 'select') {
 			const hit = this.#pickElement(e);
@@ -447,7 +449,7 @@ export class HouseViewport {
 			const last = this.#points[this.#points.length - 1];
 			const same = (q: Vec2 | undefined) => !!q && Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.05;
 			// A double tap is a second quick tap on the corner just placed: finish there.
-			if (double && same(last)) return this.finishDraft();
+			if (same(last) && now - this.#placedAt < DOUBLE_TAP_MS) return this.finishDraft();
 			if (same(first) && this.#points.length >= 3) {
 				// Back at the start: close the shape. A wall repeats its first point (a closed loop).
 				if (this.tool === 'wall') this.#points.push([first[0], first[1]]);
@@ -455,6 +457,7 @@ export class HouseViewport {
 			}
 			if (same(last) || same(first)) return; // same point twice, or back at the start too early
 			this.#points.push(p);
+			this.#placedAt = now;
 			this.#cursor = p;
 			this.#preview(e);
 		} else if (this.tool === 'window' || this.tool === 'door') {

@@ -54,6 +54,13 @@ describe('house drafts', () => {
 		expect((await loadDraft(a.pb, p))!.model).toEqual(withWall(3));
 	});
 
+	it('a load waits for a draft save still running in this tab', async () => {
+		const p = (await createProject(a.pb, a.uid, 'Πήγαινε-έλα')).id;
+		await saveDraft(a.pb, a.uid, p, withWall(1));
+		void saveDraft(a.pb, a.uid, p, withWall(9));
+		expect((await loadDraft(a.pb, p))!.model).toEqual(withWall(9));
+	});
+
 	it('two drafts saved at once still leave one row', async () => {
 		const p = (await createProject(a.pb, a.uid, 'Παράλληλο')).id;
 		await Promise.all([saveDraft(a.pb, a.uid, p, withWall(1)), saveDraft(a.pb, a.uid, p, withWall(2))]);

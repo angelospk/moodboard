@@ -8,7 +8,7 @@
 	import { HouseViewport, DRAW_TOOLS, type DraftInfo, type Tool } from '#lib/house/viewport.js';
 	import { MATERIALS, material as findMaterial } from '#lib/house/materials.js';
 	import {
-		fitOpening,
+		cutIds,
 		parseModel,
 		removeElement,
 		segments,
@@ -36,13 +36,43 @@
 
 	// ------------------------------------------------------------------ Model + history
 
-	let model: HouseModel = $state.raw(untrack(() => data.model));
+	const RECOVERY = untrack(() => `moodboard:house:${data.userId}:${projectId}`);
+
+	/** The server's draft, or this browser's recovery copy when it is newer (edits that never reached the server). */
+	function startModel(): { model: HouseModel; recovered: boolean } {
+		const serverAt = data.draftAt ? Date.parse(data.draftAt.replace(' ', 'T')) : 0;
+		try {
+			const r = JSON.parse(localStorage.getItem(RECOVERY) ?? 'null') as { at?: number; model?: unknown } | null;
+			if (r && typeof r.at === 'number' && r.at > serverAt) return { model: parseModel(r.model), recovered: true };
+			if (r) localStorage.removeItem(RECOVERY); // older than the server: already saved
+		} catch {
+			/* no storage: start from the server */
+		}
+		return { model: data.model, recovered: false };
+	}
+	const start = untrack(startModel);
+	let model: HouseModel = $state.raw(start.model);
 	let selected: string | null = $state(null);
 	let undoStack: HouseModel[] = $state.raw([]);
 	let redoStack: HouseModel[] = $state.raw([]);
 	let vp: HouseViewport | null = null;
 
-	function commit(next: HouseModel, select?: string | null) {
+	const uncut = (m: HouseModel) => {
+		const cut = cutIds(m);
+		return m.elements.filter((e) => (e.type === 'window' || e.type === 'door') && !cut.has(e.id)).length;
+	};
+
+	/**
+	 * The one gate for every change (tools, inspector, versions): parseModel applies the load rules
+	 * (bounds, simple outlines, openings fitted to their wall), and a change that leaves another
+	 * window or door without its hole (an overlap) is refused.
+	 */
+	function commit(raw: HouseModel, select?: string | null) {
+		const next = parseModel(raw);
+		if (uncut(next) > uncut(model)) {
+			say(t('house.noRoom'));
+			return;
+		}
 		undoStack = [...undoStack.slice(-HISTORY + 1), model];
 		redoStack = [];
 		apply(next);
@@ -93,8 +123,20 @@
 	/** The draft row, once known: later saves skip the lookup (one request, which a closing tab can still send). */
 	let draftId: string | null = untrack(() => data.draftId);
 
+	// Recovery copy in this browser until the server acknowledges the edit: a tab closed or reloaded
+	// before the save lands still has it next time (used when newer than the server's draft).
+	function keepRecovery(m: HouseModel | null) {
+		try {
+			if (m) localStorage.setItem(RECOVERY, JSON.stringify({ at: Date.now(), model: m }));
+			else localStorage.removeItem(RECOVERY);
+		} catch {
+			/* private mode or full storage: the server save still runs */
+		}
+	}
+
 	function scheduleSave() {
 		rev++;
+		keepRecovery(model);
 		saveState = 'pending';
 		clearTimeout(saveTimer);
 		saveTimer = setTimeout(() => void flush(), AUTOSAVE_MS);
@@ -107,12 +149,14 @@
 		const snapshot = model;
 		const at = (sentRev = rev);
 		saving = saving.then(async () => {
-			if (at < savedRev) return;
 			saveState = 'saving';
 			try {
 				draftId = await saveDraft(data.pb, data.userId, projectId, snapshot, draftId);
-				savedRev = Math.max(savedRev, at);
-				if (savedRev === rev) saveState = 'saved';
+				savedRev = at;
+				if (savedRev === rev) {
+					saveState = 'saved';
+					keepRecovery(null);
+				}
 				else if (sentRev === rev) saveState = 'saving';
 				else saveState = 'pending';
 			} catch {
@@ -199,6 +243,10 @@
 		v.setModel(model);
 		v.setTool(tool);
 		v.view('perspective');
+		if (start.recovered) {
+			scheduleSave();
+			say(t('house.recovered'));
+		}
 		// Dev-only hook for browser checks (web/scripts/house-e2e.mjs).
 		const w = window as unknown as { __house?: unknown };
 		if (import.meta.env.DEV) w.__house = { vp: v, model: () => model };
@@ -226,24 +274,12 @@
 	// ------------------------------------------------------------------ Inspector
 
 	let sel = $derived(model.elements.find((e) => e.id === selected) ?? null);
-	let selWall = $derived(sel && (sel.type === 'window' || sel.type === 'door') ? (model.elements.find((e) => e.id === (sel as Opening).host) as Wall | undefined) : undefined);
 
 	function update(patch: Partial<Element>) {
 		if (!sel) return;
 		const id = sel.id;
-		const elements = model.elements.map((e) => {
-			if (e.id !== id) return e;
-			let next = { ...e, ...patch } as Element;
-			if ((next.type === 'window' || next.type === 'door') && selWall) next = fitOpening(next, selWall);
-			return next;
-		});
-		// A wall that changes height keeps its openings inside it.
-		const changed = elements.find((e) => e.id === id);
-		const fixed = changed?.type === 'wall'
-			? elements.map((e) => ((e.type === 'window' || e.type === 'door') && e.host === id ? fitOpening(e, changed) : e))
-			: elements;
-		// parseModel applies the same bounds as loading (no negative sizes, door sill 0).
-		commit(parseModel({ ...model, elements: fixed }));
+		// commit() clamps the numbers and fits openings to their (changed) wall.
+		commit({ ...model, elements: model.elements.map((e) => (e.id === id ? ({ ...e, ...patch } as Element) : e)) });
 	}
 
 	function numField(key: string, value: number, min: number, max: number) {
@@ -262,7 +298,7 @@
 			case 'slab':
 				return [numField('elevation', sel.elevation, -100, 1000), numField('thickness', sel.thickness, 0.02, 5)];
 			case 'pool':
-				return [numField('width', sel.width, 0.5, 100), numField('length', sel.length, 0.5, 100), numField('depth', sel.depth, 0.1, 10), numField('rotation', sel.rotation, -360, 360)];
+				return [numField('width', sel.width, 0.25, 100), numField('length', sel.length, 0.25, 100), numField('depth', sel.depth, 0.1, 10), numField('rotation', sel.rotation, -360, 360)];
 			case 'box':
 				return [numField('width', sel.width, 0.05, 200), numField('length', sel.length, 0.05, 200), numField('height', sel.height, 0.05, 200), numField('base', sel.base, -100, 1000), numField('rotation', sel.rotation, -360, 360)];
 		}

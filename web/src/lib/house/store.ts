@@ -23,7 +23,12 @@ async function findDraft(pb: PocketBase, projectId: string) {
 	}
 }
 
+/** Draft saves still running in this tab, per project: a load waits for them, so leaving a project
+ *  and coming back (A → B → A) never shows a draft older than the last edit. */
+const inflight = new Map<string, Promise<unknown>>();
+
 export async function loadDraft(pb: PocketBase, projectId: string): Promise<{ id: string; model: HouseModel; updated_at: string } | null> {
+	await inflight.get(projectId)?.catch(() => {});
 	const row = await findDraft(pb, projectId);
 	return row ? { id: row.id, model: parseModel(row.model), updated_at: row.updated_at } : null;
 }
@@ -33,7 +38,16 @@ export async function loadDraft(pb: PocketBase, projectId: string): Promise<{ id
  * load or save) it is a single update. Drafts are last-writer-wins: the editor sends its saves one at
  * a time, and two devices editing at once is out of scope (no realtime merge yet).
  */
-export async function saveDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null = null): Promise<string> {
+export function saveDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null = null): Promise<string> {
+	const p = writeDraft(pb, userId, projectId, model, knownId);
+	inflight.set(projectId, p);
+	void p.finally(() => {
+		if (inflight.get(projectId) === p) inflight.delete(projectId);
+	}).catch(() => {});
+	return p;
+}
+
+async function writeDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null): Promise<string> {
 	if (knownId) {
 		try {
 			await pb.collection(COLLECTION).update(knownId, { model });

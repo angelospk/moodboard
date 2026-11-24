@@ -4,6 +4,9 @@ import {
 	emptyModel,
 	fitOpening,
 	nearestOnWall,
+	cutIds,
+	endGaps,
+	isSimplePolygon,
 	parseModel,
 	polygonArea,
 	removeElement,
@@ -55,10 +58,10 @@ describe('walls and openings', () => {
 		expect(nearestOnWall(wall(), [5.3, 3])).toMatchObject({ segment: 1, offset: 3 });
 	});
 	it('keeps an opening inside its segment, clear of the next wall at a corner, and inside the wall height', () => {
-		const w = wall(); // thickness 0.25: end gap 0.125 + 0.05
-		expect(fitOpening(win({ offset: 0 }), w).offset).toBeCloseTo(0.775);
+		const w = wall(); // segment 0: free start (gap 0.05), corner at its end (0.125 + 0.05)
+		expect(fitOpening(win({ offset: 0 }), w).offset).toBeCloseTo(0.65);
 		expect(fitOpening(win({ offset: 9 }), w).offset).toBeCloseTo(4.225);
-		expect(fitOpening(win({ width: 20 }), w).width).toBeCloseTo(4.65);
+		expect(fitOpening(win({ width: 20 }), w).width).toBeCloseTo(4.775);
 		const tall = fitOpening(win({ sill: 2, height: 5 }), w);
 		expect(tall.sill + tall.height).toBeLessThanOrEqual(3);
 		expect(fitOpening(win({ type: 'door', sill: 1 }), w).sill).toBe(0);
@@ -70,6 +73,27 @@ describe('walls and openings', () => {
 		]);
 		expect(face.holes).toEqual([[[3, 1], [4, 1], [4, 2], [3, 2]]]);
 		expect(face.outline).toEqual([[0, 0], [0.55, 0], [0.55, 2.1], [1.45, 2.1], [1.45, 0], [5, 0], [5, 3], [0, 3]]);
+	});
+	it('a straight wall with no joints keeps only the small end margin', () => {
+		const w = wall({ points: [[0, 0], [5, 0]] });
+		expect(fitOpening(win({ offset: 0 }), w).offset).toBeCloseTo(0.65);
+		const short = wall({ points: [[0, 0], [1.2, 0]] });
+		expect(fitOpening(win({ offset: 0.6, width: 1 }), short)).toMatchObject({ offset: 0.6, width: 1 });
+	});
+	it('in a closed loop both ends of every segment are joints', () => {
+		const loop = wall({ points: [[0, 0], [5, 0], [5, 4], [0, 4], [0, 0]] });
+		expect(endGaps(loop, 0)).toEqual([0.175, 0.175]);
+		expect(endGaps(wall(), 0)).toEqual([0.05, 0.175]);
+	});
+	it('isSimplePolygon rejects crossings and flat outlines', () => {
+		expect(isSimplePolygon([[0, 0], [4, 0], [4, 3], [0, 3]])).toBe(true);
+		expect(isSimplePolygon([[0, 0], [4, 4], [0, 4], [3, 0]])).toBe(false);
+		expect(isSimplePolygon([[0, 0], [1, 1], [2, 2]])).toBe(false);
+		expect(isSimplePolygon([[0, 0], [0.05, 0], [0.05, 0.05], [0, 0.05]])).toBe(true);
+	});
+	it('cutIds leaves out an opening that overlaps an earlier one', () => {
+		const m = { ...emptyModel(), elements: [wall(), win({ id: 'a', offset: 2 }), win({ id: 'b', offset: 2.5 }), win({ id: 'c', segment: 1, offset: 2 })] };
+		expect([...cutIds(m)].sort()).toEqual(['a', 'c']);
 	});
 	it('a window with no sill is a notch too (a hole may not touch the edge)', () => {
 		const face = wallFace(5, 3, [{ type: 'window', offset: 2, width: 1, height: 2, sill: 0 }]);
@@ -145,13 +169,20 @@ describe('parseModel', () => {
 		const m = parseModel({ elements: [wall({ points: [[0, 0], ['x', 1] as unknown as [number, number], [5, 0], [5, 4]] }), win({ segment: 1 })] });
 		expect(m.elements).toEqual([]);
 	});
-	it('a door sill is always 0; a flat slab is dropped; a pool may be 0.25 m wide', () => {
+	it('a door sill is always 0; flat or crossing slabs are dropped, small ones kept; a pool may be 0.25 m wide', () => {
 		const m = parseModel({ elements: [wall(), win({ type: 'door', sill: 0.9 }),
 			{ id: 's', type: 'slab', outline: [[0, 0], [1, 1], [2, 2]] },
+			{ id: 'x', type: 'slab', outline: [[0, 0], [4, 4], [0, 4], [3, 0]] },
+			{ id: 'k', type: 'slab', outline: [[0, 0], [0.05, 0], [0.05, 0.05], [0, 0.05]] },
 			{ id: 'p', type: 'pool', center: [0, 0], width: 0.25, length: 0.25 }] });
 		expect(m.elements.find((e) => e.type === 'door')).toMatchObject({ sill: 0 });
-		expect(m.elements.some((e) => e.type === 'slab')).toBe(false);
+		expect(m.elements.filter((e) => e.type === 'slab').map((e) => e.id)).toEqual(['k']);
 		expect(m.elements.find((e) => e.type === 'pool')).toMatchObject({ width: 0.25, length: 0.25 });
+	});
+	it('fits loaded openings to their wall (old offsets, too tall)', () => {
+		const m = parseModel({ elements: [wall(), win({ offset: 0, sill: 2, height: 3 })] });
+		expect(m.elements[1]).toMatchObject({ offset: 0.65, sill: 2 });
+		expect((m.elements[1] as Opening).height).toBeCloseTo(0.95);
 	});
 	it('drops an opening on a segment its wall does not have', () => {
 		const m = parseModel({ elements: [wall({ points: [[0, 0], [4, 0]] }), win({ segment: 1 })] });

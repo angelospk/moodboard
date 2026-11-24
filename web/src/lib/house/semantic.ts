@@ -2,7 +2,7 @@
 // person) can rebuild it in Revit, ArchiCAD or ZWCAD. Described by docs/house-3d-schema.json.
 // All lengths in metres, angles in degrees; every number is rounded to 6 decimals.
 import { material } from './materials';
-import { round6, segments, type Element, type HouseModel, type Opening, type Vec2, type Wall } from './model';
+import { cutIds, round6, segments, type Element, type HouseModel, type Opening, type Vec2, type Wall } from './model';
 
 export type Vec3 = [number, number, number];
 
@@ -114,11 +114,13 @@ function openingElement(o: Opening, wall: Wall | undefined): SemanticElement | n
 
 export function toSemantic(model: HouseModel, meta: { name?: string } = {}): SemanticDoc {
 	const walls = new Map(model.elements.filter((e): e is Wall => e.type === 'wall').map((w) => [w.id, w]));
-	const openings = model.elements.filter((e): e is Opening => e.type === 'window' || e.type === 'door');
+	// Only openings their wall really cuts, the same set the 3D scene and the .glb show.
+	const cut = cutIds(model);
+	const openings = model.elements.filter((e): e is Opening => (e.type === 'window' || e.type === 'door') && cut.has(e.id));
 	const elements: SemanticElement[] = [];
 	for (const e of model.elements) {
 		if (e.type === 'wall') elements.push(wallElement(e, openings));
-		else if (e.type === 'window' || e.type === 'door') {
+		else if ((e.type === 'window' || e.type === 'door') && cut.has(e.id)) {
 			const x = openingElement(e, walls.get(e.host));
 			if (x) elements.push(x);
 		} else if (e.type === 'slab') {

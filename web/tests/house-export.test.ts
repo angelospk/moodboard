@@ -121,6 +121,24 @@ describe('glb', () => {
 		const ids: string[] = [];
 		gltf.scene.traverse((o) => { if (o.userData?.id) ids.push(o.userData.id as string); });
 		expect(ids.sort()).toEqual(['a', 'w1']);
+		// The JSON lists the same openings as the 3D file.
+		const doc = toSemantic(clash);
+		expect(doc.elements.map((e) => e.id).sort()).toEqual(['a', 'w1']);
+		expect(doc.elements.find((e) => e.id === 'w1')).toMatchObject({ openingIds: ['a'] });
+	});
+
+	it('a window panel never rises above its hole (clipped under the wall top)', async () => {
+		const m: HouseModel = { ...emptyModel(), elements: [
+			{ id: 'w', type: 'wall', name: '', material: 'concrete', points: [[0, 0], [6, 0]], height: 3, thickness: 0.25, base: 0 },
+			{ id: 'g', type: 'window', name: '', material: 'glass', host: 'w', segment: 0, offset: 3, width: 1, height: 3, sill: 2 }
+		] };
+		const gltf = await new GLTFLoader().parseAsync(await toGlb(m), '');
+		const { Box3 } = await import('three');
+		let g: Object3D | undefined;
+		gltf.scene.traverse((o) => { if (o.userData?.id === 'g') g = o; });
+		const box = new Box3().setFromObject(g!);
+		expect(box.min.y).toBeCloseTo(2, 3);
+		expect(box.max.y).toBeCloseTo(2.95, 3);
 	});
 
 	it('Y up: a 3 m wall reaches y = 3, and plan y maps to -z', async () => {

@@ -22,6 +22,9 @@ import {
 } from 'three';
 import { material as findMaterial } from './materials.js';
 import {
+	cutIds,
+	isClosed,
+	OPENING_MARGIN,
 	openingsOf,
 	segments,
 	wallFace,
@@ -106,17 +109,12 @@ function segmentFrame(a: Vec2, dir: Vec2, base: number): Matrix4 {
 	return new Matrix4().makeBasis(u, v, w).setPosition(a[0], base, -a[1]);
 }
 
-function closed(points: Vec2[]): boolean {
-	const f = points[0];
-	const l = points[points.length - 1];
-	return points.length > 3 && Math.hypot(f[0] - l[0], f[1] - l[1]) < 1e-6;
-}
 
-/** Builds the wall and adds to `cut` the ids of the openings its faces really have a hole for. */
-function buildWall(w: Wall, openings: Opening[], mats: Materials, opts: BuildOptions, cut: Set<string>): Group {
+/** Builds the wall with holes for the given openings (only ones cutIds accepted). */
+function buildWall(w: Wall, openings: Opening[], mats: Materials, opts: BuildOptions): Group {
 	const g = holder(w);
 	const segs = segments(w);
-	const loop = closed(w.points);
+	const loop = isClosed(w.points);
 	for (const s of segs) {
 		if (s.length < 0.01) continue;
 		// Extend into each joint by half the thickness, so corners close without a gap.
@@ -124,7 +122,6 @@ function buildWall(w: Wall, openings: Opening[], mats: Materials, opts: BuildOpt
 		const ext1 = s.index < segs.length - 1 || loop ? w.thickness / 2 : 0;
 		const own = openings.filter((o) => o.segment === s.index).map((o) => ({ ...o, offset: o.offset + ext0 }));
 		const face = wallFace(s.length + ext0 + ext1, w.height, own);
-		for (const o of face.openings) if (o.id) cut.add(o.id);
 		const shape = new Shape(face.outline.map(([u, v]) => new Vector2(u, v)));
 		for (const h of face.holes) shape.holes.push(new Path(h.map(([u, v]) => new Vector2(u, v))));
 		const geo = new ExtrudeGeometry(shape, { depth: w.thickness, bevelEnabled: false });
@@ -142,8 +139,9 @@ function buildOpening(o: Opening, wall: Wall, mats: Materials, opts: BuildOption
 	const s = segments(wall)[o.segment];
 	if (!s) return g;
 	const sill = o.type === 'door' ? 0 : o.sill; // as in wallFace
-	const geo = new BoxGeometry(o.width, o.height, PANEL);
-	geo.translate(o.offset, sill + o.height / 2, 0);
+	const top = Math.min(sill + o.height, wall.height - OPENING_MARGIN); // the hole's clipped top, as in wallFace
+	const geo = new BoxGeometry(o.width, top - sill, PANEL);
+	geo.translate(o.offset, (sill + top) / 2, 0);
 	geo.applyMatrix4(segmentFrame(s.a, s.dir, wall.base));
 	g.add(mesh(geo, mats.get(o.material), opts));
 	return g;
@@ -188,13 +186,11 @@ export function buildHouse(model: HouseModel, opts: BuildOptions = {}): Group {
 	root.name = 'house';
 	const mats = new Materials();
 	const walls = new Map(model.elements.filter((e): e is Wall => e.type === 'wall').map((w) => [w.id, w]));
-	// Walls first: an opening gets a panel only where its wall has a hole for it.
-	const cut = new Set<string>();
-	const built = new Map<string, Group>();
-	for (const w of walls.values()) built.set(w.id, buildWall(w, openingsOf(model, w.id), mats, opts, cut));
+	// An opening its wall cannot cut (it overlaps another) gets neither a hole nor a panel.
+	const cut = cutIds(model);
 	for (const e of model.elements) {
 		let g: Group | null = null;
-		if (e.type === 'wall') g = built.get(e.id) ?? null;
+		if (e.type === 'wall') g = buildWall(e, openingsOf(model, e.id).filter((o) => cut.has(o.id)), mats, opts);
 		else if (e.type === 'window' || e.type === 'door') {
 			const w = walls.get(e.host);
 			if (w && cut.has(e.id)) g = buildOpening(e, w, mats, opts);
