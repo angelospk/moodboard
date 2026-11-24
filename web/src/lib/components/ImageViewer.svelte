@@ -7,7 +7,7 @@
 	import { cropAspect, placementStyle, validCrop } from '#lib/crop.js';
 	import { svgPoints } from '#lib/shape.js';
 	import { hiResUrl, thumbUrl } from '#lib/inspirations.js';
-	import { DBLCLICK_ZOOM, loupeBackground, MAX_ZOOM, panBy, pixelCap, RESET, wheelFactor, zoomAt, zoomTo, type View } from '#lib/zoom.js';
+	import { clampPan, DBLCLICK_ZOOM, loupeView, MAX_ZOOM, panBy, pinchView, pixelCap, RESET, wheelFactor, zoomAt, zoomTo, type View } from '#lib/zoom.js';
 	import { Prefetcher } from '#lib/prefetch.js';
 	interface Props {
 		src: string | null;
@@ -80,8 +80,10 @@
 	/** Width of the whole image on screen at zoom 1 (with a crop, wider than the stage). */
 	let layerW = $state(0);
 	/** Zoom stops where one image pixel fills one screen pixel; Shift + wheel goes past it. */
+	/** The large copy failed to load: the shown image is the largest there is. */
+	let hiFailed = $state(false);
 	const capK = $derived(
-		hiReady ? pixelCap(hiNatural, layerW) : hiSrc === src && ready ? pixelCap(mainNatural, layerW) : MAX_ZOOM
+		hiReady ? pixelCap(hiNatural, layerW) : (hiSrc === src || hiFailed) && ready ? pixelCap(mainNatural, layerW) : MAX_ZOOM
 	);
 	let pastCap = false;
 	$effect(() => {
@@ -104,14 +106,27 @@
 	let lastPtr = $state<{ x: number; y: number } | null>(null);
 	const lens = $derived.by(() => {
 		void view; // follow the picture while it zooms or pans under a still pointer
-		if (!loupe || !lastPtr || !layer) return null;
-		const b = loupeBackground(lastPtr.x, lastPtr.y, layer.getBoundingClientRect(), LOUPE, LOUPE_MAG);
-		return { ...b, cx: lastPtr.x, cy: lastPtr.y, img: hiReady && hiSrc ? hiSrc : src };
+		if (!loupe || !lastPtr || !layer || !stage) return null;
+		// The stage is the crop window: the loupe shows nothing outside it.
+		const l = loupeView(lastPtr.x, lastPtr.y, layer.getBoundingClientRect(), stage.getBoundingClientRect(), LOUPE, LOUPE_MAG);
+		return { ...l, cx: lastPtr.x, cy: lastPtr.y, img: hiReady && hiSrc ? hiSrc : src };
+	});
+
+	// A smaller window (rotation, resize) must not leave the picture panned off the stage.
+	$effect(() => {
+		if (!stage) return;
+		const ro = new ResizeObserver(() => {
+			const { w, h } = frameSize();
+			const v = clampPan(view, w, h);
+			if (v.x !== view.x || v.y !== view.y || v.k !== view.k) setView(v, false);
+		});
+		ro.observe(stage);
+		return () => ro.disconnect();
 	});
 	const pointers = new Map<number, { x: number; y: number }>();
 	/** When this image came up: the second click of a double-click that opened it must not zoom. */
 	let shownAt = performance.now();
-	let pinch: { dist: number; from: View } | null = null;
+	let pinch: { dist: number; from: View; mid: { x: number; y: number } } | null = null;
 
 	function frameSize() {
 		const r = stage!.getBoundingClientRect();
@@ -154,7 +169,8 @@
 		stage.setPointerCapture(e.pointerId);
 		if (pointers.size === 2) {
 			const [a, b] = [...pointers.values()];
-			pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, from: view };
+			const r = stage.getBoundingClientRect();
+			pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, from: view, mid: { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top } };
 		}
 		panning = pointers.size === 1 && zoomed;
 	}
@@ -171,9 +187,9 @@
 		const { r, w, h } = frameSize();
 		if (pinch && pointers.size === 2) {
 			const [a, b] = [...pointers.values()];
-			const k = (pinch.from.k * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.dist;
+			const mid = { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top };
 			pastCap = false;
-			setView(zoomTo(view, k, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, w, h, capK), false);
+			setView(pinchView(pinch.from, pinch.mid, mid, Math.hypot(a.x - b.x, a.y - b.y) / pinch.dist, w, h, capK), false);
 		} else if (zoomed) {
 			setView(panBy(view, now.x - last.x, now.y - last.y, w, h), false);
 		}
@@ -218,8 +234,10 @@
 			editing = false;
 			imageAspect = 0;
 			view = { ...RESET };
-			wantHi = false;
+			// The loupe may still be on: it needs the large copy of the new image too.
+			wantHi = loupeOn || loupeKey;
 			hiNatural = 0;
+			hiFailed = false;
 			pastCap = false;
 			shownAt = performance.now();
 		}
@@ -461,6 +479,7 @@
 									hiNatural = (e.currentTarget as HTMLImageElement).naturalWidth;
 									hiLoaded = hiSrc ?? '';
 								}}
+								onerror={() => (hiFailed = true)}
 							/>
 						{/if}
 						{#if editing}
@@ -513,15 +532,18 @@
 	</div>
 
 	{#if lens}
-		<div
-			class="loupe"
-			aria-hidden="true"
-			style:left="{lens.cx}px"
-			style:top="{lens.cy}px"
-			style:background-image={`url(${JSON.stringify(lens.img)})`}
-			style:background-size="{lens.w}px {lens.h}px"
-			style:background-position="{lens.x}px {lens.y}px"
-		></div>
+		<div class="loupe" aria-hidden="true" style:left="{lens.cx}px" style:top="{lens.cy}px">
+			<div
+				class="lwin"
+				style:left="{lens.win.x}px"
+				style:top="{lens.win.y}px"
+				style:width="{lens.win.w}px"
+				style:height="{lens.win.h}px"
+				style:background-image={`url(${JSON.stringify(lens.img)})`}
+				style:background-size="{lens.bg.w}px {lens.bg.h}px"
+				style:background-position="{lens.bg.x}px {lens.bg.y}px"
+			></div>
+		</div>
 	{/if}
 	<footer>
 		{#if editing}
@@ -538,7 +560,7 @@
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" /></svg>
 				</button>
 				<button type="button" class="level" title={view.k >= capK - 0.01 && capK < MAX_ZOOM ? t('viewer.atPixels') : `${t('viewer.zoomReset')} (0)`} disabled={!zoomed} onclick={resetZoom} aria-live="polite">
-					{Math.round(view.k * 100)}%{#if zoomed && wantHi && hiSrc !== src && !hiReady}<span class="dot" title={t('viewer.hiLoading')}></span>{/if}
+					{Math.round(view.k * 100)}%{#if zoomed && wantHi && hiSrc !== src && !hiReady && !hiFailed}<span class="dot" title={t('viewer.hiLoading')}></span>{/if}
 				</button>
 				<button type="button" class="tool icon" aria-label={t('viewer.zoomIn')} title={`${t('viewer.zoomIn')} (+)`} disabled={view.k >= capK - 0.01} onclick={() => zoomStep(1.5)}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" /></svg>
@@ -930,8 +952,12 @@
 		border: 1px solid var(--line-strong);
 		box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.3), 0 0 0 1px var(--line);
 		background-color: rgb(12 11 10);
-		background-repeat: no-repeat;
+		overflow: hidden;
 		pointer-events: none;
+	}
+	.lwin {
+		position: absolute;
+		background-repeat: no-repeat;
 	}
 	.viewer:has(.loupe) .stage:not(.editing) {
 		cursor: none;

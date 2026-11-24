@@ -72,6 +72,8 @@
 				const u = await imageUrls(pb, rows);
 				if (mine !== latest) return;
 				[items, urls, elsewhere] = [rows, u, other];
+				// A tick made on the old tiles must not reach the new list.
+				selected = [];
 				phase = rows.length || other ? 'ready' : 'hidden';
 				if (!rows.length) selecting = false;
 			} catch {
@@ -118,13 +120,14 @@
 								role="checkbox"
 								aria-checked={selected.includes(it.id)}
 								aria-label={`${t('bulk.check')}: ${label}`}
+								disabled={phase === 'loading'}
 								onclick={() => toggle(it.id)}
 							>
 								{@render thumb(it)}
 								<span class="tick" aria-hidden="true">{selected.includes(it.id) ? '✓' : ''}</span>
 							</button>
 						{:else if onpick}
-							<button type="button" class="tile" aria-label={label} onclick={() => onpick(it.id)}>{@render thumb(it)}</button>
+							<button type="button" class="tile" aria-label={label} disabled={phase === 'loading'} onclick={() => onpick(it.id)}>{@render thumb(it)}</button>
 						{:else}
 							<!-- The image page keeps its editor state per page load, so another image needs a fresh load. -->
 							<a class="tile" href={`/i/${it.id}`} data-sveltekit-reload aria-label={label}>{@render thumb(it)}</a>
@@ -153,6 +156,10 @@
 	}
 	.similar.busy {
 		opacity: 0.55;
+	}
+	/* Old results while the new ones load: no clicks (links included). */
+	.similar.busy .strip {
+		pointer-events: none;
 	}
 	@keyframes sim-in {
 		from {

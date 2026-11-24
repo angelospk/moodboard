@@ -52,16 +52,32 @@ export function pixelCap(natural: number, shown: number): number {
 	return clamp(natural / shown, 1, MAX_ZOOM);
 }
 
-/** Background size (w, h) and offset (x, y) of a round loupe `size` px wide that shows the image
- *  magnified `mag` times, centred on the client point (cx, cy). `box` is the image's rect on screen. */
-export function loupeBackground(
-	cx: number,
-	cy: number,
-	box: { left: number; top: number; width: number; height: number },
-	size: number,
-	mag: number
-): { w: number; h: number; x: number; y: number } {
-	const w = box.width * mag;
-	const h = box.height * mag;
-	return { w, h, x: size / 2 - (cx - box.left) * mag, y: size / 2 - (cy - box.top) * mag };
+type Rect = { left: number; top: number; width: number; height: number };
+
+/** A round loupe `size` px wide, centred on the client point (cx, cy), magnifying `mag` times.
+ *  `win`: where the visible frame (the crop) sits inside the loupe; nothing outside it is drawn.
+ *  `bg`: the size and offset of the whole image inside that window. */
+export function loupeView(cx: number, cy: number, image: Rect, frame: Rect, size: number, mag: number) {
+	return {
+		win: { x: size / 2 + (frame.left - cx) * mag, y: size / 2 + (frame.top - cy) * mag, w: frame.width * mag, h: frame.height * mag },
+		bg: { x: (image.left - frame.left) * mag, y: (image.top - frame.top) * mag, w: image.width * mag, h: image.height * mag }
+	};
+}
+
+/** Two-finger pinch: scale `from` by `scale` and keep the picture point that was under the starting
+ *  midpoint `m0` under the current midpoint `m1`, so the picture follows the fingers. */
+export function pinchView(
+	from: View,
+	m0: { x: number; y: number },
+	m1: { x: number; y: number },
+	scale: number,
+	w: number,
+	h: number,
+	max = MAX_ZOOM
+): View {
+	const k = clamp(from.k * scale, 1, max);
+	if (k === 1) return { ...RESET };
+	const px = (m0.x - from.x) / from.k;
+	const py = (m0.y - from.y) / from.k;
+	return clampPan({ k, x: m1.x - px * k, y: m1.y - py * k }, w, h);
 }

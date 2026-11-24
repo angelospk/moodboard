@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampPan, loupeBackground, MAX_ZOOM, panBy, pixelCap, RESET, wheelFactor, zoomAt, zoomTo } from '../src/lib/zoom.js';
+import { clampPan, loupeView, MAX_ZOOM, panBy, pinchView, pixelCap, RESET, wheelFactor, zoomAt, zoomTo } from '../src/lib/zoom.js';
 
 const W = 800;
 const H = 600;
@@ -75,19 +75,39 @@ describe('zoom cap', () => {
 	});
 });
 
-describe('loupeBackground', () => {
-	const box = { left: 100, top: 50, width: 400, height: 300 };
+describe('loupeView', () => {
+	const img = { left: 100, top: 50, width: 400, height: 300 };
 	it('centres the point under the pointer, magnified', () => {
-		const l = loupeBackground(300, 200, box, 220, 2.5);
-		expect(l.w).toBe(1000);
-		expect(l.h).toBe(750);
-		// Pointer at the image centre: the centre of the magnified image sits at the loupe centre.
-		expect(l.x).toBe(110 - 500);
-		expect(l.y).toBe(110 - 375);
+		const l = loupeView(300, 200, img, img, 220, 2.5);
+		// Pointer at the image centre: the window (the whole image here) is centred on the loupe.
+		expect(l.win).toEqual({ x: 110 - 500, y: 110 - 375, w: 1000, h: 750 });
+		expect(l.bg).toEqual({ x: 0, y: 0, w: 1000, h: 750 });
 	});
-	it('the image corner under the pointer lands in the loupe centre', () => {
-		const l = loupeBackground(100, 50, box, 220, 2.5);
-		expect(l.x).toBe(110);
-		expect(l.y).toBe(110);
+	it('shows only the frame (the crop) of a larger image', () => {
+		// The image is twice the frame: the frame shows its right half.
+		const big = { left: -100, top: 50, width: 800, height: 300 };
+		const l = loupeView(300, 200, big, img, 220, 2);
+		expect(l.win).toEqual({ x: 110 - 400, y: 110 - 300, w: 800, h: 600 });
+		// Inside the window the image starts 200 px left of the frame, times 2.
+		expect(l.bg).toEqual({ x: -400, y: 0, w: 1600, h: 600 });
+		// The image point under the pointer sits at the loupe centre.
+		expect(l.win.x + l.bg.x + (300 - big.left) * 2).toBe(110);
+	});
+});
+
+describe('pinchView', () => {
+	it('keeps the image point under the starting midpoint under the current midpoint', () => {
+		const from = { k: 2, x: -200, y: -100 };
+		const m0 = { x: 300, y: 200 };
+		const m1 = { x: 340, y: 230 }; // the fingers moved together
+		const v = pinchView(from, m0, m1, 1.5, W, H, MAX_ZOOM);
+		expect(v.k).toBe(3);
+		const p0 = { x: (m0.x - from.x) / from.k, y: (m0.y - from.y) / from.k };
+		expect((m1.x - v.x) / v.k).toBeCloseTo(p0.x);
+		expect((m1.y - v.y) / v.k).toBeCloseTo(p0.y);
+	});
+	it('respects the cap and the frame', () => {
+		expect(pinchView(RESET, { x: 10, y: 10 }, { x: 10, y: 10 }, 10, W, H, 2).k).toBe(2);
+		expect(pinchView({ k: 2, x: -100, y: -100 }, { x: 0, y: 0 }, { x: 0, y: 0 }, 0.2, W, H, MAX_ZOOM)).toEqual(RESET);
 	});
 });

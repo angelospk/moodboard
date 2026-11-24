@@ -287,8 +287,9 @@ func similarTo(app core.App, uid, id string, all bool, limit int) (ready bool, h
 }
 
 // SimilarCutoff is the lowest score that still counts as "looks alike", given the scores of all the
-// user's other images: their mean plus simZ standard deviations, never above the best score (equal
-// scores keep all). With fewer than simMinPool scores it is -Inf: every image counts.
+// user's other images: their mean plus simZ standard deviations. With no spread (sd ~ 0, all scores
+// equal, where float rounding can put the mean a hair above the best) it is the best score, so equal
+// scores keep all. With fewer than simMinPool scores it is -Inf: every image counts.
 func SimilarCutoff(scores []float64) float64 {
 	if len(scores) < simMinPool {
 		return math.Inf(-1)
@@ -304,7 +305,11 @@ func SimilarCutoff(scores []float64) float64 {
 	for _, s := range scores {
 		sq += (s - mean) * (s - mean)
 	}
-	return min(mean+simZ*math.Sqrt(sq/float64(len(scores))), best)
+	sd := math.Sqrt(sq / float64(len(scores)))
+	if sd < 1e-9 {
+		return best
+	}
+	return mean + simZ*sd
 }
 
 func handleSimilar(e *core.RequestEvent) error {

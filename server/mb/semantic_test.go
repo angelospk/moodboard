@@ -194,6 +194,15 @@ func TestSimilarCutoff(t *testing.T) {
 	if c := mb.SimilarCutoff([]float64{0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8}); c > 0.8 {
 		t.Fatalf("equal scores: cutoff %v must keep them", c)
 	}
+	// Equal scores that float rounding makes uneven by a hair still keep all.
+	hair := []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1 + 1e-16}
+	if c := mb.SimilarCutoff(hair); c > 0.1+1e-16 {
+		t.Fatalf("near-equal scores: cutoff %v must keep them", c)
+	}
+	// Two near-equal groups: nothing stands out, so no match (the best must not be forced through).
+	if c := mb.SimilarCutoff([]float64{0.10, 0.10, 0.10, 0.10, 0.12, 0.12, 0.12, 0.12}); c <= 0.12 {
+		t.Fatalf("0.10/0.12 groups: cutoff %v must be above 0.12", c)
+	}
 }
 
 // With a library big enough to tell a close image from the crowd, /similar returns only the close ones.
