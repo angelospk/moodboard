@@ -288,8 +288,11 @@ export const el = {
 	'viewer.zoomIn': 'Μεγέθυνση',
 	'viewer.zoomOut': 'Σμίκρυνση',
 	'viewer.zoomReset': 'Ολόκληρη η εικόνα',
-	'viewer.zoomHint': 'Ροδέλα ή τσίμπημα για ζουμ · σύρε για μετακίνηση · διπλό κλικ ή Esc για επαναφορά',
+	'viewer.zoomHint': 'Ροδέλα ή τσίμπημα για ζουμ · σύρε για μετακίνηση · κράτα Z για λούπα · διπλό κλικ ή Esc για επαναφορά',
 	'viewer.hiLoading': 'Φορτώνει η μεγάλη ανάλυση…',
+	'viewer.loupe': 'Λούπα',
+	'viewer.loupeTitle': 'Λούπα (κράτα Z)',
+	'viewer.atPixels': '100% των πραγματικών pixels. Shift + ροδέλα για παραπέρα.',
 	'viewer.noCrop': 'Χωρίς περικοπή',
 
 	'regions.word1': 'όχι αυτό',

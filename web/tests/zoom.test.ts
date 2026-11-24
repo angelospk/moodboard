@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampPan, MAX_ZOOM, panBy, RESET, wheelFactor, zoomAt, zoomTo } from '../src/lib/zoom.js';
+import { clampPan, loupeBackground, MAX_ZOOM, panBy, pixelCap, RESET, wheelFactor, zoomAt, zoomTo } from '../src/lib/zoom.js';
 
 const W = 800;
 const H = 600;
@@ -58,5 +58,36 @@ describe('wheelFactor', () => {
 		expect(wheelFactor(-3, 1)).toBeCloseTo(wheelFactor(-48, 0));
 		expect(wheelFactor(-10000, 0)).toBeLessThanOrEqual(2);
 		expect(wheelFactor(10000, 0)).toBeGreaterThanOrEqual(0.5);
+	});
+});
+
+describe('zoom cap', () => {
+	it('zoomTo and zoomAt stop at the given maximum', () => {
+		expect(zoomTo(RESET, 6, 400, 300, W, H, 2.5).k).toBe(2.5);
+		expect(zoomAt(RESET, 10, 400, 300, W, H, 3).k).toBe(3);
+	});
+	it('pixelCap is 100% of the real pixels, between 1 and MAX_ZOOM', () => {
+		expect(pixelCap(4096, 1024)).toBe(4);
+		expect(pixelCap(1600, 1600)).toBe(1); // an old image stored small: no zoom past its pixels
+		expect(pixelCap(900, 1600)).toBe(1);
+		expect(pixelCap(100000, 1000)).toBe(MAX_ZOOM);
+		expect(pixelCap(0, 1000)).toBe(MAX_ZOOM); // not loaded yet: no cap known
+	});
+});
+
+describe('loupeBackground', () => {
+	const box = { left: 100, top: 50, width: 400, height: 300 };
+	it('centres the point under the pointer, magnified', () => {
+		const l = loupeBackground(300, 200, box, 220, 2.5);
+		expect(l.w).toBe(1000);
+		expect(l.h).toBe(750);
+		// Pointer at the image centre: the centre of the magnified image sits at the loupe centre.
+		expect(l.x).toBe(110 - 500);
+		expect(l.y).toBe(110 - 375);
+	});
+	it('the image corner under the pointer lands in the loupe centre', () => {
+		const l = loupeBackground(100, 50, box, 220, 2.5);
+		expect(l.x).toBe(110);
+		expect(l.y).toBe(110);
 	});
 });

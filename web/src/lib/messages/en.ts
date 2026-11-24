@@ -289,8 +289,11 @@ export const en: Record<keyof typeof el, string> = {
 	'viewer.zoomIn': 'Zoom in',
 	'viewer.zoomOut': 'Zoom out',
 	'viewer.zoomReset': 'Whole image',
-	'viewer.zoomHint': 'Wheel or pinch to zoom · drag to move · double-click or Esc to reset',
+	'viewer.zoomHint': 'Wheel or pinch to zoom · drag to move · hold Z for the loupe · double-click or Esc to reset',
 	'viewer.hiLoading': 'Loading the full resolution…',
+	'viewer.loupe': 'Loupe',
+	'viewer.loupeTitle': 'Loupe (hold Z)',
+	'viewer.atPixels': '100% of the real pixels. Shift + wheel to go further.',
 	'viewer.noCrop': 'No crop',
 
 	'regions.word1': 'not this',

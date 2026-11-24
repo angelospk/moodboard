@@ -7,7 +7,7 @@
 	import { cropAspect, placementStyle, validCrop } from '#lib/crop.js';
 	import { svgPoints } from '#lib/shape.js';
 	import { hiResUrl, thumbUrl } from '#lib/inspirations.js';
-	import { DBLCLICK_ZOOM, panBy, RESET, wheelFactor, zoomAt, zoomTo, type View } from '#lib/zoom.js';
+	import { DBLCLICK_ZOOM, loupeBackground, MAX_ZOOM, panBy, pixelCap, RESET, wheelFactor, zoomAt, zoomTo, type View } from '#lib/zoom.js';
 	import { Prefetcher } from '#lib/prefetch.js';
 	interface Props {
 		src: string | null;
@@ -73,8 +73,40 @@
 	let wantHi = $state(false);
 	let hiLoaded = $state('');
 	const hiReady = $derived(!!hiSrc && hiLoaded === hiSrc);
+	/** Pixel width of the large copy once it has loaded (0 before). */
+	let hiNatural = $state(0);
+	/** Pixel width of the shown image; it is the largest copy when there is no separate one. */
+	let mainNatural = $state(0);
+	/** Width of the whole image on screen at zoom 1 (with a crop, wider than the stage). */
+	let layerW = $state(0);
+	/** Zoom stops where one image pixel fills one screen pixel; Shift + wheel goes past it. */
+	const capK = $derived(
+		hiReady ? pixelCap(hiNatural, layerW) : hiSrc === src && ready ? pixelCap(mainNatural, layerW) : MAX_ZOOM
+	);
+	let pastCap = false;
 	$effect(() => {
-		if (zoomed) wantHi = true;
+		if (zoomed || loupe) wantHi = true;
+	});
+	// The large copy arrived and shows fewer pixels than the zoom asks for: step back to 100% of them.
+	$effect(() => {
+		if (capK < view.k && !pastCap && stage) {
+			const { w, h } = frameSize();
+			setView(zoomTo(view, capK, w / 2, h / 2, w, h, capK), true);
+		}
+	});
+
+	// ---------- loupe: hold Z (or the dock button) for a round magnifier that follows the pointer ----------
+	const LOUPE = 220;
+	const LOUPE_MAG = 2.5;
+	let loupeKey = $state(false);
+	let loupeOn = $state(false);
+	const loupe = $derived(!editing && !!src && (loupeKey || loupeOn));
+	let lastPtr = $state<{ x: number; y: number } | null>(null);
+	const lens = $derived.by(() => {
+		void view; // follow the picture while it zooms or pans under a still pointer
+		if (!loupe || !lastPtr || !layer) return null;
+		const b = loupeBackground(lastPtr.x, lastPtr.y, layer.getBoundingClientRect(), LOUPE, LOUPE_MAG);
+		return { ...b, cx: lastPtr.x, cy: lastPtr.y, img: hiReady && hiSrc ? hiSrc : src };
 	});
 	const pointers = new Map<number, { x: number; y: number }>();
 	/** When this image came up: the second click of a double-click that opened it must not zoom. */
@@ -93,7 +125,8 @@
 	function zoomStep(factor: number) {
 		if (!stage || editing) return;
 		const { w, h } = frameSize();
-		setView(zoomAt(view, factor, w / 2, h / 2, w, h), true);
+		pastCap = false;
+		setView(zoomAt(view, factor, w / 2, h / 2, w, h, capK), true);
 	}
 	function resetZoom() {
 		setView({ ...RESET }, true);
@@ -106,7 +139,8 @@
 			const { r, w, h } = frameSize();
 			// A trackpad pinch arrives as a wheel event with ctrlKey and small deltas: zoom a bit faster.
 			const f = wheelFactor(e.ctrlKey ? e.deltaY * 4 : e.deltaY, e.deltaMode);
-			setView(zoomAt(view, f, e.clientX - r.left, e.clientY - r.top, w, h), false);
+			pastCap = e.shiftKey;
+			setView(zoomAt(view, f, e.clientX - r.left, e.clientY - r.top, w, h, e.shiftKey ? MAX_ZOOM : capK), false);
 		};
 		el.addEventListener('wheel', onWheel, { passive: false });
 		return () => el.removeEventListener('wheel', onWheel);
@@ -127,6 +161,9 @@
 
 	function stageMove(e: PointerEvent) {
 		if (editing) return move(e);
+		lastPtr = { x: e.clientX, y: e.clientY };
+		// On touch the finger moves the loupe, not the picture.
+		if (loupe && e.pointerType !== 'mouse') return;
 		const last = pointers.get(e.pointerId);
 		if (!last || !stage) return;
 		const now = { x: e.clientX, y: e.clientY };
@@ -135,7 +172,8 @@
 		if (pinch && pointers.size === 2) {
 			const [a, b] = [...pointers.values()];
 			const k = (pinch.from.k * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.dist;
-			setView(zoomTo(view, k, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, w, h), false);
+			pastCap = false;
+			setView(zoomTo(view, k, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, w, h, capK), false);
 		} else if (zoomed) {
 			setView(panBy(view, now.x - last.x, now.y - last.y, w, h), false);
 		}
@@ -153,7 +191,8 @@
 		if (editing || !stage || performance.now() - shownAt < 500) return;
 		if (zoomed) return resetZoom();
 		const { r, w, h } = frameSize();
-		setView(zoomTo(view, DBLCLICK_ZOOM, e.clientX - r.left, e.clientY - r.top, w, h), true);
+		pastCap = false;
+		setView(zoomTo(view, DBLCLICK_ZOOM, e.clientX - r.left, e.clientY - r.top, w, h, capK), true);
 	}
 
 	function measure(el: HTMLImageElement) {
@@ -180,6 +219,8 @@
 			imageAspect = 0;
 			view = { ...RESET };
 			wantHi = false;
+			hiNatural = 0;
+			pastCap = false;
 			shownAt = performance.now();
 		}
 	});
@@ -292,6 +333,9 @@
 			e.preventDefault();
 			if (e.key === '0') resetZoom();
 			else zoomStep(e.key === '-' ? 1 / 1.5 : 1.5);
+		} else if (!editing && src && e.code === 'KeyZ' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+			e.preventDefault();
+			loupeKey = true;
 		} else if (!editing && e.key === 'ArrowLeft' && onprev) {
 			e.preventDefault();
 			onprev();
@@ -306,7 +350,13 @@
 	const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window
+	onkeydown={onKey}
+	onkeyup={(e) => {
+		if (e.code === 'KeyZ') loupeKey = false;
+	}}
+	onblur={() => (loupeKey = false)}
+/>
 
 <div class="viewer" class:hastags={showTags} role="dialog" aria-modal="true" aria-label={t('viewer.aria')}>
 	<header>
@@ -384,19 +434,34 @@
 				onpointermove={stageMove}
 				onpointerup={stageUp}
 				onpointercancel={stageUp}
+				onpointerleave={() => (lastPtr = null)}
 				ondblclick={stageDblClick}
 				{@attach attachWheel}
 				role="presentation"
 			>
 				<div class="zoom" class:smooth style:transform="translate({view.x}px, {view.y}px) scale({view.k})" style:--k={view.k}>
 					<!-- The whole image; with a crop it is larger than the stage, which shows only the kept part. -->
-					<div class="layer" bind:this={layer} style={placementStyle(viewCrop)}>
+					<div class="layer" bind:this={layer} bind:offsetWidth={layerW} style={placementStyle(viewCrop)}>
 						{#if !ready && placeholder && placeholder !== src}
 							<img class="ph" src={placeholder} alt="" aria-hidden="true" draggable="false" {@attach measure} />
 						{/if}
-						<img class="main" {src} {alt} draggable="false" class:ready onload={() => (loadedSrc = src ?? '')} onerror={() => (loadedSrc = src ?? '')} {@attach measure} />
+						<img class="main" {src} {alt} draggable="false" class:ready onload={(e) => {
+							mainNatural = (e.currentTarget as HTMLImageElement).naturalWidth;
+							loadedSrc = src ?? '';
+						}} onerror={() => (loadedSrc = src ?? '')} {@attach measure} />
 						{#if wantHi && hiSrc && hiSrc !== src}
-							<img class="hi" class:ready={hiReady} src={hiSrc} alt="" aria-hidden="true" draggable="false" onload={() => (hiLoaded = hiSrc ?? '')} />
+							<img
+								class="hi"
+								class:ready={hiReady}
+								src={hiSrc}
+								alt=""
+								aria-hidden="true"
+								draggable="false"
+								onload={(e) => {
+									hiNatural = (e.currentTarget as HTMLImageElement).naturalWidth;
+									hiLoaded = hiSrc ?? '';
+								}}
+							/>
 						{/if}
 						{#if editing}
 							<div class="crop" style={rect(box)} onpointerdown={(e) => down(e, 'move')} role="presentation">
@@ -447,6 +512,17 @@
 		{/if}
 	</div>
 
+	{#if lens}
+		<div
+			class="loupe"
+			aria-hidden="true"
+			style:left="{lens.cx}px"
+			style:top="{lens.cy}px"
+			style:background-image={`url(${JSON.stringify(lens.img)})`}
+			style:background-size="{lens.w}px {lens.h}px"
+			style:background-position="{lens.x}px {lens.y}px"
+		></div>
+	{/if}
 	<footer>
 		{#if editing}
 			<p class="hint">{t('viewer.cropHint')}</p>
@@ -461,11 +537,15 @@
 				<button type="button" class="tool icon" aria-label={t('viewer.zoomOut')} title={`${t('viewer.zoomOut')} (−)`} disabled={!zoomed} onclick={() => zoomStep(1 / 1.5)}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" /></svg>
 				</button>
-				<button type="button" class="level" title={`${t('viewer.zoomReset')} (0)`} disabled={!zoomed} onclick={resetZoom} aria-live="polite">
+				<button type="button" class="level" title={view.k >= capK - 0.01 && capK < MAX_ZOOM ? t('viewer.atPixels') : `${t('viewer.zoomReset')} (0)`} disabled={!zoomed} onclick={resetZoom} aria-live="polite">
 					{Math.round(view.k * 100)}%{#if zoomed && wantHi && hiSrc !== src && !hiReady}<span class="dot" title={t('viewer.hiLoading')}></span>{/if}
 				</button>
-				<button type="button" class="tool icon" aria-label={t('viewer.zoomIn')} title={`${t('viewer.zoomIn')} (+)`} disabled={view.k >= 7.99} onclick={() => zoomStep(1.5)}>
+				<button type="button" class="tool icon" aria-label={t('viewer.zoomIn')} title={`${t('viewer.zoomIn')} (+)`} disabled={view.k >= capK - 0.01} onclick={() => zoomStep(1.5)}>
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" /></svg>
+				</button>
+				<button type="button" class="tool loupebtn" class:on={loupeOn} aria-pressed={loupeOn} title={t('viewer.loupeTitle')} onclick={() => (loupeOn = !loupeOn)}>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" /><path d="M10.3 10.3l3.2 3.2" /></svg>
+					{t('viewer.loupe')}
 				</button>
 			</div>
 		{/if}
@@ -838,6 +918,32 @@
 	}
 	footer {
 		user-select: none;
+	}
+	/* Round magnifier: 220 px at 2.5x, showing the large copy's pixels. */
+	.loupe {
+		position: fixed;
+		z-index: 2;
+		width: 220px;
+		height: 220px;
+		transform: translate(-50%, -50%);
+		border-radius: 50%;
+		border: 1px solid var(--line-strong);
+		box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.3), 0 0 0 1px var(--line);
+		background-color: rgb(12 11 10);
+		background-repeat: no-repeat;
+		pointer-events: none;
+	}
+	.viewer:has(.loupe) .stage:not(.editing) {
+		cursor: none;
+	}
+	.zoombar .loupebtn {
+		min-height: 32px;
+		border-radius: var(--r-pill);
+		border-color: transparent;
+		background: none;
+	}
+	.zoombar .loupebtn.on {
+		background: rgb(255 255 255 / 0.16);
 	}
 	footer:empty {
 		min-height: 0;
