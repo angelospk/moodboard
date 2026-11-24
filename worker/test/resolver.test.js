@@ -75,6 +75,16 @@ describe('public image from the image bucket', () => {
 		expect(n.calls[1].url).toBe(`${IMAGES}/${KEY}`);
 	});
 
+	it('never reads the bucket for a cropped image: the origin answers no key, so the origin file is resized', async () => {
+		for (const q of ['', '?thumb=480x0', '?thumb=hi']) {
+			const n = net({ src: () => resolved({ key: '', thumb: '' }) });
+			const { text } = await run(get(FILE + q, { accept: 'image/webp' }), ENV, n.deps);
+			expect(text).toBe('RESIZED');
+			expect(n.calls.map((c) => c.url)).toEqual([`${FILE}/src`, FILE + q]);
+			expect(n.calls.some((c) => c.url.startsWith(IMAGES))).toBe(false);
+		}
+	});
+
 	it('chooses WebP, or JPEG when the client does not list WebP', async () => {
 		const formatFor = async (accept) => {
 			const n = net();
