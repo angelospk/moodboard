@@ -21,6 +21,7 @@ import {
 	type Object3D
 } from 'three';
 import { material as findMaterial } from './materials.js';
+import { buildItem } from './items3d.js';
 import {
 	cutIds,
 	isClosed,
@@ -44,7 +45,9 @@ export const IFC_CLASS: Record<Element['type'], string> = {
 	window: 'IfcWindow',
 	door: 'IfcDoor',
 	pool: 'IfcBuildingElementProxy',
-	box: 'IfcBuildingElementProxy'
+	box: 'IfcBuildingElementProxy',
+	// Fallback only: an item's real class is ITEM_IFC[kind] (model.ts), set by buildItem.
+	item: 'IfcBuildingElementProxy'
 };
 
 /** Glass and door leaves are this thick. */
@@ -197,6 +200,7 @@ export function buildHouse(model: HouseModel, opts: BuildOptions = {}): Group {
 		} else if (e.type === 'slab') g = buildSlab(e, mats, opts);
 		else if (e.type === 'pool') g = buildPool(e, mats, opts);
 		else if (e.type === 'box') g = buildBox(e, mats, opts);
+		else if (e.type === 'item') g = buildItem(e, mats, opts);
 		if (g) root.add(g);
 	}
 	return root;

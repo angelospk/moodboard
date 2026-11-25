@@ -8,7 +8,7 @@
 	import { HouseViewport, DRAW_TOOLS, type DraftInfo, type Tool } from '#lib/house/viewport.js';
 	import { MATERIALS, material as findMaterial } from '#lib/house/materials.js';
 	import {
-		cutIds,
+		hidesOpening,
 		parseModel,
 		removeElement,
 		segments,
@@ -62,14 +62,6 @@
 	let undoStack: HouseModel[] = $state.raw([]);
 	let redoStack: HouseModel[] = $state.raw([]);
 	let vp: HouseViewport | null = null;
-
-	/** A change may not take the hole away from a window or door that had one, nor add one without. */
-	function hidesOpening(prev: HouseModel, next: HouseModel): boolean {
-		const before = cutIds(prev);
-		const after = cutIds(next);
-		const existed = new Set(prev.elements.map((e) => e.id));
-		return next.elements.some((e) => (e.type === 'window' || e.type === 'door') && !after.has(e.id) && (before.has(e.id) || !existed.has(e.id)));
-	}
 
 	/**
 	 * The one gate for every change (tools, inspector, versions): parseModel applies the load rules
@@ -449,7 +441,8 @@
 		door: 'house.tool.door',
 		slab: 'house.tool.slab',
 		pool: 'house.tool.pool',
-		box: 'house.tool.box'
+		box: 'house.tool.box',
+		item: 'house.tool.box' // placeholder until F2 adds the item messages
 	};
 
 	const FIELD_LABEL: Record<string, Key> = {

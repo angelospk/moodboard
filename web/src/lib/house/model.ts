@@ -11,7 +11,7 @@ export type Vec2 = [number, number];
 
 export const SCHEMA_ID = 'moodboard.house/v1';
 
-export type ElementType = 'wall' | 'slab' | 'window' | 'door' | 'pool' | 'box';
+export type ElementType = 'wall' | 'slab' | 'window' | 'door' | 'pool' | 'box' | 'item';
 
 interface Base {
 	id: string;
@@ -74,7 +74,20 @@ export interface Box extends Placed {
 	base: number;
 }
 
-export type Element = Wall | Opening | Slab | Pool | Box;
+/** Kinds of catalog item (furniture, fixtures, site objects). Stored as `Item.kind`; ids are stable. */
+export const ITEM_KINDS = ['bed', 'sofa', 'table', 'chair', 'counter', 'wc', 'basin', 'shower', 'bath', 'tree', 'car', 'stair'] as const;
+export type ItemKind = (typeof ITEM_KINDS)[number];
+
+/** A catalog item standing on the floor: a parametric object that fills its width × length × height box. */
+export interface Item extends Placed {
+	type: 'item';
+	kind: ItemKind;
+	height: number;
+	/** Elevation of the item bottom. */
+	base: number;
+}
+
+export type Element = Wall | Opening | Slab | Pool | Box | Item;
 
 export interface HouseModel {
 	schema: typeof SCHEMA_ID;
@@ -90,6 +103,43 @@ export const DEFAULTS = {
 	pool: { width: 4, length: 8, depth: 1.5, rotation: 0, material: 'pool_water' },
 	box: { width: 2, length: 2, height: 2, base: 0, rotation: 0, material: 'concrete' }
 } as const;
+
+/** Default size (metres) and material of each item kind: width along x, length along y, before rotation. */
+export const ITEM_DEFAULTS: Record<ItemKind, { width: number; length: number; height: number; material: string }> = {
+	bed: { width: 1.6, length: 2, height: 0.5, material: 'wood_oak' },
+	sofa: { width: 2.2, length: 0.9, height: 0.85, material: 'plaster_warm' },
+	table: { width: 1.6, length: 0.9, height: 0.75, material: 'wood_dark' },
+	chair: { width: 0.45, length: 0.5, height: 0.9, material: 'wood_dark' },
+	counter: { width: 2.4, length: 0.6, height: 0.9, material: 'marble' },
+	wc: { width: 0.4, length: 0.7, height: 0.8, material: 'plaster_white' },
+	basin: { width: 0.6, length: 0.45, height: 0.85, material: 'plaster_white' },
+	shower: { width: 0.9, length: 0.9, height: 2, material: 'glass' },
+	bath: { width: 0.75, length: 1.7, height: 0.55, material: 'plaster_white' },
+	tree: { width: 3, length: 3, height: 6, material: 'grass' },
+	car: { width: 1.8, length: 4.5, height: 1.5, material: 'steel_dark' },
+	stair: { width: 1, length: 4.2, height: 3, material: 'concrete' }
+};
+
+/** IFC4 class of each item kind (semantic export, glTF extras). */
+export type ItemIfcClass = 'IfcFurniture' | 'IfcSanitaryTerminal' | 'IfcGeographicElement' | 'IfcBuildingElementProxy' | 'IfcStair';
+export const ITEM_IFC: Record<ItemKind, ItemIfcClass> = {
+	bed: 'IfcFurniture',
+	sofa: 'IfcFurniture',
+	table: 'IfcFurniture',
+	chair: 'IfcFurniture',
+	counter: 'IfcFurniture',
+	wc: 'IfcSanitaryTerminal',
+	basin: 'IfcSanitaryTerminal',
+	shower: 'IfcSanitaryTerminal',
+	bath: 'IfcSanitaryTerminal',
+	tree: 'IfcGeographicElement',
+	car: 'IfcBuildingElementProxy',
+	stair: 'IfcStair'
+};
+
+export function isItemKind(v: unknown): v is ItemKind {
+	return typeof v === 'string' && (ITEM_KINDS as readonly string[]).includes(v);
+}
 
 /** Gap kept between an opening and the end of its segment. */
 export const OPENING_MARGIN = 0.05;
@@ -293,6 +343,14 @@ export function polygonArea(points: Vec2[]): number {
 	return Math.abs(a) / 2;
 }
 
+/** A change may not take the hole away from a window or door that had one, nor add one without. */
+export function hidesOpening(prev: HouseModel, next: HouseModel): boolean {
+	const before = cutIds(prev);
+	const after = cutIds(next);
+	const existed = new Set(prev.elements.map((e) => e.id));
+	return next.elements.some((e) => (e.type === 'window' || e.type === 'door') && !after.has(e.id) && (before.has(e.id) || !existed.has(e.id)));
+}
+
 /** Remove an element; removing a wall also removes its windows and doors. */
 export function removeElement(model: HouseModel, id: string): HouseModel {
 	return { ...model, elements: model.elements.filter((e) => e.id !== id && !((e.type === 'window' || e.type === 'door') && e.host === id)) };
@@ -361,6 +419,13 @@ export function parseModel(raw: unknown): HouseModel {
 					width: num(e.width, 0.05, 200, d.width), length: num(e.length, 0.05, 200, d.length),
 					height: num(e.height, 0.05, 200, d.height), base: num(e.base, -100, 1000, d.base) });
 			}
+		} else if (t === 'item') {
+			const center = vec(e.center);
+			if (!center || !isItemKind(e.kind)) continue;
+			const d = ITEM_DEFAULTS[e.kind];
+			m.elements.push({ id, type: t, name, kind: e.kind, material: str(e.material, d.material), center, rotation: num(e.rotation, -360, 360, 0),
+				width: num(e.width, 0.05, 200, d.width), length: num(e.length, 0.05, 200, d.length),
+				height: num(e.height, 0.05, 200, d.height), base: num(e.base, -100, 1000, 0) });
 		}
 	}
 	// Openings need a wall that exists and a segment it has, and are fitted to it (clear of joints,

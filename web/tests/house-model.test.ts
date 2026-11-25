@@ -8,6 +8,10 @@ import {
 	endGaps,
 	isSimplePolygon,
 	parseModel,
+	hidesOpening,
+	ITEM_DEFAULTS,
+	ITEM_IFC,
+	ITEM_KINDS,
 	polygonArea,
 	removeElement,
 	segments,
@@ -187,6 +191,25 @@ describe('parseModel', () => {
 	it('drops an opening on a segment its wall does not have', () => {
 		const m = parseModel({ elements: [wall({ points: [[0, 0], [4, 0]] }), win({ segment: 1 })] });
 		expect(m.elements.map((e) => e.type)).toEqual(['wall']);
+	});
+	it('reads items: unknown kinds dropped, missing sizes from ITEM_DEFAULTS, numbers clamped like box', () => {
+		const m = parseModel({ elements: [
+			{ id: 'i1', type: 'item', kind: 'sofa', center: [1, 2], rotation: 90 },
+			{ id: 'i2', type: 'item', kind: 'piano', center: [0, 0] },
+			{ id: 'i3', type: 'item', kind: 'bed', center: [0, 0], width: 0, length: 500, height: -1, base: 5000, material: 'wood_dark', name: 'Κρεβάτι' },
+			{ id: 'i4', type: 'item', kind: 'car' }
+		] });
+		expect(m.elements).toEqual([
+			{ id: 'i1', type: 'item', kind: 'sofa', name: '', material: 'plaster_warm', center: [1, 2], rotation: 90, width: 2.2, length: 0.9, height: 0.85, base: 0 },
+			{ id: 'i3', type: 'item', kind: 'bed', name: 'Κρεβάτι', material: 'wood_dark', center: [0, 0], rotation: 0, width: 0.05, length: 200, height: 0.05, base: 1000 }
+		]);
+		expect(ITEM_KINDS.every((k) => ITEM_DEFAULTS[k].width > 0 && ITEM_IFC[k].startsWith('Ifc'))).toBe(true);
+	});
+	it('hidesOpening: a change that takes a cut window out of its wall is refused', () => {
+		const prev = parseModel({ elements: [wall({ points: [[0, 0], [6, 0]] }), win({ offset: 4 })] });
+		const shorter = { ...prev, elements: prev.elements.map((e) => (e.type === 'wall' ? { ...e, points: [[0, 0], [3, 0]] as [number, number][] } : e)) };
+		expect(hidesOpening(prev, prev)).toBe(false);
+		expect(hidesOpening(prev, shorter)).toBe(true);
 	});
 });
 

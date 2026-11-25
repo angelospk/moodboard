@@ -1,0 +1,233 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`semantic items > a v1 doc without items is unchanged (snapshot) 1`] = `
+{
+  "$schema": "https://moodboard.haroldpoi.dev/schemas/house-3d-schema.json",
+  "coordinateSystem": "right-handed, z up; plan x east, y north; elevations in z; ground at z = 0",
+  "elements": [
+    {
+      "geometry": {
+        "axis": "centerline",
+        "base": 0,
+        "height": 3,
+        "points": [
+          [
+            0,
+            0,
+          ],
+          [
+            6,
+            0,
+          ],
+          [
+            6,
+            4,
+          ],
+        ],
+        "thickness": 0.25,
+      },
+      "id": "w1",
+      "ifcClass": "IfcWall",
+      "material": {
+        "category": "plaster",
+        "color": "#eeebe4",
+        "description": "Painted render on a wall, off-white.",
+        "id": "plaster_white",
+        "name": "White plaster",
+      },
+      "name": "Βόρειος τοίχος",
+      "openingIds": [
+        "win1",
+        "d1",
+      ],
+      "quantities": {
+        "grossSideArea": 30,
+        "height": 3,
+        "length": 10,
+        "thickness": 0.25,
+        "volume": 7.5,
+      },
+      "type": "wall",
+    },
+    {
+      "geometry": {
+        "height": 1.4,
+        "offset": 4,
+        "segment": 0,
+        "sill": 0.9,
+        "width": 1.2,
+      },
+      "hostId": "w1",
+      "id": "win1",
+      "ifcClass": "IfcWindow",
+      "material": {
+        "category": "glass",
+        "color": "#9fc4d6",
+        "description": "Clear double glazing in a window or glass door.",
+        "id": "glass",
+        "name": "Glass",
+      },
+      "name": "",
+      "placement": {
+        "direction": [
+          1,
+          0,
+          0,
+        ],
+        "point": [
+          4,
+          0,
+          0.9,
+        ],
+      },
+      "quantities": {
+        "area": 1.68,
+      },
+      "type": "window",
+    },
+    {
+      "geometry": {
+        "height": 2.1,
+        "offset": 2,
+        "segment": 1,
+        "sill": 0,
+        "width": 0.9,
+      },
+      "hostId": "w1",
+      "id": "d1",
+      "ifcClass": "IfcDoor",
+      "material": {
+        "category": "wood",
+        "color": "#a8794a",
+        "description": "Oak timber: doors, cladding, decking.",
+        "id": "wood_oak",
+        "name": "Oak wood",
+      },
+      "name": "",
+      "placement": {
+        "direction": [
+          0,
+          1,
+          0,
+        ],
+        "point": [
+          6,
+          2,
+          0,
+        ],
+      },
+      "quantities": {
+        "area": 1.89,
+      },
+      "type": "door",
+    },
+    {
+      "geometry": {
+        "elevation": 0,
+        "outline": [
+          [
+            0,
+            0,
+          ],
+          [
+            6,
+            0,
+          ],
+          [
+            6,
+            4,
+          ],
+          [
+            0,
+            4,
+          ],
+        ],
+        "thickness": 0.2,
+      },
+      "id": "s1",
+      "ifcClass": "IfcSlab",
+      "material": {
+        "category": "concrete",
+        "color": "#a7a49d",
+        "description": "Cast-in-place reinforced concrete left exposed.",
+        "id": "concrete",
+        "name": "Exposed concrete",
+      },
+      "name": "",
+      "quantities": {
+        "area": 24,
+        "perimeter": 20,
+        "thickness": 0.2,
+        "volume": 4.8,
+      },
+      "type": "slab",
+    },
+    {
+      "geometry": {
+        "center": [
+          10,
+          2,
+        ],
+        "depth": 1.5,
+        "length": 6,
+        "rotation": 90,
+        "width": 3,
+      },
+      "id": "p1",
+      "ifcClass": "IfcBuildingElementProxy",
+      "material": {
+        "category": "water",
+        "color": "#3fa7c9",
+        "description": "Water in a swimming pool with light tiles below.",
+        "id": "pool_water",
+        "name": "Pool water",
+      },
+      "name": "",
+      "objectType": "SwimmingPool",
+      "quantities": {
+        "area": 18,
+        "depth": 1.5,
+        "volume": 27,
+      },
+      "type": "pool",
+    },
+    {
+      "geometry": {
+        "base": 3,
+        "center": [
+          3,
+          2,
+        ],
+        "height": 0.5,
+        "length": 4,
+        "rotation": 0,
+        "width": 6,
+      },
+      "id": "b1",
+      "ifcClass": "IfcBuildingElementProxy",
+      "material": {
+        "category": "ceramic",
+        "color": "#b4532a",
+        "description": "Terracotta roof tiles.",
+        "id": "roof_tile",
+        "name": "Roof tile",
+      },
+      "name": "",
+      "objectType": "Volume",
+      "quantities": {
+        "area": 24,
+        "height": 0.5,
+        "volume": 12,
+      },
+      "type": "box",
+    },
+  ],
+  "generator": "moodboard 3D editor",
+  "name": "Σπίτι",
+  "schema": "moodboard.house/v1",
+  "units": {
+    "angle": "deg",
+    "length": "m",
+  },
+}
+`;
