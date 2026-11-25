@@ -450,7 +450,15 @@
 	};
 
 	function onkeydown(e: KeyboardEvent) {
-		if (typing(e)) return;
+		if (typing(e)) {
+			// Escape in the typed-length field drops the wall draft; other text entry is unchanged.
+			if (e.key === 'Escape' && e.target === lengthInput && vp?.drafting) {
+				vp.cancelDraft();
+				lengthText = '';
+				lengthInput?.blur();
+			}
+			return;
+		}
 		const mod = e.metaKey || e.ctrlKey;
 		if (mod && e.key.toLowerCase() === 'z') {
 			e.preventDefault();

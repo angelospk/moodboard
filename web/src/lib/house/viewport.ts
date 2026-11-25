@@ -255,6 +255,9 @@ export class HouseViewport {
 		canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 		window.addEventListener('keydown', this.#key);
 		window.addEventListener('keyup', this.#key);
+		// A pointer that released outside the canvas after a cancelled drag must still leave #swallow.
+		window.addEventListener('pointerup', this.#unswallow);
+		window.addEventListener('pointercancel', this.#unswallow);
 
 		this.#ro = new ResizeObserver(() => this.#resize());
 		this.#ro.observe(host);
@@ -268,6 +271,8 @@ export class HouseViewport {
 		this.host.removeEventListener('pointerdown', this.#downCapture, { capture: true });
 		window.removeEventListener('keydown', this.#key);
 		window.removeEventListener('keyup', this.#key);
+		window.removeEventListener('pointerup', this.#unswallow);
+		window.removeEventListener('pointercancel', this.#unswallow);
 		this.controls.dispose();
 		this.#scene.remove(this.#house, this.#ghost, this.#helpers);
 		disposeHouse(this.#house);
@@ -578,6 +583,10 @@ export class HouseViewport {
 			const raw = this.#groundAt(e);
 			if (raw) this.#commitAdd(newItem(this.itemKind, this.#snapped(raw)));
 		}
+	};
+
+	#unswallow = (e: PointerEvent) => {
+		this.#swallow.delete(e.pointerId);
 	};
 
 	#cancelPointer = (e: PointerEvent) => {
