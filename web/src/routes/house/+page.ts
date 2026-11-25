@@ -16,6 +16,7 @@ export const load: PageLoad = async ({ parent, url }) => {
 	let versions: VersionInfo[] = [];
 	let hasDraft = false;
 	let draftId: string | null = null;
+	let draftAt: string | null = null;
 	try {
 		const [p, draft, list] = await Promise.all([
 			pb.collection('projects').getOne(projectId, { fields: 'id,name' }),
@@ -27,10 +28,11 @@ export const load: PageLoad = async ({ parent, url }) => {
 			model = draft.model;
 			hasDraft = true;
 			draftId = draft.id;
+			draftAt = draft.updated_at;
 		}
 		versions = list;
 	} catch (e) {
 		error = e instanceof Error ? e.message : String(e);
 	}
-	return { pb, userId: user!.id, project, model, versions, hasDraft, draftId, error };
+	return { pb, userId: user!.id, project, model, versions, hasDraft, draftId, draftAt, error };
 };

@@ -44,13 +44,15 @@ describe('house drafts', () => {
 
 	it('saveDraft returns the row id; with it the next save is one update of the same row', async () => {
 		const p = (await createProject(a.pb, a.uid, 'Με id')).id;
-		const id = await saveDraft(a.pb, a.uid, p, withWall(1));
-		expect(await saveDraft(a.pb, a.uid, p, withWall(2), id)).toBe(id);
+		const { id } = await saveDraft(a.pb, a.uid, p, withWall(1));
+		const second = await saveDraft(a.pb, a.uid, p, withWall(2), id);
+		expect(second.id).toBe(id);
+		expect(second.updated_at).toBe((await loadDraft(a.pb, p))!.updated_at);
 		expect((await loadDraft(a.pb, p))!.model).toEqual(withWall(2));
 		// A known id whose row is gone: create the draft again.
 		await a.pb.collection('house_models').delete(id);
 		const again = await saveDraft(a.pb, a.uid, p, withWall(3), id);
-		expect(again).not.toBe(id);
+		expect(again.id).not.toBe(id);
 		expect((await loadDraft(a.pb, p))!.model).toEqual(withWall(3));
 	});
 

@@ -23,6 +23,13 @@ async function findDraft(pb: PocketBase, projectId: string) {
 	}
 }
 
+/** The stored draft row after a save: its id and the server's time of that write. */
+export interface SavedDraft {
+	id: string;
+	updated_at: string;
+}
+const saved = (r: { id: string; updated_at: string }): SavedDraft => ({ id: r.id, updated_at: r.updated_at });
+
 /** Draft saves still running in this tab, per project: a load waits for them, so leaving a project
  *  and coming back (A → B → A) never shows a draft older than the last edit. */
 const inflight = new Map<string, Promise<unknown>>();
@@ -36,44 +43,45 @@ export function trackDraftSave(projectId: string, queue: Promise<unknown>) {
 }
 
 export async function loadDraft(pb: PocketBase, projectId: string): Promise<{ id: string; model: HouseModel; updated_at: string } | null> {
-	await inflight.get(projectId)?.catch(() => {});
+	// Wait until no save queue is left: one may replace another while we wait.
+	for (let q = inflight.get(projectId); q; q = inflight.get(projectId)) {
+		await q.catch(() => {});
+		if (inflight.get(projectId) === q) break;
+	}
 	const row = await findDraft(pb, projectId);
 	return row ? { id: row.id, model: parseModel(row.model), updated_at: row.updated_at } : null;
 }
 
 /**
- * Create or overwrite the project's one draft and return its id. With `knownId` (from an earlier
+ * Create or overwrite the project's one draft and return its id and write time. With `knownId` (from an earlier
  * load or save) it is a single update. Drafts are last-writer-wins: the editor sends its saves one at
  * a time, and two devices editing at once is out of scope (no realtime merge yet).
  */
-export function saveDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null = null): Promise<string> {
+export function saveDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null = null): Promise<SavedDraft> {
 	const p = writeDraft(pb, userId, projectId, model, knownId);
 	if (!inflight.has(projectId)) trackDraftSave(projectId, p); // a tracked queue already covers this write
 	return p;
 }
 
-async function writeDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null): Promise<string> {
+async function writeDraft(pb: PocketBase, userId: string, projectId: string, model: HouseModel, knownId: string | null): Promise<SavedDraft> {
 	if (knownId) {
 		try {
-			await pb.collection(COLLECTION).update(knownId, { model });
-			return knownId;
+			return saved(await pb.collection(COLLECTION).update(knownId, { model }));
 		} catch (e) {
 			if (!isNotFound(e)) throw e; // the row is gone: create it again below
 		}
 	}
 	const existing = await findDraft(pb, projectId);
 	if (existing) {
-		await pb.collection(COLLECTION).update(existing.id, { model });
-		return existing.id;
+		return saved(await pb.collection(COLLECTION).update(existing.id, { model }));
 	}
 	try {
-		return (await pb.collection(COLLECTION).create({ user_id: userId, project_id: projectId, kind: 'draft', name: '', model })).id;
+		return saved(await pb.collection(COLLECTION).create({ user_id: userId, project_id: projectId, kind: 'draft', name: '', model }));
 	} catch (e) {
 		// A concurrent save created the draft first: the unique index rejects ours with 400. Update that row.
 		const raced = await findDraft(pb, projectId);
 		if (!raced) throw e;
-		await pb.collection(COLLECTION).update(raced.id, { model });
-		return raced.id;
+		return saved(await pb.collection(COLLECTION).update(raced.id, { model }));
 	}
 }
 

@@ -40,14 +40,15 @@
 
 	/** The server's draft, or this browser's recovery copy when it is newer (edits that never reached the server). */
 	function startModel(): { model: HouseModel; recovered: boolean } {
-		// The copy is removed only when the server acknowledged the last edit, so one that is still here
-		// holds edits this browser never got confirmed: it wins unless the server already has the same model.
-		// (Two devices editing one project at once is out of scope: last writer wins.)
+		// The copy is removed when the server acknowledged the last edit, so one that is still here holds
+		// edits this browser never got confirmed. It records `base`, the server time of the last draft this
+		// browser knew. If the server draft is still that one, the copy is newer: use it. If the server has a
+		// later draft (another device saved since), the server wins and the copy is dropped.
 		try {
-			const r = JSON.parse(localStorage.getItem(RECOVERY) ?? 'null') as { model?: unknown } | null;
+			const r = JSON.parse(localStorage.getItem(RECOVERY) ?? 'null') as { model?: unknown; base?: string | null } | null;
 			if (r) {
 				const m = parseModel(r.model);
-				if (JSON.stringify(m) !== JSON.stringify(data.model)) return { model: m, recovered: true };
+				if ((r.base ?? null) === (data.draftAt ?? null) && JSON.stringify(m) !== JSON.stringify(data.model)) return { model: m, recovered: true };
 				localStorage.removeItem(RECOVERY);
 			}
 		} catch {
@@ -132,12 +133,14 @@
 	let savedRev = 0;
 	/** The draft row, once known: later saves skip the lookup (one request, which a closing tab can still send). */
 	let draftId: string | null = untrack(() => data.draftId);
+	/** Server time of the last draft this editor knows is stored (loaded or acknowledged). */
+	let draftAt: string | null = untrack(() => data.draftAt);
 
 	// Recovery copy in this browser until the server acknowledges the edit: a tab closed or reloaded
 	// before the save lands still has it next time (used when newer than the server's draft).
 	function keepRecovery(m: HouseModel | null) {
 		try {
-			if (m) localStorage.setItem(RECOVERY, JSON.stringify({ at: Date.now(), model: m }));
+			if (m) localStorage.setItem(RECOVERY, JSON.stringify({ base: draftAt, model: m }));
 			else localStorage.removeItem(RECOVERY);
 		} catch {
 			/* private mode or full storage: the server save still runs */
@@ -161,14 +164,17 @@
 		saving = saving.then(async () => {
 			saveState = 'saving';
 			try {
-				draftId = await saveDraft(data.pb, data.userId, projectId, snapshot, draftId);
+				const row = await saveDraft(data.pb, data.userId, projectId, snapshot, draftId);
+				draftId = row.id;
+				draftAt = row.updated_at;
 				savedRev = at;
 				if (savedRev === rev) {
 					saveState = 'saved';
 					keepRecovery(null);
+				} else {
+					keepRecovery(model); // newer edits wait: move their copy onto the new server base
+					saveState = sentRev === rev ? 'saving' : 'pending';
 				}
-				else if (sentRev === rev) saveState = 'saving';
-				else saveState = 'pending';
 			} catch {
 				// Send it again on retry or the next edit.
 				if (sentRev === at) sentRev = savedRev;
