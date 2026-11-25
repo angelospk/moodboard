@@ -18,7 +18,10 @@
 		x: 'M4 4l8 8M12 4l-8 8',
 		check: 'M3 8.5l3 3 7-7',
 		chevronRight: 'M6 4l4 4-4 4',
-		cube: 'M8 2.5l5 2.5v6L8 13.5 3 11V5zM3 5l5 2.5L13 5M8 7.5v6'
+		cube: 'M8 2.5l5 2.5v6L8 13.5 3 11V5zM3 5l5 2.5L13 5M8 7.5v6',
+		sofa: 'M3.5 8.5V6a1.5 1.5 0 0 1 1.5-1.5h6A1.5 1.5 0 0 1 12.5 6v2.5M2.5 8.5h11v3h-11zM3.5 11.5v2M12.5 11.5v2',
+		turnLeft: 'M4.5 6.5a4.5 4.5 0 1 1 .8 5M4.5 3v3.5H8',
+		turnRight: 'M11.5 6.5a4.5 4.5 0 1 0-.8 5M11.5 3v3.5H8'
 	} as const;
 	export type HouseIconName = keyof typeof PATHS;
 </script>

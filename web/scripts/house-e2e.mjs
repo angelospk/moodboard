@@ -304,5 +304,217 @@ await tab.reload({ waitUntil: 'networkidle0' });
 await wait(tab);
 await sleep(500);
 
+// ------------------------------------------------------------------ Handles, items, typed length (tablet: pen, touch, mouse)
+const it = await signedInPage({ width: 1180, height: 820, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+const itName = 'Έπιπλα ' + Date.now().toString(36);
+const itProject = await it.evaluate(async (name) => {
+	const { pb } = await import('/src/lib/pb.ts');
+	const { createProject } = await import('/src/lib/inspirations.ts');
+	return (await createProject(pb, pb.authStore.record.id, name)).id;
+}, itName);
+await it.goto(`${APP}/house?project=${itProject}`, { waitUntil: 'networkidle0' });
+await wait(it);
+const icdp = await it.createCDPSession();
+const iTouch = (type, pts) => icdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i + 1, radiusX: 4, radiusY: 4, force: 1 })) });
+const iPen = (type, x, y, buttons) => icdp.send('Input.dispatchMouseEvent', { type, x, y, button: buttons || type === 'mouseReleased' ? 'left' : 'none', buttons, clickCount: 1, pointerType: 'pen', force: 0.5 });
+const iMouse = (type, x, y, buttons) => icdp.send('Input.dispatchMouseEvent', { type, x, y, button: buttons || type === 'mouseReleased' ? 'left' : 'none', buttons, clickCount: 1, pointerType: 'mouse' });
+const frame = () => it.evaluate(() => new Promise((r) => requestAnimationFrame(() => r())));
+const penTap = async (q) => {
+	await iPen('mouseMoved', q.x, q.y, 0);
+	await iPen('mousePressed', q.x, q.y, 1);
+	await iPen('mouseReleased', q.x, q.y, 0);
+	await sleep(400);
+};
+/** Press at a, move in steps to b (one frame each), optionally run `mid` before release. */
+const penDrag = async (a, b, steps = 10, mid) => {
+	await iPen('mouseMoved', a.x, a.y, 0);
+	await iPen('mousePressed', a.x, a.y, 1);
+	for (let i = 1; i <= steps; i++) {
+		await iPen('mouseMoved', a.x + ((b.x - a.x) * i) / steps, a.y + ((b.y - a.y) * i) / steps, 1);
+		await frame();
+	}
+	if (mid) await mid();
+	await iPen('mouseReleased', b.x, b.y, 0);
+	await sleep(200);
+};
+const wallsOf = (m) => Object.fromEntries(m.elements.filter((e) => e.type === 'wall').map((e) => [e.id, e.points]));
+
+// A closed 8 × 6 m room and a garden wall that shares its corner (8, 0).
+await it.evaluate(() =>
+	window.__house.commit({
+		schema: 'moodboard.house/v1',
+		units: 'm',
+		elements: [
+			{ id: 'room', type: 'wall', name: '', material: 'plaster_white', points: [[0, 0], [8, 0], [8, 6], [0, 6], [0, 0]], height: 3, thickness: 0.25, base: 0 },
+			{ id: 'garden', type: 'wall', name: '', material: 'stone', points: [[8, 0], [12, 0]], height: 1.2, thickness: 0.25, base: 0 }
+		]
+	})
+);
+await clickText(it, 'Επιλογή');
+await clickText(it, 'Κάτοψη');
+await it.click('button[aria-label="Κεντράρισμα"]');
+await sleep(300);
+await penTap(await screen(it, 0, 3, 3));
+ok((await it.evaluate(() => window.__house.vp.selected)) === 'room', 'pen tap selects the room wall');
+const handleCount = await it.$$eval('.vp-handles .h', (els) => els.length);
+ok(handleCount === 5 + 4, `room wall shows 5 corner and 4 "+" handles (${handleCount})`);
+await it.screenshot({ path: join(OUT, 'house-items-handles.png') });
+
+// Pen drags the shared corner (8, 0) to (9, -1): the garden wall follows; one undo step.
+const depth0 = await it.evaluate(() => window.__house.undoDepth());
+const m0 = await model(it);
+await penDrag(await screen(it, 8, 0, 0), await screen(it, 9, -1, 0), 12, async () => {
+	ok(await it.evaluate(() => window.__house.vp.dragging), 'pen press on a corner handle starts a drag (no orbit)');
+	ok(JSON.stringify(await model(it)) === JSON.stringify(m0), 'the model is not committed while the pen moves');
+	await it.screenshot({ path: join(OUT, 'house-items-drag.png') });
+});
+let mi = await model(it);
+ok(JSON.stringify(wallsOf(mi).room[1]) === '[9,-1]' && JSON.stringify(wallsOf(mi).garden[0]) === '[9,-1]', 'corner and the joined garden wall moved to (9, -1): ' + JSON.stringify(wallsOf(mi)));
+ok((await it.evaluate(() => window.__house.undoDepth())) === depth0 + 1, 'the drag is one undo step');
+await it.click('button[aria-label="Αναίρεση"]');
+ok(JSON.stringify(await model(it)) === JSON.stringify(m0), 'one undo restores the model before the drag');
+await it.click('button[aria-label="Επανάληψη"]');
+mi = await model(it);
+ok(JSON.stringify(wallsOf(mi).room[1]) === '[9,-1]', 'redo brings the drag back');
+
+// One finger drags a corner; a second finger cancels it and the model stays as it was.
+const m1 = JSON.stringify(await model(it));
+const depth1 = await it.evaluate(() => window.__house.undoDepth());
+const c0 = await screen(it, 0, 6, 0);
+await iTouch('touchStart', [[c0.x, c0.y]]);
+for (let i = 1; i <= 6; i++) {
+	await iTouch('touchMove', [[c0.x - i * 8, c0.y - i * 8]]);
+	await frame();
+}
+ok(await it.evaluate(() => window.__house.vp.dragging), 'one finger on a corner handle drags it');
+await iTouch('touchStart', [[c0.x - 48, c0.y - 48], [c0.x + 150, c0.y]]);
+ok(!(await it.evaluate(() => window.__house.vp.dragging)), 'a second finger cancels the drag');
+for (let i = 1; i <= 5; i++) await iTouch('touchMove', [[c0.x - 48 - i * 10, c0.y - 48], [c0.x + 150 + i * 10, c0.y]]);
+await iTouch('touchEnd', []);
+await sleep(200);
+ok(JSON.stringify(await model(it)) === m1 && (await it.evaluate(() => window.__house.undoDepth())) === depth1, 'the cancelled drag left the model and the history unchanged');
+
+// Items: a sofa and a stair from the catalog.
+await clickText(it, 'Αντικείμενα');
+await it.waitForSelector('.catalog');
+await it.screenshot({ path: join(OUT, 'house-items-picker.png') });
+await clickText(it, 'Καναπές', '.catalog button');
+await penTap(await screen(it, 4, 3));
+await clickText(it, 'Σκάλα', '.catalog button');
+await penTap(await screen(it, 2, 1.5));
+mi = await model(it);
+const sofa = mi.elements.find((e) => e.type === 'item' && e.kind === 'sofa');
+const stair = mi.elements.find((e) => e.type === 'item' && e.kind === 'stair');
+ok(sofa && JSON.stringify(sofa.center) === '[4,3]', 'sofa placed at (4, 3): ' + JSON.stringify(sofa));
+ok(stair && JSON.stringify(stair.center) === '[2,1.5]', 'stair placed at (2, 1.5): ' + JSON.stringify(stair));
+
+// Select the sofa, turn it with the rotate knob (pen), then an Escape cancels a mouse move.
+await clickText(it, 'Επιλογή');
+await penTap(await screen(it, 4, 3, sofa.height));
+ok((await it.evaluate(() => window.__house.vp.selected)) === sofa.id, 'pen tap selects the sofa');
+ok((await it.$eval('.inspector .kind', (e) => e.textContent.trim())) === 'Καναπές' && (await it.$eval('.inspector .ifc', (e) => e.textContent.trim())) === 'IfcFurniture', 'inspector shows Καναπές / IfcFurniture');
+const knob = await screen(it, 4, 3 + sofa.length / 2 + 0.5, sofa.height);
+await penDrag(knob, await screen(it, 2.5, 3, sofa.height), 10);
+mi = await model(it);
+ok(mi.elements.find((e) => e.id === sofa.id).rotation === 90, 'rotate knob turned the sofa to 90°: ' + mi.elements.find((e) => e.id === sofa.id).rotation);
+const m2 = JSON.stringify(mi);
+const sc = await screen(it, 4, 3, sofa.height);
+await iMouse('mouseMoved', sc.x, sc.y, 0);
+await iMouse('mousePressed', sc.x, sc.y, 1);
+for (let i = 1; i <= 6; i++) {
+	await iMouse('mouseMoved', sc.x + i * 15, sc.y, 1);
+	await frame();
+}
+await it.keyboard.press('Escape');
+await iMouse('mouseReleased', sc.x + 90, sc.y, 0);
+await sleep(200);
+ok(JSON.stringify(await model(it)) === m2, 'Escape cancels a mouse drag of the sofa');
+ok((await it.evaluate(() => window.__house.vp.selected)) === sofa.id, 'Escape during a drag keeps the selection');
+await clickText(it, '3D');
+await sleep(400);
+await it.screenshot({ path: join(OUT, 'house-items-3d.png') });
+
+// Typed length: one tap, the pen hovers north, then "3.2" + Enter places the next corner 3.2 m away.
+await it.keyboard.press('Escape'); // close the inspector
+await clickText(it, 'Κάτοψη');
+await clickText(it, 'Τοίχος');
+await sleep(200);
+await penTap(await screen(it, -3, 0));
+const north = await screen(it, -3, 2);
+await iPen('mouseMoved', north.x, north.y, 0);
+await sleep(100);
+ok(await it.$('.len input'), 'the length field shows after the first corner');
+await it.screenshot({ path: join(OUT, 'house-items-length.png') });
+await it.keyboard.press('3'); // a digit on the page jumps into the field
+await it.keyboard.type('.2');
+await it.keyboard.press('Enter');
+await sleep(150);
+await clickText(it, 'Τέλος');
+mi = await model(it);
+const typed = mi.elements.at(-1);
+const seg = Math.hypot(typed.points[1][0] - typed.points[0][0], typed.points[1][1] - typed.points[0][1]);
+ok(typed.type === 'wall' && JSON.stringify(typed.points) === '[[-3,0],[-3,3.2]]' && Math.abs(seg - 3.2) < 1e-9, `typed length gave a ${seg} m wall: ` + JSON.stringify(typed.points));
+
+// Exports: one glTF node item:<id> per item, IFC classes in the JSON.
+const icdpDl = await it.createCDPSession();
+await icdpDl.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL });
+const already = new Set(readdirSync(DL));
+await clickText(it, 'Λήψη');
+await clickText(it, 'Μοντέλο 3D (.glb)');
+await sleep(1500);
+await clickText(it, 'Λήψη');
+await clickText(it, 'Περιγραφή για AI/CAD (.json)');
+await sleep(1500);
+const fresh = readdirSync(DL).filter((f) => !already.has(f));
+const glbFile = fresh.find((f) => f.endsWith('.glb'));
+const jsonFile = fresh.find((f) => f.endsWith('.house.json'));
+ok(glbFile && jsonFile, 'downloaded the items .glb and .json: ' + fresh.join(', '));
+const glb = readFileSync(join(DL, glbFile));
+const gltf = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+const itemIds = mi.elements.filter((e) => e.type === 'item').map((e) => e.id);
+const nodeNames = gltf.nodes.map((n) => n.name);
+ok(itemIds.every((id) => nodeNames.filter((n) => n === `item:${id}`).length === 1), 'glb has one node item:<id> per item: ' + nodeNames.filter((n) => n.startsWith('item:')).join(', '));
+const sem = JSON.parse(readFileSync(join(DL, jsonFile), 'utf8'));
+const classes = Object.fromEntries(sem.elements.filter((e) => e.type === 'item').map((e) => [e.objectType, e.ifcClass]));
+ok(classes.sofa === 'IfcFurniture' && classes.stair === 'IfcStair', 'json: sofa IfcFurniture, stair IfcStair: ' + JSON.stringify(classes));
+
+// Perf: 150 walls; a corner drag must not rebuild the scene per move.
+await it.evaluate(() => {
+	const m = window.__house.model();
+	const extra = Array.from({ length: 150 }, (_, i) => ({
+		id: 'p' + i, type: 'wall', name: '', material: 'plaster_white',
+		points: [[(i % 10) * 4, 20 + Math.floor(i / 10) * 2], [(i % 10) * 4 + 3, 20 + Math.floor(i / 10) * 2]], height: 3, thickness: 0.2, base: 0
+	}));
+	window.__house.commit({ ...m, elements: [...m.elements, ...extra] });
+});
+await clickText(it, 'Επιλογή');
+await it.click('button[aria-label="Κεντράρισμα"]');
+await sleep(300);
+await it.evaluate(() => window.__house.vp.on.select('p0'));
+await sleep(200);
+await it.evaluate(() => {
+	window.__house.vp.stats.builds = 0;
+	window.__house.vp.stats.previewMs.length = 0;
+});
+const pa = await screen(it, 3, 20, 0);
+const pb2 = await screen(it, 3, 17, 0);
+await iMouse('mouseMoved', pa.x, pa.y, 0);
+await iMouse('mousePressed', pa.x, pa.y, 1);
+const t0 = Date.now();
+for (let i = 1; i <= 60; i++) {
+	await iMouse('mouseMoved', pa.x + ((pb2.x - pa.x) * i) / 60, pa.y + ((pb2.y - pa.y) * i) / 60, 1);
+	await frame();
+}
+const wallMs = (Date.now() - t0) / 60;
+const during = await it.evaluate(() => ({ builds: window.__house.vp.stats.builds, ms: [...window.__house.vp.stats.previewMs] }));
+await iMouse('mouseReleased', pb2.x, pb2.y, 0);
+await sleep(200);
+const builds = await it.evaluate(() => window.__house.vp.stats.builds);
+const sorted = during.ms.slice().sort((x, y) => x - y);
+const median = sorted[Math.floor(sorted.length / 2)];
+log(`perf 150 walls: ${during.ms.length} previews, median ${median?.toFixed(2)} ms preview work per move, ${wallMs.toFixed(1)} ms per move incl. CDP + frame`);
+ok(during.builds === 0 && builds === 1 && during.ms.length >= 50, `no full rebuild while dragging (${during.builds}), one on release (${builds})`);
+ok(JSON.stringify(wallsOf(await model(it)).p0[1]) === '[3,17]', 'perf drag committed the corner at (3, 17)');
+
 await browser.close();
 console.log('ALL OK', projectId);

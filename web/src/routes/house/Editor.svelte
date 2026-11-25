@@ -7,13 +7,17 @@
 	import { getLocale, t } from '#lib/i18n.js';
 	import { HouseViewport, DRAW_TOOLS, type DraftInfo, type Tool } from '#lib/house/viewport.js';
 	import { MATERIALS, material as findMaterial } from '#lib/house/materials.js';
+	import { catalog, type CatalogGroup } from '#lib/house/catalog.js';
+	import { typedLength } from '#lib/house/interaction.js';
 	import {
+		ITEM_IFC,
 		hidesOpening,
 		parseModel,
 		removeElement,
 		segments,
 		type Element,
 		type HouseModel,
+		type ItemKind,
 		type Opening,
 		type Vec2,
 		type Wall
@@ -90,6 +94,8 @@
 	}
 
 	function undo() {
+		// Undo during a handle drag only stops the drag.
+		if (vp?.cancelDrag()) return;
 		const prev = undoStack.at(-1);
 		if (!prev) return;
 		undoStack = undoStack.slice(0, -1);
@@ -201,7 +207,8 @@
 		{ id: 'door', icon: 'door', label: 'house.tool.door', key: '5' },
 		{ id: 'slab', icon: 'slab', label: 'house.tool.slab', key: '6' },
 		{ id: 'pool', icon: 'pool', label: 'house.tool.pool', key: '7' },
-		{ id: 'box', icon: 'box', label: 'house.tool.box', key: '8' }
+		{ id: 'box', icon: 'box', label: 'house.tool.box', key: '8' },
+		{ id: 'item', icon: 'sofa', label: 'house.tool.item', key: '9' }
 	];
 
 	const HINTS: Record<Tool, Key> = {
@@ -212,8 +219,32 @@
 		window: 'house.hint.opening',
 		door: 'house.hint.opening',
 		pool: 'house.hint.rect',
-		box: 'house.hint.rect'
+		box: 'house.hint.rect',
+		item: 'house.hint.item'
 	};
+
+	// Item tool: the catalog, grouped as the picker shows it.
+	const GROUPS: { id: CatalogGroup; label: Key }[] = [
+		{ id: 'furniture', label: 'house.group.furniture' },
+		{ id: 'sanitary', label: 'house.group.sanitary' },
+		{ id: 'site', label: 'house.group.site' },
+		{ id: 'circulation', label: 'house.group.circulation' }
+	];
+	const CATALOG = catalog();
+	let itemKind: ItemKind = $state('sofa');
+	function setItemKind(kind: ItemKind) {
+		itemKind = kind;
+		if (vp) vp.itemKind = kind;
+	}
+
+	// Typed wall length while drawing (metres; Enter places the next corner toward the cursor).
+	let lengthText = $state('');
+	let lengthInput: HTMLInputElement | null = $state(null);
+	function placeTyped(e: SubmitEvent) {
+		e.preventDefault();
+		const m = typedLength(lengthText);
+		if (m !== null && vp?.placeByLength(m)) lengthText = '';
+	}
 
 	function setTool(next: Tool) {
 		tool = next;
@@ -245,10 +276,12 @@
 		const v = new HouseViewport(host, {
 			commit: (next) => commit(next),
 			select: (id) => select(id),
-			draft: (info) => (draft = info)
+			draft: (info) => (draft = info),
+			refused: () => say(t('house.noRoom'))
 		});
 		vp = v;
 		v.paintMaterial = paintMaterial;
+		v.itemKind = itemKind;
 		v.setModel(model);
 		v.setTool(tool);
 		v.view('perspective');
@@ -258,7 +291,7 @@
 		}
 		// Dev-only hook for browser checks (web/scripts/house-e2e.mjs).
 		const w = window as unknown as { __house?: unknown };
-		if (import.meta.env.DEV) w.__house = { vp: v, model: () => model };
+		if (import.meta.env.DEV) w.__house = { vp: v, model: () => model, commit: (m: HouseModel) => commit(m), undoDepth: () => undoStack.length };
 		return () => {
 			v.dispose();
 			if (vp === v) vp = null;
@@ -283,6 +316,11 @@
 	// ------------------------------------------------------------------ Inspector
 
 	let sel = $derived(model.elements.find((e) => e.id === selected) ?? null);
+
+	/** Select with something selected: the hint explains its handles. */
+	let hint: Key = $derived(
+		tool !== 'select' || !sel ? HINTS[tool] : sel.type === 'pool' || sel.type === 'box' || sel.type === 'item' ? 'house.hint.rotate' : 'house.hint.handles'
+	);
 
 	function update(patch: Partial<Element>) {
 		if (!sel) return;
@@ -309,6 +347,7 @@
 			case 'pool':
 				return [numField('width', sel.width, 0.25, 100), numField('length', sel.length, 0.25, 100), numField('depth', sel.depth, 0.1, 10), numField('rotation', sel.rotation, -360, 360)];
 			case 'box':
+			case 'item':
 				return [numField('width', sel.width, 0.05, 200), numField('length', sel.length, 0.05, 200), numField('height', sel.height, 0.05, 200), numField('base', sel.base, -100, 1000), numField('rotation', sel.rotation, -360, 360)];
 		}
 	});
@@ -316,10 +355,15 @@
 	let wallLength = $derived(sel?.type === 'wall' ? segments(sel).reduce((s, x) => s + x.length, 0) : 0);
 
 	function onNumber(key: string, e: Event & { currentTarget: HTMLInputElement }) {
-		const v = e.currentTarget.valueAsNumber;
+		let v = e.currentTarget.valueAsNumber;
 		if (!Number.isFinite(v)) return;
+		// Items turn in 15° steps, like their rotate handle.
+		if (key === 'rotation' && sel?.type === 'item') v = turn(v, 0);
 		update({ [key]: v } as Partial<Element>);
 	}
+
+	/** `deg` + `by`, on a 15° step, in [0, 360). */
+	const turn = (deg: number, by: number) => ((((Math.round(deg / 15) * 15 + by) % 360) + 360) % 360);
 
 	function remove() {
 		if (!sel) return;
@@ -416,9 +460,15 @@
 		}
 		if (mod) return;
 		if (e.key === 'Escape') {
+			if (vp?.cancelDrag()) return;
 			if (vp?.drafting) vp.cancelDraft();
 			else if (versionsOpen || exportOpen) versionsOpen = exportOpen = false;
 			else select(null);
+		} else if (draft?.tool === 'wall' && draft.points > 0 && /^[\d.,]$/.test(e.key) && lengthInput) {
+			// Digits while drawing a wall start a typed length.
+			e.preventDefault();
+			lengthText = e.key;
+			lengthInput.focus();
 		} else if (e.key === 'Enter') vp?.finishDraft();
 		else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) remove();
 		else {
@@ -442,8 +492,13 @@
 		slab: 'house.tool.slab',
 		pool: 'house.tool.pool',
 		box: 'house.tool.box',
-		item: 'house.tool.box' // placeholder until F2 adds the item messages
+		item: 'house.tool.item'
 	};
+
+	let selLabel = $derived(sel ? (sel.type === 'item' ? t(`house.item.${sel.kind}`) : t(TYPE_LABEL[sel.type])) : '');
+	let selIfc = $derived(
+		!sel ? '' : sel.type === 'item' ? ITEM_IFC[sel.kind] : sel.type === 'pool' || sel.type === 'box' ? 'IfcBuildingElementProxy' : `Ifc${sel.type[0].toUpperCase()}${sel.type.slice(1)}`
+	);
 
 	const FIELD_LABEL: Record<string, Key> = {
 		height: 'house.field.height',
@@ -579,9 +634,45 @@
 			<div class="dock">
 				{#if tool === 'paint'}
 					<div class="palette">{@render swatches(paintMaterial, setPaint)}</div>
+				{:else if tool === 'item'}
+					<div class="palette catalog" role="group" aria-label={t('house.catalog')}>
+						{#each GROUPS as g (g.id)}
+							<div class="cgroup">
+								<span class="glabel">{t(g.label)}</span>
+								<div class="chips">
+									{#each CATALOG.filter((c) => c.group === g.id) as c (c.kind)}
+										<button type="button" class={['chip', itemKind === c.kind && 'on']} aria-pressed={itemKind === c.kind} onclick={() => setItemKind(c.kind)}>
+											{t(c.i18nKey)}
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/each}
+					</div>
 				{/if}
 				<div class="hintbar">
-					<span class="hint">{t(HINTS[tool])}</span>
+					<span class="hint">{t(hint)}</span>
+					{#if draft?.tool === 'wall' && draft.points > 0}
+						<form class="len" onsubmit={placeTyped}>
+							<label>
+								<span>{t('house.typeLength')}</span>
+								<span class="num">
+									<input
+										bind:this={lengthInput}
+										bind:value={lengthText}
+										type="text"
+										inputmode="decimal"
+										enterkeyhint="done"
+										autocomplete="off"
+										placeholder={draft.length !== null ? draft.length.toFixed(2) : '0.00'}
+										aria-label={t('house.typeLengthHint')}
+										title={t('house.typeLengthHint')}
+									/>
+									<em>m</em>
+								</span>
+							</label>
+						</form>
+					{/if}
 					{#if draft && draft.points > 0}
 						{#if draft.canFinish}
 							<button type="button" class="btn primary" onclick={() => vp?.finishDraft()}><HouseIcon name="check" size={16} />{t('house.finish')}</button>
@@ -603,13 +694,13 @@
 			{#if sel}
 				<aside class="inspector" aria-label={t('house.inspector')}>
 					<header>
-						<span class="kind">{t(TYPE_LABEL[sel.type])}</span>
-						<span class="ifc">{sel.type === 'pool' || sel.type === 'box' ? 'IfcBuildingElementProxy' : `Ifc${sel.type[0].toUpperCase()}${sel.type.slice(1)}`}</span>
+						<span class="kind">{selLabel}</span>
+						<span class="ifc">{selIfc}</span>
 						<button type="button" class="ic" onclick={() => select(null)} aria-label={t('house.close')}><HouseIcon name="x" size={16} /></button>
 					</header>
 					<label class="field wide">
 						<span>{t('house.field.name')}</span>
-						<input type="text" maxlength="120" value={sel.name} placeholder={t(TYPE_LABEL[sel.type])} onchange={(e) => update({ name: e.currentTarget.value.trim() })} />
+						<input type="text" maxlength="120" value={sel.name} placeholder={selLabel} onchange={(e) => update({ name: e.currentTarget.value.trim() })} />
 					</label>
 					<div class="grid">
 						{#each fields as f (`${sel.id}:${f.key}`)}
@@ -624,6 +715,12 @@
 					</div>
 					{#if sel.type === 'wall'}
 						<p class="note">{t('house.wallLength', { m: wallLength.toFixed(2) })}</p>
+					{:else if sel.type === 'item'}
+						{@const rot = sel.rotation}
+						<div class="turn">
+							<button type="button" class="btn" onclick={() => update({ rotation: turn(rot, 15) })}><HouseIcon name="turnLeft" size={16} />{t('house.rotateLeft')}</button>
+							<button type="button" class="btn" onclick={() => update({ rotation: turn(rot, -15) })}><HouseIcon name="turnRight" size={16} />{t('house.rotateRight')}</button>
+						</div>
 					{/if}
 					<div class="matlabel">
 						<span>{t('house.material')}</span>
@@ -862,6 +959,56 @@
 		white-space: nowrap;
 	}
 
+	/* Handles of the selected element (SVG over the canvas, drawn by the viewport). */
+	.vp :global(.vp-handles) {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		overflow: visible;
+	}
+	.vp :global(.vp-handles .h circle),
+	.vp :global(.vp-handles .h rect) {
+		fill: var(--raised);
+		stroke: var(--accent);
+		stroke-width: 2;
+	}
+	.vp :global(.vp-handles .h path) {
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.vp :global(.vp-handles .h.center circle),
+	.vp :global(.vp-handles .h.on circle),
+	.vp :global(.vp-handles .h.on rect) {
+		fill: var(--accent);
+	}
+	.vp :global(.vp-handles .h.center path),
+	.vp :global(.vp-handles .h.on path) {
+		stroke: var(--raised);
+	}
+	.vp :global(.vp-handles .h.on) {
+		scale: 1.25;
+	}
+	.vp :global(.vp-handles .stem) {
+		stroke: var(--accent);
+		stroke-width: 1.5;
+	}
+	.vp :global(.vp-handles .bad circle),
+	.vp :global(.vp-handles .bad rect) {
+		stroke: #d2382c;
+	}
+	.vp :global(.vp-handles .h.on.bad circle),
+	.vp :global(.vp-handles .h.on.bad rect) {
+		fill: #d2382c;
+	}
+	.vp :global(.vp-handles .stem.bad) {
+		stroke: #d2382c;
+	}
+
 	.rail {
 		position: absolute;
 		left: 12px;
@@ -969,6 +1116,70 @@
 	.palette .swatches {
 		flex-wrap: nowrap;
 		overflow-x: auto;
+	}
+	.catalog {
+		display: flex;
+		gap: 4px 16px;
+		flex-wrap: wrap;
+		padding: 8px 12px 10px;
+	}
+	.cgroup {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+	.glabel {
+		font-size: 11.5px;
+		font-weight: 600;
+		color: var(--faint);
+		padding-left: 2px;
+	}
+	.chips {
+		display: flex;
+		gap: 4px;
+	}
+	.chip {
+		min-height: 36px;
+		padding: 0 12px;
+		border: 1px solid var(--line);
+		border-radius: var(--r-pill);
+		background: none;
+		color: var(--text);
+		font-size: 13px;
+		white-space: nowrap;
+	}
+	.chip:hover {
+		background: var(--sunk);
+	}
+	.chip.on {
+		background: var(--text);
+		border-color: var(--text);
+		color: var(--bg);
+	}
+	.len label {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.len label > span:first-child {
+		font-size: 12.5px;
+		font-weight: 600;
+		color: var(--muted);
+	}
+	.len input {
+		width: 84px;
+		min-height: 40px;
+		border-radius: var(--r-pill);
+		padding-left: 12px;
+	}
+	.turn {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.turn .btn {
+		min-height: 40px;
 	}
 
 	.swatches {
@@ -1159,6 +1370,8 @@
 		.withpanel .dock {
 			left: 50%;
 			width: min(760px, calc(100% - 24px));
+			/* Above the inspector sheet, which covers the bottom 52%. */
+			bottom: calc(52% + 12px);
 		}
 	}
 	@media (max-width: 640px) {
@@ -1181,6 +1394,16 @@
 		}
 		.dock {
 			bottom: 92px;
+		}
+		.withpanel .rail {
+			bottom: calc(52% + 12px);
+		}
+		.withpanel .dock {
+			bottom: calc(52% + 92px);
+		}
+		.catalog {
+			flex-wrap: nowrap;
+			overflow-x: auto;
 		}
 		.viewctl {
 			top: 12px;
