@@ -11,9 +11,38 @@ import type { HouseModel, Vec2 } from './model.js';
  * (opening) or movePlaced(old centre + to − start), rotate → rotatePlaced (angle of `to` around the
  * centre, knob on local +y at 0°), vertex → moveSlabPoint.
  */
+import { moveOpening, movePlaced, moveSlabPoint, moveWall, moveWallPoint, rotatePlaced, insertWallPoint } from './drag.js';
+import { hidesOpening, type Element, type Item, type Box, type Pool } from './model.js';
+
 export function applyDrag(model: HouseModel, handle: Handle, start: Vec2, to: Vec2): HouseModel | null {
-	void [model, handle, start, to];
-	throw new Error('not implemented');
+	const el = model.elements.find((e) => e.id === handle.element);
+	if (!el) return model;
+	switch (handle.kind) {
+		case 'corner':
+			return moveWallPoint(model, handle.element, handle.index, to);
+		case 'mid': {
+			const withPoint = insertWallPoint(model, handle.element, handle.index, start);
+			if (withPoint === model) return model;
+			return moveWallPoint(withPoint, handle.element, handle.index + 1, to);
+		}
+		case 'body':
+			return moveWall(model, handle.element, [to[0] - start[0], to[1] - start[1]]);
+		case 'center': {
+			if (el.type === 'window' || el.type === 'door') return moveOpening(model, el.id, to);
+			if (el.type === 'pool' || el.type === 'box' || el.type === 'item') {
+				return movePlaced(model, el.id, [el.center[0] + to[0] - start[0], el.center[1] + to[1] - start[1]]);
+			}
+			return model;
+		}
+		case 'rotate': {
+			const placed = el as Pool | Box | Item;
+			// The knob sits on the rotated +y axis, so its direction is rotation + 90 deg.
+			const angle = (Math.atan2(to[1] - placed.center[1], to[0] - placed.center[0]) * 180) / Math.PI - 90;
+			return rotatePlaced(model, el.id, angle);
+		}
+		case 'vertex':
+			return moveSlabPoint(model, handle.element, handle.index, to);
+	}
 }
 
 export interface DragPreview {
@@ -41,39 +70,80 @@ export interface DragSessionOptions {
 }
 
 export class DragSession {
+	private original: HouseModel;
+	private lastValid: HouseModel;
+	private lastPreview: DragPreview | null = null;
+	private moved = false;
+	private finished = false;
+
 	constructor(opts: DragSessionOptions) {
-		void opts;
-		throw new Error('not implemented');
+		this.original = opts.model;
+		this.lastValid = opts.model;
+		this.opts = opts;
 	}
 
-	/** True after cancel(), a second pointer, or end(). */
+	private opts: DragSessionOptions;
+
 	get done(): boolean {
-		throw new Error('not implemented');
+		return this.finished;
 	}
 
-	/** Another pointer pressed: cancel the drag (the two-finger gesture takes over). Same pointer: ignored. */
 	pointerDown(pointerId: number): void {
-		void pointerId;
-		throw new Error('not implemented');
+		if (this.finished) return;
+		if (pointerId === this.opts.pointerId) return;
+		this.finished = true;
 	}
 
-	/** Pointer moved to plan point `to`. Null for another pointer or when done. */
 	move(pointerId: number, to: Vec2): DragPreview | null {
-		void [pointerId, to];
-		throw new Error('not implemented');
+		if (this.finished || pointerId !== this.opts.pointerId) return null;
+		this.moved = true;
+		const snap = this.opts.snap ?? ((p: Vec2) => p);
+		const target = snap(to);
+		const apply = this.opts.apply ?? applyDrag;
+		const next = apply(this.original, this.opts.handle, this.opts.start, target);
+		if (next === null) {
+			this.lastPreview = { model: this.lastValid, invalid: true, affected: changed(this.original, this.lastValid) };
+			return this.lastPreview;
+		}
+		if (hidesOpening(this.original, next)) {
+			// The move hides a hole: show it (the viewport flags it) but never keep or commit it.
+			this.lastPreview = { model: next, invalid: true, affected: changed(this.original, next) };
+			return this.lastPreview;
+		}
+		this.lastValid = next;
+		this.lastPreview = { model: next, invalid: false, affected: changed(this.original, next) };
+		return this.lastPreview;
 	}
 
-	/**
-	 * Release: calls commit(model) once and returns that model. Null (no commit) for another pointer,
-	 * when done, when nothing moved, or when the last preview is invalid.
-	 */
 	end(pointerId: number): HouseModel | null {
-		void pointerId;
-		throw new Error('not implemented');
+		if (this.finished || pointerId !== this.opts.pointerId) return null;
+		if (!this.moved || !this.lastPreview || this.lastPreview.invalid) {
+			this.finished = true;
+			return null;
+		}
+		const out = this.lastValid;
+		this.finished = true;
+		this.opts.commit(out);
+		return out;
 	}
 
-	/** Abort without commit. Always null. */
 	cancel(): null {
-		throw new Error('not implemented');
+		this.finished = true;
+		return null;
 	}
+}
+
+/** Ids of elements that differ between two models, by reference or by value. */
+function changed(before: HouseModel, after: HouseModel): string[] {
+	const old = new Map(before.elements.map((e) => [e.id, e]));
+	const ids: string[] = [];
+	for (const e of after.elements) {
+		const prev = old.get(e.id);
+		if (prev !== e && !sameElement(prev, e)) ids.push(e.id);
+	}
+	return ids;
+}
+
+function sameElement(a: Element | undefined, b: Element): boolean {
+	return !!a && JSON.stringify(a) === JSON.stringify(b);
 }

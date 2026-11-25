@@ -2,7 +2,7 @@
 // person) can rebuild it in Revit, ArchiCAD or ZWCAD. Described by docs/house-3d-schema.json.
 // All lengths in metres, angles in degrees; every number is rounded to 6 decimals.
 import { material } from './materials';
-import { cutIds, round6, segments, type Element, type HouseModel, type Opening, type Vec2, type Wall } from './model';
+import { cutIds, round6, segments, ITEM_IFC, type Element, type HouseModel, type Item, type ItemIfcClass, type ItemKind, type Opening, type Vec2, type Wall } from './model';
 
 export type Vec3 = [number, number, number];
 
@@ -18,9 +18,9 @@ export interface SemanticMaterial {
 export interface SemanticElement {
 	id: string;
 	type: Element['type'];
-	ifcClass: 'IfcWall' | 'IfcSlab' | 'IfcWindow' | 'IfcDoor' | 'IfcBuildingElementProxy';
+	ifcClass: 'IfcWall' | 'IfcSlab' | 'IfcWindow' | 'IfcDoor' | 'IfcBuildingElementProxy' | ItemIfcClass;
 	/** Only for the proxies: what the IfcBuildingElementProxy stands for. */
-	objectType?: 'SwimmingPool' | 'Volume';
+	objectType?: 'SwimmingPool' | 'Volume' | ItemKind;
 	name: string;
 	material: SemanticMaterial;
 	/** Windows and doors: id of the host wall. */
@@ -112,6 +112,26 @@ function openingElement(o: Opening, wall: Wall | undefined): SemanticElement | n
 	};
 }
 
+/** The +x axis after a counter-clockwise rotation by `deg` degrees, seen from above. */
+function rotatedX(deg: number): Vec3 {
+	const a = (deg * Math.PI) / 180;
+	return [r(Math.cos(a)), r(Math.sin(a)), 0];
+}
+
+function itemElement(e: Item): SemanticElement {
+	return {
+		id: e.id,
+		type: 'item',
+		ifcClass: ITEM_IFC[e.kind],
+		objectType: e.kind,
+		name: e.name,
+		material: mat(e.material),
+		geometry: { kind: e.kind, center: r2(e.center), width: r(e.width), length: r(e.length), height: r(e.height), base: r(e.base), rotation: r(e.rotation) },
+		placement: { point: [r(e.center[0]), r(e.center[1]), r(e.base)], direction: rotatedX(e.rotation) },
+		quantities: { width: r(e.width), length: r(e.length), height: r(e.height) }
+	};
+}
+
 export function toSemantic(model: HouseModel, meta: { name?: string } = {}): SemanticDoc {
 	const walls = new Map(model.elements.filter((e): e is Wall => e.type === 'wall').map((w) => [w.id, w]));
 	// Only openings their wall really cuts, the same set the 3D scene and the .glb show.
@@ -160,6 +180,8 @@ export function toSemantic(model: HouseModel, meta: { name?: string } = {}): Sem
 				geometry: { center: r2(e.center), width: r(e.width), length: r(e.length), rotation: r(e.rotation), base: r(e.base), height: r(e.height) },
 				quantities: { area: r(e.width * e.length), height: r(e.height), volume: r(e.width * e.length * e.height) }
 			});
+		} else if (e.type === 'item') {
+			elements.push(itemElement(e));
 		}
 	}
 	return {

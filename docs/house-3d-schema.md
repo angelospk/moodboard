@@ -23,6 +23,12 @@ Every element has `id`, `type`, `ifcClass`, `name` (may be empty), `material`, p
 | `slab` | `IfcSlab` | `geometry.outline` (closed polygon, last point not repeated), `elevation` (top), `thickness` |
 | `pool` | `IfcBuildingElementProxy`, `objectType: "SwimmingPool"` | `center`, `width` (x), `length` (y), `rotation`, `depth` below z = 0 |
 | `box` | `IfcBuildingElementProxy`, `objectType: "Volume"` | `center`, `width`, `length`, `rotation`, `base`, `height` |
+| `item` | by kind: `IfcFurniture` (bed, sofa, table, chair, counter), `IfcSanitaryTerminal` (wc, basin, shower, bath), `IfcGeographicElement` (tree), `IfcBuildingElementProxy` (car), `IfcStair` (stair) | `objectType` = kind, `geometry` (`kind`, `center`, `width`, `length`, `height`, `base`, `rotation`), `placement` |
+
+An `item` is a catalog object standing on the floor (a bed, a sofa, a tree, a car, a stair): a parametric
+box of `width` (x) × `length` (y) × `height`, rotated by `rotation` about its `center`, with its bottom at
+elevation `base`. `geometry.kind` and `objectType` are the same kind, and the schema rejects a kind the
+editor does not know or an `ifcClass` that does not fit the kind.
 
 ## How openings attach to walls
 

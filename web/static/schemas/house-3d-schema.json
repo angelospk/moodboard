@@ -76,6 +76,9 @@
 					},
 					{
 						"$ref": "#/$defs/box"
+					},
+					{
+						"$ref": "#/$defs/item"
 					}
 				]
 			}
@@ -165,6 +168,21 @@
 					"description": "What the material stands for in a real building."
 				}
 			}
+		},
+		"ifcClasses": {
+			"type": "string",
+			"description": "IFC class to use in the target tool.",
+			"enum": [
+				"IfcWall",
+				"IfcSlab",
+				"IfcWindow",
+				"IfcDoor",
+				"IfcBuildingElementProxy",
+				"IfcFurniture",
+				"IfcSanitaryTerminal",
+				"IfcGeographicElement",
+				"IfcStair"
+			]
 		},
 		"elementId": {
 			"type": "string",
@@ -758,6 +776,262 @@
 							"type": "number",
 							"minimum": 0,
 							"description": "width * length * height, cubic metres."
+						}
+					}
+				}
+			}
+		},
+		"item": {
+			"type": "object",
+			"description": "A catalog item standing on the floor: furniture, a sanitary fixture, a site object, a stair. A parametric object that fills its width x length x height box. IFC class by kind: bed, sofa, table, chair, counter map to IfcFurniture; wc, basin, shower, bath to IfcSanitaryTerminal; tree to IfcGeographicElement; car to IfcBuildingElementProxy; stair to IfcStair.",
+			"allOf": [
+				{
+					"if": {
+						"properties": {
+							"objectType": {
+								"enum": [
+									"bed",
+									"sofa",
+									"table",
+									"chair",
+									"counter"
+								]
+							}
+						},
+						"required": [
+							"objectType"
+						]
+					},
+					"then": {
+						"properties": {
+							"ifcClass": {
+								"const": "IfcFurniture"
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"objectType": {
+								"enum": [
+									"wc",
+									"basin",
+									"shower",
+									"bath"
+								]
+							}
+						},
+						"required": [
+							"objectType"
+						]
+					},
+					"then": {
+						"properties": {
+							"ifcClass": {
+								"const": "IfcSanitaryTerminal"
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"objectType": {
+								"const": "tree"
+							}
+						},
+						"required": [
+							"objectType"
+						]
+					},
+					"then": {
+						"properties": {
+							"ifcClass": {
+								"const": "IfcGeographicElement"
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"objectType": {
+								"const": "car"
+							}
+						},
+						"required": [
+							"objectType"
+						]
+					},
+					"then": {
+						"properties": {
+							"ifcClass": {
+								"const": "IfcBuildingElementProxy"
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"objectType": {
+								"const": "stair"
+							}
+						},
+						"required": [
+							"objectType"
+						]
+					},
+					"then": {
+						"properties": {
+							"ifcClass": {
+								"const": "IfcStair"
+							}
+						}
+					}
+				}
+			],
+			"required": [
+				"id",
+				"type",
+				"ifcClass",
+				"objectType",
+				"name",
+				"material",
+				"geometry",
+				"placement",
+				"quantities"
+			],
+			"additionalProperties": false,
+			"properties": {
+				"id": {
+					"$ref": "#/$defs/elementId"
+				},
+				"type": {
+					"const": "item",
+					"description": "Element type."
+				},
+				"ifcClass": {
+					"$ref": "#/$defs/ifcClasses",
+					"description": "IFC class to use in the target tool; it must match the kind (see the item description)."
+				},
+				"objectType": {
+					"description": "The item kind: what the object is.",
+					"enum": [
+						"bed",
+						"sofa",
+						"table",
+						"chair",
+						"counter",
+						"wc",
+						"basin",
+						"shower",
+						"bath",
+						"tree",
+						"car",
+						"stair"
+					]
+				},
+				"name": {
+					"$ref": "#/$defs/elementName"
+				},
+				"material": {
+					"$ref": "#/$defs/material"
+				},
+				"geometry": {
+					"type": "object",
+					"description": "Item geometry.",
+					"required": [
+						"kind",
+						"center",
+						"width",
+						"length",
+						"height",
+						"base",
+						"rotation"
+					],
+					"additionalProperties": false,
+					"properties": {
+						"kind": {
+							"description": "The kind; it must equal the element's objectType.",
+							"enum": [
+								"bed",
+								"sofa",
+								"table",
+								"chair",
+								"counter",
+								"wc",
+								"basin",
+								"shower",
+								"bath",
+								"tree",
+								"car",
+								"stair"
+							]
+						},
+						"center": {
+							"$ref": "#/$defs/placedCenter"
+						},
+						"width": {
+							"$ref": "#/$defs/placedWidth"
+						},
+						"length": {
+							"$ref": "#/$defs/placedLength"
+						},
+						"height": {
+							"$ref": "#/$defs/positiveLength",
+							"description": "Item height above base, metres."
+						},
+						"base": {
+							"$ref": "#/$defs/length",
+							"description": "Elevation z of the item bottom, metres."
+						},
+						"rotation": {
+							"$ref": "#/$defs/placedRotation"
+						}
+					}
+				},
+				"placement": {
+					"type": "object",
+					"description": "Absolute placement, derived from the geometry.",
+					"required": [
+						"point",
+						"direction"
+					],
+					"additionalProperties": false,
+					"properties": {
+						"point": {
+							"$ref": "#/$defs/vec3",
+							"description": "Centre of the item at its base elevation, metres: x, y from geometry.center, z = geometry.base."
+						},
+						"direction": {
+							"$ref": "#/$defs/vec3",
+							"description": "Unit vector of the rotated +x axis (the width axis), with z = 0."
+						}
+					}
+				},
+				"quantities": {
+					"type": "object",
+					"description": "Computed quantities.",
+					"required": [
+						"width",
+						"length",
+						"height"
+					],
+					"additionalProperties": false,
+					"properties": {
+						"width": {
+							"type": "number",
+							"description": "Item width, metres."
+						},
+						"length": {
+							"type": "number",
+							"description": "Item length, metres."
+						},
+						"height": {
+							"type": "number",
+							"description": "Item height, metres."
 						}
 					}
 				}
