@@ -77,8 +77,8 @@ pick ray hit), `extrude.ts` (polygon + h -> mesh; wall offset), `recognize.ts`
 4. MCP server: `get_sketch`, `apply_ops`, `add_note`, `list_notes`, `snapshot`,
    `render`. Uses the same `ops.ts` + `parseSketch`. Local/tailnet only.
 5. AI auto-trace as the first MCP client: model gets the image + camera, writes
-   ops to an `AI` variant, user merges. Off until Angelos approves sending
-   images to the model provider.
+   ops to an `AI` variant, user merges. Approved: images go to Anthropic
+   (Claude) only when the user taps "Auto trace".
 
 Done so far: `web/src/lib/sketch3d/ops.ts` (replay, fork, mergePlan, merge)
 with `web/tests/sketch3d-ops.test.ts`.
@@ -89,7 +89,44 @@ Candidates only, read before copying: `scene.ts` (three.js setup), `snap.ts`,
 `gesture.ts` (pinch/orbit), `server/migrations/*_house_models.go` (collection
 pattern), `scripts/house-e2e.mjs` (test stack recipe).
 
-## 5. Open product questions (for Angelos)
+## 5. Tools in v1 (decided 2026-11-26; Angelos: "the ones you consider essential")
 
-- Tool list I/T/D/K/M/CO/O/TR/EX/F/CH/MI/DI/G/LK/Q: not judged yet.
+Angelos approved sending images to Anthropic for auto-trace (2026-11-26).
+
+Visible tools (one row, pen first, max 7 buttons):
+1. Pen: one tool for line/rect/circle/ellipse/arc/free; shape recognition and
+   auto-close decide the shape, typed size after the stroke corrects it.
+2. Push/pull (volume; wall mode = toggle on the volume, 0.25 m default).
+3. Select: tap = one, lasso = many; then move / copy / rotate / delete as
+   handles and a small context bar (no separate M, CO tools).
+4. Eraser (also the S Pen button, if the device sends it as button 5/eraser).
+5. Image: import from file or Moodboard, calibrate with one known length;
+   auto-trace (T) is offered on the image right after import.
+6. Note: circle a region + text (for AI and for later).
+7. Measure (DI): tap two points; live dimensions are always on anyway.
+
+Invisible (proactive, no button): photo match (K) = camera from vanishing
+points, computed when an image is placed; snapping to plane axes, parallels,
+perpendiculars, endpoints and traced image lines; plane lock.
+
+Later, only when a real sketch needs them: depth from a 2nd plane (D), offset
+(O), mirror (MI), group (G), trim/extend (TR/EX), fillet/chamfer (F/CH),
+sketch -> AI image (Q, after the MCP server).
+
+## 6. UX principles (clean, intuitive, proactive)
+
+- One active plane, always visible; the plane chips stay. Everything else
+  hides until it is useful.
+- Suggest the next step where the pen is: a closed outline shows a push/pull
+  arrow on it; a new volume offers "3 m"; an imported image offers "Auto
+  trace"; an AI draft shows as a ghost with accept / reject per element and
+  "accept all". Suggestions never block drawing and fade if ignored.
+- Every action is undoable and named in the history; AI changes always land
+  in their own variant.
+- Pen draws, finger navigates (orbit/pan/zoom); touch is ignored while the pen
+  is near or down.
+- Numbers only on demand: tap a dimension to type it.
+
+## 7. Open product questions (for Angelos)
+
 - Tailscale on the tablet: not confirmed.

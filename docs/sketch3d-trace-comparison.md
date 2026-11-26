@@ -51,6 +51,24 @@ Local models:
   empty. I stopped the run after 2 images: the result was clear and each image
   cost ~6 min of CPU.
 
+Claude Opus (same prompt, same 7 images, Angelos approved):
+
+| # | null | Sonnet align / median px / elements | Opus align / median px / elements |
+|---|---|---|---|
+| 11 | 68% | 84% / 1.9 / 12 | 89% / 1.9 / 14 |
+| 13 | 48% | 87% / 2.3 / 11 | 80% / 2.9 / 12 |
+| 19 | 41% | 77% / 1.9 / 11 | 74% / 2.3 / 13 |
+| 20 | 62% | 70% / 3.8 / 10 | 79% / 2.9 / 11 |
+| 05 | 32% | 58% / 4.8 / 9 | 62% / 4.8 / 10 |
+| 09 | 29% | 86% / 1.4 / 13 | 86% / 1.9 / 14 |
+| 22 | 33% | 65% / 2.7 / 8 | 63% / 4.8 / 10 |
+
+Mean align: Sonnet 75.4%, Opus 76.3% (no real difference). Opus: 29-42 s per
+image (Sonnet 17-26 s), 1-2 more elements per image (e.g. splits the
+two-storey module, adds the pool basin and ground), same structure. Opus costs
+more per call. Default: Sonnet. Opus only if a real draft shows Sonnet missing
+parts.
+
 ## What I saw
 
 - Classic lines are exact where they exist, and the vanishing points are right
