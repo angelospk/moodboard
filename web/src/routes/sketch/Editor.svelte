@@ -57,17 +57,20 @@
 		edited = true;
 		doc = d;
 	}
-	function apply(label: string, ch: Change<Element>[]) {
-		if (!ch.length || !loaded) return;
+	/** False when the edit was not kept. */
+	function apply(label: string, ch: Change<Element>[]): boolean {
+		if (!ch.length || !loaded) return false;
 		const next = commit(doc, label, ch, uid(), Date.now());
 		// Never keep an edit the next load would reject (document budget, outline rules).
 		try {
 			parseSketch(next);
 		} catch {
-			return showToast(t('sketch.tooLarge'));
+			showToast(t('sketch.tooLarge'));
+			return false;
 		}
 		setDoc(next);
 		redoStack = [];
+		return true;
 	}
 	function undo() {
 		if (!loaded) return;
@@ -372,7 +375,7 @@
 							: r.closed
 								? t('sketch.shape.closed')
 								: t('sketch.shape.free');
-		apply(label, [{ id, el }]);
+		if (!apply(label, [{ id, el }])) return;
 		if (r.closed) suggest = id;
 		showToast(clamped ? t('sketch.clamped') : label);
 	}
@@ -405,7 +408,7 @@
 			if (!base) return showToast(t('sketch.selfCrossing'));
 			next = { type: 'volume', plane: el.plane, base, h, wall: null, mat: 'plaster', name: t('sketch.volumeName', { n: volumeCount() + 1 }) };
 		}
-		apply(el.type === 'volume' ? t('sketch.op.height', { h: m(h) }) : t('sketch.op.extrude', { h: m(h) }), [{ id, el: next }]);
+		if (!apply(el.type === 'volume' ? t('sketch.op.height', { h: m(h) }) : t('sketch.op.extrude', { h: m(h) }), [{ id, el: next }])) return;
 		selected = id;
 		suggest = null;
 	}

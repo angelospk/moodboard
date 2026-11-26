@@ -204,6 +204,8 @@ export class Viewport {
 		const eps = hit ? 0.01 + 1e-3 * hit.distance : 0;
 		let best: { id: string; d: number } | null = null;
 		const planes = new Map(this.model.planes.map((p) => [p.id, p]));
+		const fwd = this.camera.getWorldDirection(new THREE.Vector3()), eye = this.camera.position;
+		const viewDepth = (w: V3) => (w[0] - eye.x) * fwd.x + (w[1] - eye.y) * fwd.y + (w[2] - eye.z) * fwd.z;
 		for (const [id, el] of this.model.els) {
 			if (el.type !== 'stroke' || this.model.hidden?.has(id)) continue;
 			const p = planes.get(el.plane);
@@ -219,7 +221,10 @@ export class Viewport {
 				const s = segDist(clientX, clientY, pts[i], pts[j]);
 				if (s.d < d) {
 					d = s.d;
-					at = [wp[i][0] + (wp[j][0] - wp[i][0]) * s.t, wp[i][1] + (wp[j][1] - wp[i][1]) * s.t, wp[i][2] + (wp[j][2] - wp[i][2]) * s.t];
+					// Screen position s.t to the world point: 1/depth is linear on screen, not depth.
+					const za = viewDepth(wp[i]), zb = viewDepth(wp[j]);
+					const t = s.t * za + (1 - s.t) * zb > 0 ? (s.t * za) / (s.t * za + (1 - s.t) * zb) : s.t;
+					at = [wp[i][0] + (wp[j][0] - wp[i][0]) * t, wp[i][1] + (wp[j][1] - wp[i][1]) * t, wp[i][2] + (wp[j][2] - wp[i][2]) * t];
 				}
 			}
 			if (el.closed && inside(clientX, clientY, pts)) {
