@@ -80,8 +80,19 @@ pick ray hit), `extrude.ts` (polygon + h -> mesh; wall offset), `recognize.ts`
    ops to an `AI` variant, user merges. Approved: images go to Anthropic
    (Claude) only when the user taps "Auto trace".
 
-Done so far: `web/src/lib/sketch3d/ops.ts` (replay, fork, mergePlan, merge)
-with `web/tests/sketch3d-ops.test.ts`.
+Done so far:
+- Step 1: `web/src/lib/sketch3d/ops.ts` (replay, fork, mergePlan, merge),
+  `doc.ts` (types, `parseSketch` gate), `edit.ts` (commit/undo/redo);
+  tests `web/tests/sketch3d-ops.test.ts`, `sketch3d-core.test.ts`.
+- Step 2, slice A: route `/sketch` (`web/src/routes/sketch/Editor.svelte`),
+  `viewport.ts` (three.js), `geom.ts`, `recognize.ts`, `mesh.ts`, `input.ts`
+  (palm gate), `storage.ts` (IndexedDB). Pen with shape recognition and
+  auto-close, suggestion chip «Όγκος / 3 μ» on a closed shape, push/pull,
+  select + height/wall/material/delete, eraser (also S Pen side button),
+  planes Δάπεδο/Πρόσοψη/Πλάγια, undo/redo, JSON export.
+  Browser check: `~/mockups/sketch3d/e2e/sketch-e2e.mjs` (synthetic pen/touch).
+- Next (slice B): move/copy/rotate on selection, image import + calibration,
+  note, measure; then PocketBase sync.
 
 ## 4. Reuse from `origin/feat/house-3d` (do not merge)
 
