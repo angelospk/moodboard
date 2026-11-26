@@ -61,7 +61,7 @@ export function recognize(P: V2[]): Recognized | null {
 		return Math.acos(Math.max(-1, Math.min(1, c)));
 	};
 	for (let k = 0; k < 3; k++) cs = cs.filter((_, i) => ang(i) < Math.PI * 0.86 || cs.length <= 3);
-	if (cs.length === 4 && [0, 1, 2, 3].every((i) => Math.abs(ang(i) - Math.PI / 2) < 0.33)) {
+	rect: if (cs.length === 4 && [0, 1, 2, 3].every((i) => Math.abs(ang(i) - Math.PI / 2) < 0.33)) {
 		let th = 0, best = -1;
 		for (let i = 0; i < 4; i++) {
 			const p = cs[i], q = cs[(i + 1) % 4], l = Math.hypot(q[0] - p[0], q[1] - p[1]);
@@ -74,6 +74,8 @@ export function recognize(P: V2[]): Recognized | null {
 		const loc = cs.map((p) => [p[0] * co + p[1] * si, -p[0] * si + p[1] * co]);
 		const lx = loc.map((p) => p[0]).sort((m, k) => m - k), ly = loc.map((p) => p[1]).sort((m, k) => m - k);
 		const X0 = snap((lx[0] + lx[1]) / 2), X1 = snap((lx[2] + lx[3]) / 2), Y0 = snap((ly[0] + ly[1]) / 2), Y1 = snap((ly[2] + ly[3]) / 2);
+		// Thinner than the grid: snapping would fold it flat, so try the other shapes.
+		if (X1 - X0 < GRID / 2 || Y1 - Y0 < GRID / 2) break rect;
 		const back = (q: V2): V2 => [q[0] * co - q[1] * si, q[0] * si + q[1] * co];
 		return { shape: 'rect', pts: ([[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]] as V2[]).map(back), closed: true, gap };
 	}
@@ -105,8 +107,10 @@ export function recognize(P: V2[]): Recognized | null {
 		}
 		return { shape: circle ? 'circle' : 'ellipse', pts, closed: true, gap };
 	}
-	// A loop with almost no area (a stroke that went out and came back) stays an open stroke.
+	// A loop with almost no area for its length (a stroke that went out and came back) stays open.
+	// Compactness 4πA/P² is 1 for a circle, about 0.04 for a 10 m × 0.12 m wall plan, ~0 for a sliver.
 	const loop = rdp(Q, 0.004 * diag).slice(0, -1);
-	if (loop.length < 3 || Math.abs(area(loop)) < 0.02 * diag * diag) return open();
+	const per = pathLen([...loop, loop[0]]);
+	if (loop.length < 3 || (4 * Math.PI * Math.abs(area(loop))) / (per * per) < 0.01) return open();
 	return { shape: 'free', pts: loop, closed: true, gap };
 }

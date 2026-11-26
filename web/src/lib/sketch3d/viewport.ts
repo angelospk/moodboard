@@ -200,7 +200,9 @@ export class Viewport {
 		rc.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), this.camera);
 		const meshes = this.content.children.filter((o) => o.userData.kind === 'volume' && !this.model!.hidden?.has(o.userData.id));
 		const hit = rc.intersectObjects(meshes, false)[0];
-		let best: { id: string; d: number } | null = hit ? { id: hit.object.userData.id, d: 0 } : null;
+		// Depths are measured along the pick ray; a small tolerance keeps strokes drawn on a face pickable.
+		const eps = hit ? 0.01 + 1e-3 * hit.distance : 0;
+		let best: { id: string; d: number } | null = null;
 		const planes = new Map(this.model.planes.map((p) => [p.id, p]));
 		for (const [id, el] of this.model.els) {
 			if (el.type !== 'stroke' || this.model.hidden?.has(id)) continue;
@@ -225,12 +227,15 @@ export class Viewport {
 				const x = r.intersectPlane(pl, new THREE.Vector3());
 				if (x && tol * 0.9 < d) (d = tol * 0.9), (at = x.toArray() as V3);
 			}
-			// A stroke hidden behind a volume cannot be picked through it.
-			if (hit && this.camera.position.distanceTo(new THREE.Vector3(...at)) > hit.distance + 0.05) continue;
-			// A stroke on top of a volume wins only when the pen is really on its line.
-			if (d < tol && (!best || d < best.d || (best.d === 0 && d < tol * 0.5))) best = { id, d };
+			const depth = new THREE.Vector3(...at).sub(rc.ray.origin).dot(rc.ray.direction);
+			// A stroke behind a volume cannot be picked through it.
+			if (hit && depth > hit.distance + eps) continue;
+			// A stroke lying on a volume's face wins over the volume only when the pen is really on its line.
+			const onFace = hit && depth >= hit.distance - eps;
+			if (d < (onFace ? tol * 0.5 : tol) && (!best || d < best.d)) best = { id, d };
 		}
-		return best ? { id: best.id, el: this.model.els.get(best.id)! } : null;
+		const id = best?.id ?? (hit ? (hit.object.userData.id as string) : null);
+		return id ? { id, el: this.model.els.get(id)! } : null;
 	}
 
 	set(m: Scene) {

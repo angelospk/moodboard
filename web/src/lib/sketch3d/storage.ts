@@ -4,28 +4,41 @@ import { parseSketch, type SketchDoc } from './doc.js';
 
 const DB = 'moodboard-sketch3d', STORE = 'docs';
 
+// One connection, kept open: writes start without an open round trip, and transactions run in
+// the order they were requested (the last save wins).
+let conn: Promise<IDBDatabase> | null = null;
 function open(): Promise<IDBDatabase> {
-	return new Promise((res, rej) => {
+	conn ??= new Promise<IDBDatabase>((res, rej) => {
 		const r = indexedDB.open(DB, 1);
 		r.onupgradeneeded = () => r.result.createObjectStore(STORE);
-		r.onsuccess = () => res(r.result);
-		r.onerror = () => rej(r.error);
+		r.onsuccess = () => {
+			const db = r.result;
+			const drop = () => {
+				db.close();
+				conn = null;
+			};
+			db.onversionchange = drop;
+			db.onclose = () => (conn = null);
+			res(db);
+		};
+		r.onerror = () => {
+			conn = null;
+			rej(r.error);
+		};
 	});
+	return conn;
 }
 
 async function run<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
 	const db = await open();
-	try {
-		return await new Promise<T>((res, rej) => {
-			const tx = db.transaction(STORE, mode);
-			const req = f(tx.objectStore(STORE));
-			tx.oncomplete = () => res(req.result);
-			tx.onerror = () => rej(tx.error);
-			tx.onabort = () => rej(tx.error);
-		});
-	} finally {
-		db.close();
-	}
+	return new Promise<T>((res, rej) => {
+		const tx = db.transaction(STORE, mode);
+		const req = f(tx.objectStore(STORE));
+		tx.oncomplete = () => res(req.result);
+		tx.onerror = () => rej(tx.error);
+		tx.onabort = () => rej(tx.error);
+		tx.commit?.();
+	});
 }
 
 /** A stored document that failed the gate. Its data was copied to `backup` first, so a new

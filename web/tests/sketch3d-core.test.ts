@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newDoc, parseSketch, PLANES, BUDGET, type SketchDoc } from '../src/lib/sketch3d/doc.js';
-import { toWorld, toLocal, normal, planeHit, heightAlong, offsetPolygon, area, type V2 } from '../src/lib/sketch3d/geom.js';
+import { toWorld, toLocal, normal, planeHit, heightAlong, offsetPolygon, area, isSimple, type V2 } from '../src/lib/sketch3d/geom.js';
 import { recognize } from '../src/lib/sketch3d/recognize.js';
 import { volumeMesh } from '../src/lib/sketch3d/mesh.js';
 import { commit, undo, redo, current } from '../src/lib/sketch3d/edit.js';
@@ -78,12 +78,24 @@ describe('doc', () => {
 		expect(() => parseSketch(d, { ...BUDGET, points: 8 })).not.toThrow();
 		expect(() => parseSketch(d, { ...BUDGET, points: 7 })).toThrow();
 	});
-	it('charges an op shared by forked variants once, and rejects a different op under a shared id', () => {
-		const d = withEls([['a', { type: 'stroke', plane: 'ground', pts: rect, closed: true, shape: 'rect' }]]) as { variants: { id: string; name: string; ops: { label: string }[] }[] };
+	it('charges every copy of an op shared by forked variants, in any key order, and rejects a different op under a shared id', () => {
+		const d = withEls([['a', { type: 'stroke', plane: 'ground', pts: rect, closed: true, shape: 'rect' }]]) as { variants: { id: string; name: string; ops: Record<string, unknown>[] }[] };
 		for (let k = 0; k < 5; k++) d.variants.push({ id: `v${k}`, name: `V${k}`, ops: structuredClone(d.variants[0].ops) });
-		expect(() => parseSketch(d, { ...BUDGET, points: 4, ops: 1 })).not.toThrow();
+		expect(() => parseSketch(d, { ...BUDGET, points: 24, ops: 6 })).not.toThrow();
+		expect(() => parseSketch(d, { ...BUDGET, points: 23 })).toThrow();
+		expect(() => parseSketch(d, { ...BUDGET, ops: 5 })).toThrow();
+		const o = d.variants[2].ops[0];
+		d.variants[2].ops[0] = Object.fromEntries(Object.entries(o).reverse());
+		expect(() => parseSketch(d)).not.toThrow();
 		d.variants[3].ops[0].label = 'changed';
 		expect(() => parseSketch(d)).toThrow();
+	});
+	it('pays the simple-outline check once per distinct base: 60 edits of a 1000-point volume fit the budget', () => {
+		const base: V2[] = Array.from({ length: 1000 }, (_, i) => [5 * Math.cos((i / 1000) * 2 * Math.PI), 5 * Math.sin((i / 1000) * 2 * Math.PI)]);
+		const d = newDoc('d1', 'Test');
+		for (let k = 0; k < 60; k++)
+			d.variants[0].ops.push({ id: `o${k}`, label: 'x', author: 'user', t: k, ch: [{ id: 'v', el: { type: 'volume', plane: 'ground', base, h: 1 + k / 10, wall: null, mat: 'plaster', name: 'V' } }] });
+		expect(() => parseSketch(JSON.parse(JSON.stringify(d)))).not.toThrow();
 	});
 	it('rejects an op that is not an op', () => {
 		const d = withEls([]) as { variants: { ops: unknown[] }[] };
@@ -189,6 +201,17 @@ describe('recognize', () => {
 		expect(r.closed && r.pts.length < 3).toBe(false);
 		if (r.closed) expect(Math.abs(area(r.pts))).toBeGreaterThan(0.01);
 	});
+	it('a tiny rectangle that snaps to zero width never becomes a degenerate closed shape', () => {
+		const P = [...seg([0, 0], [0.2, 0], 8), ...seg([0.2, 0], [0.2, 0.02], 3), ...seg([0.2, 0.02], [0, 0.02], 8), ...seg([0, 0.02], [0, 0.005], 2)];
+		const r = recognize(P);
+		if (r?.closed) expect(isSimple(r.pts)).toBe(true);
+	});
+	it('a long thin closed outline (a wall plan) stays closed', () => {
+		const P = jitter([...seg([0, 0], [10, 0], 40), ...seg([10, 0], [10, 0.12], 4), ...seg([10, 0.12], [0, 0.12], 40), ...seg([0, 0.12], [0, 0.02], 4)], 0.003);
+		const r = recognize(P)!;
+		expect(r.closed).toBe(true);
+		expect(isSimple(r.pts)).toBe(true);
+	});
 	it('a fast stroke with only two samples is a line', () => {
 		const r = recognize([[0, 0], [3, 0.05]])!;
 		expect(r?.shape).toBe('line');
@@ -227,6 +250,26 @@ describe('mesh', () => {
 				const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
 				const g = [(a[0] + b[0] + d[0]) / 3 - c[0], (a[1] + b[1] + d[1]) / 3 - c[1], (a[2] + b[2] + d[2]) / 3 - c[2]];
 				expect(n[0] * g[0] + n[1] * g[1] + n[2] * g[2]).toBeGreaterThan(0);
+			}
+		}
+	});
+	it.each([3, -2])('every triangle of a wall ring (h=%d) faces out of the wall, for either winding', (h) => {
+		const sq: V2[] = [[0, 0], [4, 0], [4, 4], [0, 4]];
+		for (const base of [sq, sq.slice().reverse()]) {
+			const m = volumeMesh(base, h, 0.25);
+			const P = (i: number) => [m.positions[3 * i], m.positions[3 * i + 1], m.positions[3 * i + 2]];
+			for (let k = 0; k < m.index.length; k += 3) {
+				const [a, b, d] = [P(m.index[k]), P(m.index[k + 1]), P(m.index[k + 2])];
+				const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+				const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+				const g = [(a[0] + b[0] + d[0]) / 3, (a[1] + b[1] + d[1]) / 3, (a[2] + b[2] + d[2]) / 3];
+				if (Math.abs(n[2]) > Math.hypot(n[0], n[1])) {
+					expect(Math.sign(n[2])).toBe(Math.sign(g[2] - h / 2)); // cap: away from the middle
+				} else {
+					const r = Math.max(Math.abs(g[0] - 2), Math.abs(g[1] - 2)); // 2 = outer face, 1.75 = inner face
+					const out = n[0] * (g[0] - 2) + n[1] * (g[1] - 2);
+					expect(Math.sign(out)).toBe(r > 1.9 ? 1 : -1);
+				}
 			}
 		}
 	});

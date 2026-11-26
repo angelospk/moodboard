@@ -81,7 +81,8 @@ function writers<E>(v: Variant<E>): Map<ElementId, string> {
 	return w;
 }
 
-function equal(a: unknown, b: unknown): boolean {
+/** Deep equality of plain JSON values (key order does not matter). */
+export function equal(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
 	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
 	if (Array.isArray(a) !== Array.isArray(b)) return false;

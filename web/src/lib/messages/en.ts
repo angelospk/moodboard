@@ -507,6 +507,7 @@ export const en: Record<keyof typeof el, string> = {
 	'sketch.loadFailed': 'The saved sketch could not be read. A copy is kept on this device; starting a new one.',
 	'sketch.storageFailed': 'This device cannot store the sketch. Changes are not saved: use Export.',
 	'sketch.wallNoFit': 'A {t} m wall does not fit inside this shape.',
+	'sketch.tooLarge': 'The sketch has reached its size limit. This change was not kept.',
 	'sketch.selfCrossing': 'The outline crosses itself. Draw it again without a crossing.',
 	'sketch.clamped': 'Part of the line was cut at 30 m. Turn the camera.',
 	'sketch.undone': 'Undone: {label}',

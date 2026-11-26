@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getLocale, LOCALE_TAGS, t } from '#lib/i18n.js';
-	import { LIMIT, MATERIALS, newDoc, type Element, type Material, type Plane, type SketchDoc, type VolumeEl } from '#lib/sketch3d/doc.js';
+	import { LIMIT, MATERIALS, newDoc, parseSketch, type Element, type Material, type Plane, type SketchDoc, type VolumeEl } from '#lib/sketch3d/doc.js';
 	import { commit, current, redo as redoOp, undo as undoOp } from '#lib/sketch3d/edit.js';
 	import { heightAlong, isSimple, normal, offsetPolygon, planeHit, rdp, toWorld, type V2, type V3 } from '#lib/sketch3d/geom.js';
 	import { PenGate } from '#lib/sketch3d/input.js';
@@ -59,7 +59,14 @@
 	}
 	function apply(label: string, ch: Change<Element>[]) {
 		if (!ch.length || !loaded) return;
-		setDoc(commit(doc, label, ch, uid(), Date.now()));
+		const next = commit(doc, label, ch, uid(), Date.now());
+		// Never keep an edit the next load would reject (document budget, outline rules).
+		try {
+			parseSketch(next);
+		} catch {
+			return showToast(t('sketch.tooLarge'));
+		}
+		setDoc(next);
 		redoStack = [];
 	}
 	function undo() {
@@ -103,29 +110,19 @@
 			})
 			.finally(() => (loaded = true));
 	});
-	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	/** The document waiting for the debounced write. */
-	let pending: SketchDoc | null = null;
-	function write(d: SketchDoc) {
-		saveDoc(d).then(
-			() => (save = pending ? 'saving' : 'saved'),
-			() => (save = 'error')
-		);
-	}
-	function flush() {
-		clearTimeout(saveTimer);
-		if (pending) write(pending);
-		pending = null;
-	}
+	// Every edit is written at once (edits are discrete ops, not pen samples), so a reload or a
+	// closed tab right after an edit keeps it. Writes run in order; the last one wins.
+	let writing = 0;
 	$effect(() => {
 		const d = doc;
 		if (!loaded || !edited || !canStore) return;
+		writing++;
 		save = 'saving';
-		pending = d;
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(flush, 400);
+		saveDoc(d).then(
+			() => --writing || (save = 'saved'),
+			() => (writing--, (save = 'error'))
+		);
 	});
-	const onHide = () => document.visibilityState === 'hidden' && flush();
 
 	// ---- viewport ----
 	function mountViewport(canvas: HTMLCanvasElement) {
@@ -147,7 +144,6 @@
 			});
 		return () => {
 			mq.removeEventListener('change', onTheme);
-			clearTimeout(gateTimer);
 			if (import.meta.env.DEV) delete (window as { __sketch?: unknown }).__sketch;
 			v.dispose();
 			vp = null;
@@ -185,37 +181,45 @@
 	const penErases = (e: PointerEvent) => e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32) !== 0 || (e.buttons & 2) !== 0);
 	const hitLocal = (e: PointerEvent, p: Plane) => planeHit(vp!.ray(e.clientX, e.clientY), p, vp!.center(), LIMIT);
 
-	// Palm rejection: while the pen is near, fingers do not move the camera. A touch that started
-	// before the pen came near is stopped too (the controls are switched off, then on again).
-	let gateTimer: ReturnType<typeof setTimeout> | undefined;
-	function syncGate() {
-		clearTimeout(gateTimer);
-		const ok = gate.allowTouch(performance.now());
-		if (vp) vp.controls.enabled = ok;
-		if (!ok) gateTimer = setTimeout(syncGate, 200);
-	}
+	// Palm rejection: a finger that touches while the pen is near is a palm, and so is a finger
+	// already down when the pen comes near. A palm's moves never reach the camera or the UI until
+	// it lifts; its lift goes through, so the camera controls forget it.
+	const fingers = new Set<number>();
+	const palms = new Set<number>();
 	function penEvent(e: PointerEvent, down: boolean) {
 		if (e.pointerType !== 'pen') return;
 		if (down) gate.pen(performance.now(), true);
 		else if (e.buttons === 0 && e.type === 'pointermove') gate.hover(performance.now(), true);
 		else gate.pen(performance.now(), false);
-		syncGate();
+		if (!gate.allowTouch(performance.now())) for (const id of fingers) palms.add(id);
 	}
 	function onLeave(e: PointerEvent) {
-		if (e.pointerType !== 'pen') return;
-		gate.hover(performance.now(), false);
-		syncGate();
+		if (e.pointerType === 'pen') gate.hover(performance.now(), false);
+	}
+	function fingerUp(e: PointerEvent) {
+		if (e.pointerType !== 'touch') return;
+		fingers.delete(e.pointerId);
+		palms.delete(e.pointerId);
+	}
+	function stopPalm(e: Event) {
+		e.stopPropagation();
+		e.preventDefault();
+	}
+	/** A tap from a resting palm must not press a button. */
+	function onClickCapture(e: MouseEvent) {
+		if ((e as PointerEvent).pointerType === 'touch' && !gate.allowTouch(performance.now())) stopPalm(e);
 	}
 
 	function onDown(e: PointerEvent) {
-		if (!vp || isUi(e)) return;
 		if (e.pointerType === 'touch') {
+			fingers.add(e.pointerId);
 			if (!gate.allowTouch(performance.now())) {
-				e.stopPropagation();
-				e.preventDefault();
+				palms.add(e.pointerId);
+				stopPalm(e);
 			}
-			return; // fingers: OrbitControls
+			return; // fingers: OrbitControls and the UI
 		}
+		if (!vp || isUi(e)) return;
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
 		penEvent(e, true);
 		e.stopPropagation();
@@ -270,9 +274,11 @@
 	function track(s: Session, e: PointerEvent) {
 		if (!vp) return;
 		if (s.kind === 'draw') {
-			const evs = e.type === 'pointermove' && typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+			const move = e.type === 'pointermove';
+			const evs = move && typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
 			for (const ev of evs.length ? evs : [e]) {
-				if (s.pts.length >= MAX_SAMPLES) break;
+				// The last slot is kept for the lift, so a long stroke still ends where the pen lifted.
+				if (s.pts.length >= (move ? MAX_SAMPLES - 1 : MAX_SAMPLES)) break;
 				const h = hitLocal(ev, s.plane);
 				const last = s.pts[s.pts.length - 1];
 				if (Math.hypot(h.p[0] - last[0], h.p[1] - last[1]) < 0.01) continue;
@@ -288,6 +294,7 @@
 	}
 
 	function onMove(e: PointerEvent) {
+		if (palms.has(e.pointerId)) return stopPalm(e);
 		// Contact = tip (1) or eraser end (32). The side button alone (2) while hovering is a hover.
 		penEvent(e, (e.buttons & 33) !== 0);
 		const s = session;
@@ -297,11 +304,14 @@
 	}
 
 	function onUp(e: PointerEvent) {
+		fingerUp(e);
 		penEvent(e, false);
 		const s = session;
 		if (!s || e.pointerId !== s.pid) return;
 		e.stopPropagation();
-		track(s, e);
+		// The eraser acts on moves only: on lift, the element under a still pen is the one behind
+		// what it just erased.
+		if (s.kind !== 'erase') track(s, e);
 		session = null;
 		readout = null;
 		pulling = false;
@@ -316,6 +326,7 @@
 	}
 
 	function onCancel(e: PointerEvent) {
+		fingerUp(e);
 		penEvent(e, false);
 		if (!session || e.pointerId !== session.pid) return;
 		session = null;
@@ -444,23 +455,24 @@
 	function onKey(e: KeyboardEvent) {
 		const tgt = e.target as HTMLElement;
 		if (tgt.closest('input, textarea, [contenteditable]')) return;
-		// Physical keys (e.code), so shortcuts work with a Greek keyboard layout too.
+		// The Latin letter on the key; with a non-Latin layout (Greek) the physical key's letter.
+		const k = /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key;
 		const mod = e.metaKey || e.ctrlKey;
-		if (mod && e.code === 'KeyZ') {
+		if (mod && k === 'z') {
 			e.preventDefault();
 			if (e.shiftKey) redo();
 			else undo();
-		} else if (mod && e.code === 'KeyY') {
+		} else if (mod && k === 'y') {
 			e.preventDefault();
 			redo();
 		} else if (mod || e.altKey) return;
-		else if (e.code === 'KeyP') tool = 'pen';
-		else if (e.code === 'KeyU') tool = 'push';
-		else if (e.code === 'KeyV') tool = 'select';
-		else if (e.code === 'KeyE') tool = 'erase';
-		else if (e.code === 'Digit1') setPlane('ground');
-		else if (e.code === 'Digit2') setPlane('front');
-		else if (e.code === 'Digit3') setPlane('side');
+		else if (k === 'p') tool = 'pen';
+		else if (k === 'u') tool = 'push';
+		else if (k === 'v') tool = 'select';
+		else if (k === 'e') tool = 'erase';
+		else if (k === '1') setPlane('ground');
+		else if (k === '2') setPlane('front');
+		else if (k === '3') setPlane('side');
 		else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) remove(selected);
 		else if (e.key === 'Escape') (selected = null), (suggest = null);
 	}
@@ -482,8 +494,7 @@
 	];
 </script>
 
-<svelte:window onkeydown={onKey} onpagehide={flush} />
-<svelte:document onvisibilitychange={onHide} />
+<svelte:window onkeydown={onKey} />
 
 <div
 	class="sketch"
@@ -495,6 +506,7 @@
 	onpointercancelcapture={onCancel}
 	onlostpointercapture={onCancel}
 	onpointerleave={onLeave}
+	onclickcapture={onClickCapture}
 	oncontextmenu={(e) => e.preventDefault()}
 >
 	<canvas {@attach mountViewport} data-tool={tool}></canvas>

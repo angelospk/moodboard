@@ -1,7 +1,7 @@
 // The sketch document: planes + variants of an op log (ops.ts). Element points live in plane
 // coordinates (metres along the plane's u and v axes), so moving a plane moves its drawing.
 // parseSketch is the only way in for JSON from a file, storage or an AI: it rejects, never repairs.
-import type { Op, Variant } from './ops.js';
+import { equal, type Op, type Variant } from './ops.js';
 import { isSimple, type V2, type V3 } from './geom.js';
 
 export const SCHEMA = 'sketch3d/1';
@@ -112,7 +112,11 @@ function oneOf<T extends string>(x: unknown, path: string, list: readonly T[]): 
 	return x as T;
 }
 
-function element(x: unknown, path: string, planes: Set<string>, b: Budget): Element {
+/** Simple-outline results by base, so repeated snapshots of one outline (height, wall and
+ * material edits) pay the O(n²) check once. */
+type Simple = Map<string, boolean>;
+
+function element(x: unknown, path: string, planes: Set<string>, b: Budget, simple: Simple): Element {
 	if (!isObj(x)) fail(path, 'not an object');
 	const plane = (p: unknown) => {
 		const id = str(p, `${path}.plane`);
@@ -134,8 +138,13 @@ function element(x: unknown, path: string, planes: Set<string>, b: Budget): Elem
 			if (wall < WALL_MIN || wall > WALL_MAX) fail(`${path}.wall`, `not within ${WALL_MIN}..${WALL_MAX}`);
 		}
 		const base = v2s(o.base, `${path}.base`, 3, MAX.base, b);
-		charge(b, 'pairs', base.length * base.length, `${path}.base`);
-		if (!isSimple(base)) fail(`${path}.base`, 'not a simple outline');
+		const key = JSON.stringify(base);
+		let ok = simple.get(key);
+		if (ok === undefined) {
+			charge(b, 'pairs', base.length * base.length, `${path}.base`);
+			simple.set(key, (ok = isSimple(base)));
+		}
+		if (!ok) fail(`${path}.base`, 'not a simple outline');
 		return {
 			type: 'volume',
 			plane: plane(o.plane),
@@ -149,7 +158,7 @@ function element(x: unknown, path: string, planes: Set<string>, b: Budget): Elem
 	return fail(`${path}.type`, 'unknown element type');
 }
 
-function op(x: unknown, path: string, planes: Set<string>, b: Budget): Op<Element> {
+function op(x: unknown, path: string, planes: Set<string>, b: Budget, simple: Simple): Op<Element> {
 	const o = obj(x, path, ['id', 'label', 'author', 't', 'ch'], ['mergeOf', 'merged']);
 	const isMerge = o.mergeOf !== undefined;
 	if (!isMerge && o.merged !== undefined) fail(`${path}.merged`, 'only on a merge op');
@@ -162,7 +171,7 @@ function op(x: unknown, path: string, planes: Set<string>, b: Budget): Op<Elemen
 		ch: arr(o.ch, `${path}.ch`, 0, MAX.changes).map((c, i) => {
 			const p = `${path}.ch[${i}]`;
 			const co = obj(c, p, ['id', 'el'], ['from']);
-			const ch: Op<Element>['ch'][number] = { id: str(co.id, `${p}.id`), el: co.el === null ? null : element(co.el, `${p}.el`, planes, b) };
+			const ch: Op<Element>['ch'][number] = { id: str(co.id, `${p}.id`), el: co.el === null ? null : element(co.el, `${p}.el`, planes, b, simple) };
 			if (co.from !== undefined) {
 				if (!isMerge) fail(`${p}.from`, 'only on a merge op');
 				ch.from = str(co.from, `${p}.from`);
@@ -193,24 +202,20 @@ export function parseSketch(x: unknown, budget: Budget = BUDGET): SketchDoc {
 		const lu = Math.hypot(...p.u), lv = Math.hypot(...p.v), uv = p.u[0] * p.v[0] + p.u[1] * p.v[1] + p.u[2] * p.v[2];
 		if (Math.abs(lu - 1) > 1e-6 || Math.abs(lv - 1) > 1e-6 || Math.abs(uv) > 1e-6) fail(`doc.planes[${i}]`, 'u, v not orthonormal');
 	}
-	// Variants share the ops before their fork. The same op id in two variants must be the same op;
-	// a shared op is validated and charged once.
-	const seen = new Map<string, { raw: string; op: Op<Element> }>();
+	// Variants share the ops before their fork. The same op id in two variants must be the same op.
+	// Every copy is stored, so every copy is validated and charged.
+	const seen = new Map<string, Op<Element>>();
+	const simple: Simple = new Map();
 	const variants = arr(d.variants, 'doc.variants', 1, MAX.variants).map((v, i) => {
 		const o = obj(v, `doc.variants[${i}]`, ['id', 'name', 'ops'], ['from']);
 		const ids = new Set<string>();
 		const ops = arr(o.ops, `doc.variants[${i}].ops`, 0, MAX.ops).map((x, j) => {
 			const path = `doc.variants[${i}].ops[${j}]`;
-			const raw = JSON.stringify(x);
-			const id = isObj(x) && typeof x.id === 'string' ? x.id : null;
-			const prev = id === null ? undefined : seen.get(id);
-			if (prev && prev.raw !== raw) fail(path, `op ${id} differs from the op with that id in another variant`);
-			let r = prev?.op;
-			if (!r) {
-				charge(b, 'ops', 1, path);
-				r = op(x, path, pids, b);
-				seen.set(r.id, { raw, op: r });
-			}
+			charge(b, 'ops', 1, path);
+			const r = op(x, path, pids, b, simple);
+			const prev = seen.get(r.id);
+			if (!prev) seen.set(r.id, r);
+			else if (!equal(prev, r)) fail(path, `op ${r.id} differs from the op with that id in another variant`);
 			if (ids.has(r.id)) fail(path, `duplicate op id ${r.id}`);
 			ids.add(r.id);
 			return r;
